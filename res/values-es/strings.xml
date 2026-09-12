@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lang_header">Idioma</string>
+    <string name="lang_auto">Detección automática</string>
+    <string name="voice_profile">Voz</string>
+    <string name="rate">Velocidad</string>
+    <string name="pitch">Tono</string>
+    <string name="volume">Volumen</string>
+    <string name="test">Prueba</string>
+    <string name="engine_not_ready">Motor no inicializado</string>
+    <string name="synth_ok">Pronunciado</string>
+    <string name="synth_failed">Error de síntesis</string>
+    <string name="saved">Guardado</string>
+</resources>
