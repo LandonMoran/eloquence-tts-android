@@ -32,8 +32,10 @@ jobs:
 
       - name: Install Kotlin compiler 1.9.25
         run: |
-          curl -sSL -o /tmp/kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip
-          unzip -q /tmp/kotlin-compiler.zip -d /opt
+          set -x
+          curl -fL -o /tmp/kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip
+          unzip -o -q /tmp/kotlin-compiler.zip -d /opt
+          ls -la /opt/kotlinc/kotlinc/bin/ | head -5
           test -x /opt/kotlinc/kotlinc/bin/kotlinc
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
