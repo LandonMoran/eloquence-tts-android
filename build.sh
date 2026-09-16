@@ -34,6 +34,8 @@ if [ $? -ne 0 ]; then echo "AAPT GEN R FAILED"; exit 1; fi
 
 # 1. 编译所有 Kotlin 源码（Phase 1: 全 Kotlin，零 Java）
 KOTLINC="${KOTLINC:-/opt/kotlinc/kotlinc/bin/kotlinc}"
+# 备选：KOTLINC_CP 指向 "compiler:trove4j:stdlib" 三个 jar，用 Java 直启 K2JVMCompiler（免解压）
+KOTLINC_CP="${KOTLINC_CP:-}"
 rm -rf out_classes
 mkdir -p out_classes
 find src gen -name '*.kt' > /tmp/kt_sources.txt
@@ -43,9 +45,13 @@ if [ -s /tmp/r_sources.txt ]; then
   javac -source 11 -target 11 -classpath "$ANDROID_JAR" -d out_classes @/tmp/r_sources.txt 2>&1
   if [ $? -ne 0 ]; then echo "R COMPILE FAILED"; exit 1; fi
 fi
-"$KOTLINC" -jvm-target 1.8 \
-  -classpath "$ANDROID_JAR:out_classes:$LIBS_DIR/lingua-slim.jar" \
-  -d out_classes @/tmp/kt_sources.txt 2>&1
+KT_CLASSPATH="$ANDROID_JAR:out_classes:$LIBS_DIR/lingua-slim.jar:$LIBS_DIR/kotlin-stdlib-1.9.25.jar"
+if [ -n "$KOTLINC_CP" ]; then
+  java -cp "$KOTLINC_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
+    -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
+else
+  "$KOTLINC" -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
+fi
 if [ $? -ne 0 ]; then echo "COMPILE FAILED"; exit 1; fi
 
 # 2. D8 打包 dex
