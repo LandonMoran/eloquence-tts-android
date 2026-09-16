@@ -178,7 +178,11 @@ public class EloquenceEngine {
 
     public static short[] applyVolume(short[] pcm, int volume) {
         volume = coerceIn(volume, 0, 100);
-        float gain = volume / 50.0f;
+        // NOTE: unity gain at volume == 100. The engine already applies its own
+        // eciVolume (Kona voicing, usually ~90) internally; scaling AGAIN by
+        // volume/50.0 would double-amplify any signal and hard-clip the output
+        // at the default setting of 100. volume/100.0 is clean unity at default.
+        float gain = volume / 100.0f;
         if (gain == 1.0f) return pcm;
         short[] out = new short[pcm.length];
         for (int i = 0; i < pcm.length; i++) {

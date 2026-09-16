@@ -8,7 +8,9 @@ import android.speech.tts.Voice;
 import android.util.Log;
 
 import com.xw.vvtts.engine.EloquenceEngine;
+import com.xw.vvtts.utils.EmojiExpander;
 import com.xw.vvtts.utils.LanguageDetector;
+import com.xw.vvtts.utils.TextNormalizer;
 import com.xw.vvtts.utils.VoiceConfig;
 import com.xw.vvtts.utils.VoiceProfile;
 
@@ -154,6 +156,16 @@ public class VvTtsService extends TextToSpeechService {
                 return;
             }
 
+            // emoji -> we ask the speech engine to say what the symbol means.
+            // The ECI engine has zero emoji support, so expand before anything else.
+            text = EmojiExpander.expand(text);
+            if (text == null || text.isEmpty()) {
+                callback.start(EloquenceEngine.SAMPLE_RATE,
+                        android.media.AudioFormat.ENCODING_PCM_16BIT, 1);
+                callback.done();
+                return;
+            }
+
             // 自动检测 + 分片
             List<LanguageDetector.Segment> segments = LanguageDetector.segment(text);
 
@@ -166,13 +178,27 @@ public class VvTtsService extends TextToSpeechService {
             }
 
             int preset = voiceProfile != null ? voiceProfile.getPreset() : 1;
-            int rate = voiceConfig.getRate();
-            int pitch = voiceConfig.getPitch();
+            // Combine the app UI rate/pitch with the system / TalkBack request.
+            // request.getSpeechRate()/getPitch() are 1.0 = normal; TalkBack's
+            // speed/pitch sliders arrive here, so this restores integration.
+            float sysRate = request.getSpeechRate();
+            float sysPitch = request.getPitch();
+            if (sysRate <= 0f) sysRate = 1f;
+            if (sysPitch <= 0f) sysPitch = 1f;
+            int rate = clamp(Math.round(voiceConfig.getRate() * sysRate), 1, 300);
+            int pitch = clamp(Math.round(50 + (voiceConfig.getPitch() - 50) * sysPitch), 0, 100);
             int volume = voiceConfig.getVolume();
 
             for (LanguageDetector.Segment seg : segments) {
                 if (seg.text == null || seg.text.trim().isEmpty()) continue;
-                short[] pcm = engine.synthesizeCore(seg.text, seg.dialect, volume, preset, pitch, rate);
+                String segText = seg.text;
+                // The Apple CJK libs skip plain digits and many symbols; the
+                // bundled TextNormalizer fixes exactly that for CJK segments.
+                // (For en/de/etc. the ECI libs already read digits fine.)
+                if (isCjkDialect(seg.dialect)) {
+                    segText = TextNormalizer.normalizeForChinese(segText);
+                }
+                short[] pcm = engine.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate);
                 if (pcm != null && pcm.length > 0) {
                     byte[] bytes = shortsToBytes(pcm);
                     int max = callback.getMaxBufferSize();
@@ -189,6 +215,14 @@ public class VvTtsService extends TextToSpeechService {
         } finally {
             try { callback.done(); } catch (Throwable ignore) {}
         }
+    }
+
+    private static boolean isCjkDialect(int dialect) {
+        // TextNormalizer's symbol/number readings are Mandarin (it is
+        // documented "给中文（简/繁）用"), so apply it to zh only — feeding
+        // Chinese readings to ja/ko voices would be wrong.
+        return dialect == EloquenceEngine.DIALECT_ZH_CN
+                || dialect == EloquenceEngine.DIALECT_ZH_TW;
     }
 
     private static int bcpToDialect(String bcp) {
