@@ -32,11 +32,11 @@ jobs:
 
       - name: Install Kotlin compiler 1.9.25
         run: |
-          set -x
+          set -e
           curl -fL -o /tmp/kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip
-          unzip -o -q /tmp/kotlin-compiler.zip -d /opt
-          ls -la /opt/kotlinc/kotlinc/bin/ | head -5
-          test -x /opt/kotlinc/kotlinc/bin/kotlinc
+          unzip -o -q /tmp/kotlin-compiler.zip -d "$HOME"
+          ls -la "$HOME/kotlinc/kotlinc/bin/kotlinc"
+          test -x "$HOME/kotlinc/kotlinc/bin/kotlinc"
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
@@ -54,6 +54,7 @@ jobs:
           KEYSTORE: vvtts.jks
           KS_PASS: android123
           KEY_PASS: android123
+          KOTLINC: /home/runner/kotlinc/kotlinc/bin/kotlinc
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
