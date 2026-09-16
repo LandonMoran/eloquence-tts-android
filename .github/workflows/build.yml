@@ -1,0 +1,53 @@
+name: Build APK
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools, platforms;android-34, build-tools;35.0.0, cmdline-tools;latest'
+
+      # build.sh expects d8 under cmdline-tools/latest/bin; it actually lives in
+      # build-tools. Symlink so the upstream script runs unmodified.
+      - name: Symlink d8 into cmdline-tools
+        run: |
+          mkdir -p "$ANDROID_HOME/cmdline-tools/latest/bin"
+          ln -s "$ANDROID_HOME/build-tools/35.0.0/d8" "$ANDROID_HOME/cmdline-tools/latest/bin/d8"
+
+      # CI-only dev keystore: generated per build, never committed (gitignored).
+      # Sideloads fine; not a release identity.
+      - name: Generate keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore vvtts.jks -storepass android123 -keypass android123 \
+            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=CI Build,O=Home,C=US"
+
+      - name: Build APK
+        run: bash build.sh
+        env:
+          ANDROID_SDK: ${{ env.ANDROID_HOME }}
+          KEYSTORE: vvtts.jks
+          KS_PASS: android123
+          KEY_PASS: android123
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vvtts-signed-apk
+          path: vvtts_signed.apk
+          if-no-files-found: error
