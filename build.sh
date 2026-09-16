@@ -32,12 +32,20 @@ mkdir -p gen
 "$AAPT" package -f -m -J gen -M AndroidManifest.xml -S res -I "$ANDROID_JAR" 2>&1
 if [ $? -ne 0 ]; then echo "AAPT GEN R FAILED"; exit 1; fi
 
-# 1. 编译所有 Java 源码
+# 1. 编译所有 Kotlin 源码（Phase 1: 全 Kotlin，零 Java）
+KOTLINC="${KOTLINC:-/opt/kotlinc/kotlinc/bin/kotlinc}"
 rm -rf out_classes
-find src gen -name '*.java' > /tmp/java_sources.txt
-javac -source 11 -target 11 \
-  -classpath "$ANDROID_JAR:$LIBS_DIR/lingua-slim.jar:$LIBS_DIR/kotlin-stdlib-1.9.25.jar:$LIBS_DIR/fastutil.jar:$LIBS_DIR/moshi.jar:$LIBS_DIR/moshi-kotlin.jar:$LIBS_DIR/okio.jar:$LIBS_DIR/kotlin-reflect.jar" \
-  -d out_classes @/tmp/java_sources.txt 2>&1
+mkdir -p out_classes
+find src gen -name '*.kt' > /tmp/kt_sources.txt
+# aapt 生成的 R.java 是 Java 源，先单独用 javac 编进 out_classes
+find gen -name '*.java' > /tmp/r_sources.txt
+if [ -s /tmp/r_sources.txt ]; then
+  javac -source 11 -target 11 -classpath "$ANDROID_JAR" -d out_classes @/tmp/r_sources.txt 2>&1
+  if [ $? -ne 0 ]; then echo "R COMPILE FAILED"; exit 1; fi
+fi
+"$KOTLINC" -jvm-target 1.8 \
+  -classpath "$ANDROID_JAR:out_classes:$LIBS_DIR/lingua-slim.jar" \
+  -d out_classes @/tmp/kt_sources.txt 2>&1
 if [ $? -ne 0 ]; then echo "COMPILE FAILED"; exit 1; fi
 
 # 2. D8 打包 dex

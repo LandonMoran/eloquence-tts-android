@@ -30,6 +30,12 @@ jobs:
           mkdir -p "$SDK/cmdline-tools/latest/bin"
           ln -sf "$SDK/build-tools/35.0.0/d8" "$SDK/cmdline-tools/latest/bin/d8"
 
+      - name: Install Kotlin compiler 1.9.25
+        run: |
+          curl -sSL -o /tmp/kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v1.9.25/kotlin-compiler-1.9.25.zip
+          unzip -q /tmp/kotlin-compiler.zip -d /opt
+          test -x /opt/kotlinc/kotlinc/bin/kotlinc
+
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
       - name: Generate keystore
