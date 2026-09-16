@@ -42,7 +42,7 @@ jobs:
       - name: Build APK
         run: bash build.sh
         env:
-          ANDROID_SDK: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK: /usr/local/lib/android/sdk
           KEYSTORE: vvtts.jks
           KS_PASS: android123
           KEY_PASS: android123
