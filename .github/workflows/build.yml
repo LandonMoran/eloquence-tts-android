@@ -17,16 +17,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools, platforms;android-34, build-tools;35.0.0, cmdline-tools;latest'
-
-      # build.sh expects d8 under cmdline-tools/latest/bin; it actually lives in
-      # build-tools. Symlink so the upstream script runs unmodified.
-      - name: Symlink d8 into cmdline-tools
+      # Runner images ship a preinstalled SDK at /usr/local/lib/android/sdk
+      # with working cmdline-tools; install the packages build.sh needs.
+      - name: Install Android SDK packages
         run: |
-          mkdir -p "$ANDROID_HOME/cmdline-tools/latest/bin"
-          ln -s "$ANDROID_HOME/build-tools/35.0.0/d8" "$ANDROID_HOME/cmdline-tools/latest/bin/d8"
+          SDK=/usr/local/lib/android/sdk
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "platforms;android-34" "build-tools;35.0.0"
+          # build.sh expects d8 under cmdline-tools/latest/bin; it actually
+          # lives in build-tools. Symlink so the upstream script runs unmodified.
+          mkdir -p "$SDK/cmdline-tools/latest/bin"
+          ln -sf "$SDK/build-tools/35.0.0/d8" "$SDK/cmdline-tools/latest/bin/d8"
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
