@@ -178,15 +178,22 @@ public class VvTtsService extends TextToSpeechService {
             }
 
             int preset = voiceProfile != null ? voiceProfile.getPreset() : 1;
-            // Combine the app UI rate/pitch with the system / TalkBack request.
-            // request.getSpeechRate()/getPitch() are 1.0 = normal; TalkBack's
-            // speed/pitch sliders arrive here, so this restores integration.
-            float sysRate = request.getSpeechRate();
-            float sysPitch = request.getPitch();
-            if (sysRate <= 0f) sysRate = 1f;
-            if (sysPitch <= 0f) sysPitch = 1f;
-            int rate = clamp(Math.round(voiceConfig.getRate() * sysRate), 1, 300);
-            int pitch = clamp(Math.round(50 + (voiceConfig.getPitch() - 50) * sysPitch), 0, 100);
+            // Android passes speech rate/pitch as PERCENTS where 100 = normal
+            // (SynthesisRequest.getSpeechRate()/getPitch()). The framework
+            // already folds the user's system TTS setting into these values,
+            // and the engine's own scale is likewise 100 = neutral
+            // (rate 1-300, pitch 0-100 with 50 neutral), so pass the
+            // request through directly: TalkBack's speed/pitch sliders now
+            // map 1:1 onto the engine (old code multiplied 100x100=10000,
+            // which clamped to max speed and ignored the sliders).
+            int sysRate = request.getSpeechRate();
+            int sysPitch = request.getPitch();
+            if (sysRate <= 0) sysRate = 100;
+            if (sysPitch <= 0) sysPitch = 100;
+            int rate = clamp(sysRate, 1, 300);
+            // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
+            // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
+            int pitch = clamp(50 + (sysPitch - 100) / 2, 0, 100);
             int volume = voiceConfig.getVolume();
 
             for (LanguageDetector.Segment seg : segments) {
