@@ -36,7 +36,9 @@ jobs:
           curl -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
           curl -fsSL -o /tmp/trove4j-1.0.20200330.jar https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
           curl -fsSL -o /tmp/kotlin-stdlib-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
-          ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar
+          # Needed by the embeddable compiler when emitting nullability annotations (external funs)
+          curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
+          ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar /tmp/annotations-24.1.0.jar
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
@@ -54,7 +56,7 @@ jobs:
           KEYSTORE: vvtts.jks
           KS_PASS: android123
           KEY_PASS: android123
-          KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar
+          KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
