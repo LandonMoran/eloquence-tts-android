@@ -46,7 +46,12 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     LANGS="$LANGS" \
     RULES=c \
     CFLAGS=-fPIC \
-    build/libevv.a
+    all
+LIBEVV="$(ls native/openevv/build/libevv*.a 2>/dev/null | head -1 )"
+if [ -z "$LIBEVV" ]; then
+  echo "ERROR: openevv archive not built (no native/openevv/build/libevv*.a(" >&2
+  exit  ​1
+fi
 
 # 2. JNI bridge + engine static-linked into one .so.  -fvisibility=hidden
 # keeps engine internals private; JNIEXPORT marks the 8 natives + OnLoad public.
@@ -55,7 +60,7 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     -I native/openevv/include \
     -o "$OUT/libvvttts_core.so" \
     jni/vvttts_core.c \
-    native/openevv/build/libevv.a \
+    "$LIBEVV" \
     -lm
 
 echo "native bridge OK:"
