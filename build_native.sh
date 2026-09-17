@@ -39,7 +39,7 @@ LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lan
 # 1. openevv: static archive, cross-compiled, PIC objects so they bind
 # into a shared library.  RULES=c bakes the rules as generated C (faster
 # warm-up and lower latency on-device than bytecode.;
-make -C native/openevv \
+make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     CC="$CLANG" \
     NM="$TC/llvm-nm" \
     RANLIB="$TC/llvm-ranlib" \
