@@ -168,6 +168,22 @@ class SettingsActivity : Activity() {
             text = sampleTextFor(lang.code)
             dialect = bcpToDialect(lang.code)
         }
+        // 本构建未链接该语言模块（如 zh-CN）：不能合成，回退英语并说明。
+        // 硬性要求：绝不把未链接语言的 dialect 送进引擎（eciNewEx 会因缺少
+        // 语言模块走无效 voice 表崩溃，曾导致测试按钮一按即崩）。
+        if (!EloquenceEngine.isShippedDialect(dialect)) {
+            Toast.makeText(this, "当前语言未包含在本构建中，已用英语试听", Toast.LENGTH_LONG).show()
+            val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
+                EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
+                voiceConfig!!.pitch, voiceConfig!!.rate)
+            if (pcmEn != null && pcmEn.size > 0) {
+                playPcm(pcmEn, EloquenceEngine.SAMPLE_RATE)
+                Toast.makeText(this, "已发音（英语）", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "合成失败", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         val pcm = engine!!.synthesizeCore(text, dialect,
             voiceConfig!!.volume, preset,
             voiceConfig!!.pitch, voiceConfig!!.rate)
@@ -195,20 +211,10 @@ class SettingsActivity : Activity() {
         return "Hello, this is a speech synthesis test."
     }
 
-    /** bcp47 → ECI dialect */
+    /** bcp47 → ECI dialect（实测表，见 VoiceConfig.LANGS；未链接语言回退 en-US） */
     private fun bcpToDialect(code: String): Int {
-        if (code == null) return EloquenceEngine.DIALECT_EN_US
-        if (code.startsWith("zh")) return EloquenceEngine.DIALECT_ZH_CN
-        if (code.startsWith("en")) return EloquenceEngine.DIALECT_EN_US
-        if (code.startsWith("de")) return EloquenceEngine.DIALECT_DE_DE
-        if (code.startsWith("fr")) return EloquenceEngine.DIALECT_FR_FR
-        if (code.startsWith("es")) return EloquenceEngine.DIALECT_ES_ES
-        if (code.startsWith("it")) return EloquenceEngine.DIALECT_IT_IT
-        if (code.startsWith("pt")) return EloquenceEngine.DIALECT_PT_BR
-        if (code.startsWith("fi")) return EloquenceEngine.DIALECT_FI_FI
-        if (code.startsWith("ja")) return EloquenceEngine.DIALECT_JA_JP
-        if (code.startsWith("ko")) return EloquenceEngine.DIALECT_KO_KR
-        return EloquenceEngine.DIALECT_EN_US
+        val d = VoiceConfig.findLang(code).eciDialect
+        return if (d != 0L) d.toInt() else EloquenceEngine.DIALECT_EN_US
     }
 
     private fun testGerman() {

@@ -142,17 +142,30 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
         const val DIALECT_EN_GB = 0x10001    // [1.1] eng
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
-        const val DIALECT_ES_MX = 0x20001    // [2.1] esm
+        const val DIALECT_ES_MX = 0x20001    // [2.1] 本构建 es-MX 走 esus（LatAm）模块；esmx 模块未链接
         const val DIALECT_FR_FR = 0x30000    // [3.0] fra
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
         const val DIALECT_IT_IT = 0x50000    // [5.0] ita
-        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs
+        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs —— 本构建未链接 lang/chs，见 SHIPPED_DIALECTS
         const val DIALECT_ZH_TW = 0x60001    // [6.1] cht
         const val DIALECT_PT_BR = 0x70000    // [7.0] ptb
         const val DIALECT_JA_JP = 0x80000    // [8.0] jpn
         const val DIALECT_FI_FI = 0x90000    // [9.0] fin
         const val DIALECT_KO_KR = 0xA0000    // [10.0] kor
+        // 本构建实际链接的语言模块（与 build_native.sh LANGS 一致）。
+        // 未列出的方言（zh/pt/fi/ko/zh-TW）引擎里没有模块，native 侧会拒绝，
+        // 这里先拦截以免依赖 native 拒绝对话。
+        val SHIPPED_DIALECTS: Set<Long> = setOf(
+            0x10000L, 0x10001L,             // enus, engb
+            0x20000L, 0x20001L,             // eses, esus（esmx 未链接，es-MX 走 esus）
+            0x30000L, 0x30001L,             // frfr, frca
+            0x40000L,                       // dede
+            0x50000L,                       // itit
+            0x80000L,                       // jajp
+            0x110000L,                      // plpl
+        )
+        fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
         // 引擎真实输出采样率：eci.ini 的 en 库固定 11025Hz，运行时不可改
         const val ENGINE_SAMPLE_RATE = 11025
         // 输出采样率 = 引擎原生 11025（实测音色最自然，不做重采样）
@@ -268,6 +281,13 @@ class EloquenceEngine(context: Context) {
     @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? {
         return paramSynthLock.withLock {
+            // 本构建未链接的语言模块（zh/pt/fi/ko/zh-TW）直接拒绝。
+            // native 侧也会拒绝，这里拦截是让 TTS 服务拿到干净的 null（Android
+            // 自动 fallback 其它引擎），而不是让任何路径靠近会把进程杀掉的 eciNewEx。
+            if (!isShippedDialect(dialect)) {
+                Log.e(TAG, "dialect not in this build: 0x" + Integer.toHexString(dialect))
+                return@withLock null
+            }
             if (core == null) core = VvttsCore()
 
             // session 懒加载（按方言缓存）

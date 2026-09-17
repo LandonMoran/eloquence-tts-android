@@ -44,23 +44,24 @@ class VoiceConfig(context: Context) {
         const val KEY_VOLUME = "volume"
         const val KEY_AUTO_DETECT = "auto_detect"
 
-        // 已知锚点：en-US kona0=0x10000，zh-CN kona12=0x60000（广荣实测）
-        // 其余为对照 Eloquence 官方 dialect 家族的推测值，接入对应语言库时逐一验证
+        // eciDialect 实测值：来自 openevv 各语言模块注册常量
+        // （lang/*/eci_ini_*.c 的 *_eci_library_lang），与 build_native.sh LANGS 一一对应。
+        // 0 = 本构建未链接该语言（pt/fi/ko/zh-TW 无模块）。
         val LANGS = arrayOf(
             Lang("en-US", "英语（美式）", 0, 0x10000L),
-            Lang("en-GB", "英语（英式）", 1, 0x20000L),
-            Lang("es-ES", "西班牙语（西班牙）", 2, 0x30000L),
-            Lang("es-MX", "西班牙语（墨西哥）", 3, 0x30000L),
-            Lang("fr-FR", "法语（法国）", 4, 0x0C0000L),
-            Lang("fr-CA", "法语（加拿大）", 5, 0x0C0000L),
-            Lang("de-DE", "德语", 6, 0x70000L),
-            Lang("it-IT", "意大利语", 7, 0x100000L),
-            Lang("pt-BR", "葡萄牙语（巴西）", 8, 0x160000L),
-            Lang("fi-FI", "芬兰语", 9, 0x0B0000L),
-            Lang("ja-JP", "日语", 10, 0x110000L),
-            Lang("ko-KR", "韩语", 11, 0x120000L),
-            Lang("zh-CN", "中文（普通话）", 12, 0x60000L),
-            Lang("zh-TW", "中文（台湾）", 13, 0x61000L),
+            Lang("en-GB", "英语（英式）", 1, 0x10001L),
+            Lang("es-ES", "西班牙语（西班牙）", 2, 0x20000L),
+            Lang("es-MX", "西班牙语（墨西哥）", 3, 0x20001L), // 走 esus（LatAm）模块
+            Lang("fr-FR", "法语（法国）", 4, 0x30000L),
+            Lang("fr-CA", "法语（加拿大）", 5, 0x30001L),
+            Lang("de-DE", "德语", 6, 0x40000L),
+            Lang("it-IT", "意大利语", 7, 0x50000L),
+            Lang("pt-BR", "葡萄牙语（巴西）", 8, 0L),       // 未链接
+            Lang("fi-FI", "芬兰语", 9, 0L),                 // 未链接
+            Lang("ja-JP", "日语", 10, 0x80000L),
+            Lang("ko-KR", "韩语", 11, 0L),                  // 未链接
+            Lang("zh-CN", "中文（普通话）", 12, 0x60000L),  // 未链接本构建
+            Lang("zh-TW", "中文（台湾）", 13, 0x60001L),    // 未链接
         )
 
         /** CF 语言库代码（Code Factory 10 语言）与 BCP-47 对应 */

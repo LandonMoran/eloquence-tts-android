@@ -76,6 +76,30 @@ static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
     return (handle == 0) ? NULL : (VvtsSession *)(intptr_t)handle;
 }
 
+/* Dialect whitelist: only the language modules linked into this build
+ * (build_native.sh LANGS) may be instantiated.  eo_newEx builds its voice
+ * table by indexing a static structure from the FAMILY number of the
+ * requested dialect; for a family that has no module in this build the
+ * structure shape is different, so the engine walks garbage and SIGSEGVs
+ * (observed with 0x60000/zh-CN on a build without lang/chs).  Reject
+ * unknown dialects up front so the caller gets a clean NULL handle instead
+ * of a killed process -- this is what keeps an accidental wrong-language
+ * request from ever crashing the app (or TalkBack's TTS session). */
+static int vv_dialect_shipped(int32_t dialect) {
+    switch (dialect) {
+    case 0x10000: case 0x10001:  /* enus, engb */
+    case 0x20000: case 0x20001:  /* eses, esus（esmx 未链接，es-MX 走 esus） */
+    case 0x30000: case 0x30001:  /* frfr, frca */
+    case 0x40000:                /* dede */
+    case 0x50000:                /* itit */
+    case 0x80000:                /* jajp */
+    case 0x110000:               /* plpl */
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* Clinch: pitch range.  openevv voice params are 0..100 for pitch baseline,
  * the Kotlin preset table sends 40..120 (Apple's range); clamp at the bridge
  * so we never hand the engine a value it does not understand. */
@@ -103,6 +127,12 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
     if (!s) return 0;
     /* configDir and libDir are legacy from the Apple-libs era; openevv
      * wants nothing from the filesystem at run time. */
+    if (!vv_dialect_shipped((int)dialect)) {
+        /* Missing language module in this build: refuse instead of letting
+         * eciNewEx walk the unbuilt voice table and segfault. */
+        free(s);
+        return 0;
+    }
     s->hECI = eciNewEx((int)dialect);
     if (!s->hECI) {
         free(s);
