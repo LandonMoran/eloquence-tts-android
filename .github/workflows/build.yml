@@ -23,8 +23,7 @@ jobs:
         run: |
           SDK=/usr/local/lib/android/sdk
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" \\
-            "platform-tools" "platforms;android-34" "build-tools;35.0.0"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;35.0.0"
           # NDK ships preinstalled on runner images; install only if somehow absent.
           [ -d "$SDK/ndk" ] || "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264"
           # build.sh expects d8 under cmdline-tools/latest/bin; it actually
