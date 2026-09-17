@@ -19,6 +19,7 @@ openevv/
 # ( 14M of reference audio, not build inputs( — keep them out of git.;
 native/openevv/build/
 native/openevv/lang/measured/
+native/openevv/lang/*/delta_rules*
 
 # 系统/编辑器
 .DS_Store

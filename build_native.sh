@@ -65,9 +65,11 @@ fi
 
 "$CLANG" -shared -std=gnu99 -O2 -fPIC -fvisibility=hidden \
     -I native/openevv/include \
-    -o "$OUT/libvvtts_core.so" \
-    jni/vvtts_core.c \
-    "$LIBEVV" \
+        -I native/openevv/src \
+        -o "$OUT/libvvtts_core.so" \
+        jni/vvtts_core.c \
+        jni/eci_compat.c \
+        "$LIBEVV" \
     -lm
 
 echo "native bridge OK:"
