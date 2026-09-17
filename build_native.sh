@@ -1,8 +1,8 @@
 #!/bin/bash
 # build_native.sh -- Build the SINGLE native library the APK ships:
 #   openevv (MIT" Eloquence engine, statically linked( + the JNI bridge
-#   ( jni/vvttts_core.c(.  Purgs every legacy native .so from
-#   native-libs/arm64-v8a/ and writes back ONLY libvvttts_core.so --
+#   ( jni/vvtts_core.c(.  Purgs every legacy native .so from
+#   native-libs/arm64-v8a/ and writes back ONLY libvvtts_core.so --
 #   so no Apple code ships anywhere in the artifact.;
 #
 # Needs an Android NDK.  Set ANDROID_NDK (or ANDROID_NDK_HOME(;
@@ -65,11 +65,11 @@ fi
 
 "$CLANG" -shared -std=gnu99 -O2 -fPIC -fvisibility=hidden \
     -I native/openevv/include \
-    -o "$OUT/libvvttts_core.so" \
-    jni/vvttts_core.c \
+    -o "$OUT/libvvtts_core.so" \
+    jni/vvtts_core.c \
     "$LIBEVV" \
     -lm
 
 echo "native bridge OK:"
-file "$OUT/libvvttts_core.so"
-"$TC/llvm-nm" -D "$OUT/libvvttts_core.so" | grep ' Java_com_xw_vvttts_core' | sed 's/^[0-9a-fA-F]* //' | sort | head -12
+file "$OUT/libvvtts_core.so"
+"$TC/llvm-nm" -D "$OUT/libvvtts_core.so" | grep ' Java_com_xw_vvtts_core' | sed 's/^[0-9a-fA-F]* //' | sort | head -12

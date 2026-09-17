@@ -71,8 +71,8 @@ if [ $? -ne 0 ]; then echo "D8 FAILED"; exit 1; fi
 # 2.5. Build the native bridge first if missing (openevv + JNI core,; no Apple code(.
 # CI runs build_native.sh as its own earlier step; this guard covers fresh clones
 # where only build.sh was invoked.;
-if [ ! -f native-libs/arm64-v8a/libvvttts_core.so ]; then
-  echo "libvvttts_core.so missing -- running build_native.sh first..."
+if [ ! -f native-libs/arm64-v8a/libvvtts_core.so ]; then
+  echo "libvvtts_core.so missing -- running build_native.sh first..."
   bash build_native.sh || exit $?
 fi
 
