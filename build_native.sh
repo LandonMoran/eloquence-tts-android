@@ -35,12 +35,12 @@ mkdir -p "$OUT"
 rm -f "$OUT"/*.so
 
 LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/itit lang/jajp lang/plpl"
-# Mirror the Makefile's SUF naming ( TAGS := notdir(LANGS), minus enus,
-# dash-joined( so we can address the exact archive target without `all'
-# ( which would drag in the cli/ evv tools upstream doesn't ship(.
+# Mirror the Makefile's SUF naming ( TAGS := notdir(LANGS), dash-joined; the
+# suffix branch is taken once the set is bigger than just enus, and then it
+# includes enus too -- checked against `make -p` database ( build/libevv-enus-....a(.
 SUF=""
 for l in $LANGS; do
-  [ "${l#lang/}" = enus ] || SUF="$SUF-${l#lang/}"
+  SUF="$SUF-${l#lang/}"
 done
 
 # 1. openevv: static archive, cross-compiled, PIC objects so they bind
