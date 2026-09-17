@@ -34,7 +34,7 @@ OUT=native-libs/arm64-v8a
 mkdir -p "$OUT"
 rm -f "$OUT"/*.so
 
-LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/itit lang/jajp lang/plpl"
+LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/esmx lang/itit lang/jajp lang/plpl"
 # Mirror the Makefile's SUF naming ( TAGS := notdir(LANGS), dash-joined; the
 # suffix branch is taken once the set is bigger than just enus, and then it
 # includes enus too -- checked against `make -p` database ( build/libevv-enus-....a(.

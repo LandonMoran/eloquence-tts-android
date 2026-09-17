@@ -142,7 +142,7 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
         const val DIALECT_EN_GB = 0x10001    // [1.1] eng
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
-        const val DIALECT_ES_MX = 0x20001    // [2.1] 本构建 es-MX 走 esus（LatAm）模块；esmx 模块未链接
+        const val DIALECT_ES_MX = 0x20002    // [2.2] esmx（真实墨西哥西语模块）
         const val DIALECT_FR_FR = 0x30000    // [3.0] fra
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
@@ -158,7 +158,7 @@ class EloquenceEngine(context: Context) {
         // 这里先拦截以免依赖 native 拒绝对话。
         val SHIPPED_DIALECTS: Set<Long> = setOf(
             0x10000L, 0x10001L,             // enus, engb
-            0x20000L, 0x20001L,             // eses, esus（esmx 未链接，es-MX 走 esus）
+            0x20000L, 0x20001L, 0x20002L,    // eses, esus, esmx
             0x30000L, 0x30001L,             // frfr, frca
             0x40000L,                       // dede
             0x50000L,                       // itit

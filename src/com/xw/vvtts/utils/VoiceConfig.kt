@@ -51,7 +51,7 @@ class VoiceConfig(context: Context) {
             Lang("en-US", "英语（美式）", 0, 0x10000L),
             Lang("en-GB", "英语（英式）", 1, 0x10001L),
             Lang("es-ES", "西班牙语（西班牙）", 2, 0x20000L),
-            Lang("es-MX", "西班牙语（墨西哥）", 3, 0x20001L), // 走 esus（LatAm）模块
+            Lang("es-MX", "西班牙语（墨西哥）", 3, 0x20002L), // esmx 模块
             Lang("fr-FR", "法语（法国）", 4, 0x30000L),
             Lang("fr-CA", "法语（加拿大）", 5, 0x30001L),
             Lang("de-DE", "德语", 6, 0x40000L),

@@ -88,7 +88,7 @@ static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
 static int vv_dialect_shipped(int32_t dialect) {
     switch (dialect) {
     case 0x10000: case 0x10001:  /* enus, engb */
-    case 0x20000: case 0x20001:  /* eses, esus（esmx 未链接，es-MX 走 esus） */
+    case 0x20000: case 0x20001: case 0x20002:  /* eses, esus, esmx */
     case 0x30000: case 0x30001:  /* frfr, frca */
     case 0x40000:                /* dede */
     case 0x50000:                /* itit */
