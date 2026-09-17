@@ -46,7 +46,7 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     LANGS="$LANGS" \
     RULES=c \
     CFLAGS=-fPIC \
-    libevv.a
+    build/libevv.a
 
 # 2. JNI bridge + engine static-linked into one .so.  -fvisibility=hidden
 # keeps engine internals private; JNIEXPORT marks the 8 natives + OnLoad public.

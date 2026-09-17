@@ -50,6 +50,11 @@ jobs:
             -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
+      - name: Build native bridge (openevv engine + JNI core, statically linked(
+        run: bash build_native.sh
+        env:
+          ANDROID_SDK: /usr/local/lib/android/sdk
+
       - name: Build APK
         run: bash build.sh
         env:
