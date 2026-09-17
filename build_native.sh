@@ -35,6 +35,13 @@ mkdir -p "$OUT"
 rm -f "$OUT"/*.so
 
 LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/itit lang/jajp lang/plpl"
+# Mirror the Makefile's SUF naming ( TAGS := notdir(LANGS), minus enus,
+# dash-joined( so we can address the exact archive target without `all'
+# ( which would drag in the cli/ evv tools upstream doesn't ship(.
+SUF=""
+for l in $LANGS; do
+  [ "${l#lang/}" = enus ] || SUF="$SUF-${l#lang/}"
+done
 
 # 1. openevv: static archive, cross-compiled, PIC objects so they bind
 # into a shared library.  RULES=c bakes the rules as generated C (faster
@@ -46,7 +53,7 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     LANGS="$LANGS" \
     RULES=c \
     CFLAGS=-fPIC \
-    all
+    "build/libevv${SUF}.a"
 LIBEVV="$(ls native/openevv/build/libevv*.a 2>/dev/null | head -1 )"
 if [ -z "$LIBEVV" ]; then
   echo "ERROR: openevv archive not built (no native/openevv/build/libevv*.a(" >&2
