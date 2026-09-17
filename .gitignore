@@ -8,15 +8,27 @@ gen/
 tmp_apk/
 R.java
 
+# native bridge artifact ( CI regenerates it every commit(
+native-libs/arm64-v8a/*.so
+
+# vendored openevv engine ( re-include the tree under native/; any
+# standalone openevv/ dir ( old experiments( stays ignored.
+openevv/
+!native/openevv/
+# openevv build intermediates + vendored test/measurement corpus
+# ( 14M of reference audio, not build inputs( — keep them out of git.;
+native/openevv/build/
+native/openevv/lang/measured/
+
 # 系统/编辑器
 .DS_Store
 *.swp
 .idea/
 *.iml
+.local.properties
 
 # 本地临时
 /tmp/
 conv_fixed/
 grtts/
-openevv/
 apple-eloquence-elf/

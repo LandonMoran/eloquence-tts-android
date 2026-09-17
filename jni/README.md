@@ -1,45 +1,43 @@
-# Native 桥接层
+# Native 桥接层（openevv 方案）
 
-本目录包含 native 桥接层源码。当前方案（苹果 Eloquence 完整引擎）实际使用：
+本目录包含 native 桥接层源码，以及引擎本体随 `native/openevv/` 一并 vendor（MIT 协议，
+IBM Eloquence/ETI 的可移植 C 重实现，**不含任何 Apple 代码**）。
 
-- **vvtts_core.c** —— 自研 ECI 桥接层（当前生产方案），编译产物 `libvvtts_core.so`
-- **role_table.h** —— KonaVoice 8 角色参数表头文件
+- **`vvttts_core.c`** —— JNI 桥接层（唯一 native 源码），把 Kotlin 端的 8 个
+  `@JvmStatic external fun` 接到 openevv 的 `eci.h` API。
+  - 对应 `com.xw.vvttts.core.VvtttsCore`（`System.loadLibrary("vvttts_core")`）：
+    `nativeInitEngine` `nativeSynthesize` `nativeSetVoiceParam` `nativeGetVoiceParam`
+    `nativeSetParam` `nativeSetStandardVoice` `nativeStop` `nativeShutdown`
+  - 采样率 `eciSampleRate=1`（11,025 Hz，引擎原生格式，与 Kotlin 播放端一致）
+  - voice 参数沿用原 ECI 编号（gender/head/pitch/fluctuation/roughness/breath/speed/volume），
+    并按 Kotlin 预设表做 pitch 40–120 → openevv 0–100 的钳位。
+激活 voice 恒为 0：
+    `eciCopyVoice(from, 0)` 把 8 个预设（Reed…Eddy、拷到活动 voice 上用 Kotlin 微调。
+  - 语音合成是异步回调（`eciRegisterCallback` 收集 `eciWaveformBuffer`），会话用
+    `eciSpeaking` 轮询等收尾——和旧桥层同一套契约。Kotlin 端已有合成锁，每次会话单线程驱动即可。
 
-以下为早期探索保留（广荣内核方案，已停用）：
+## 构建
 
-- **vvtts_bridge.c** —— 广荣内核桥接层（历史）
-- **vvtts_voice.c** —— 广荣 voice 参数调度（历史）
+`build_native.sh`（仓库根目录）把引擎+桥层**静态链接成单一 `native-libs/arm64-v8a/libvvttts_core.so`，
+并清空该目录下全部旧 `.so`（旧 Apple 语言库 `.so` 已从仓库删除，不再随 APK 分发）。
 
-## 引擎架构说明
+- 交叉编译：`make CC=<NDK aarch64 clang> CFLAGS=-fPIC RULES=c` —— C 规则内联
+  （冷启动/延迟低于 bytecode 规则），10 个 IBM 语言全量打包进同一镜像。
+- 引擎运行时不读任何文件、不依赖任何库（仅 libm）。`.so` 自包含，APK 只需这一个 native 文件。
+- 唯一构件产物路径写死为 `native-libs/arm64-v8a/libvvttts_core.so`（已 gitignore）；CI 每次重新生成。
 
-语音引擎本体是 Apple tvOS 18.2 的 `eci.dylib` 经 `macho2elf` 转换的 `libeci.so`，加上 14 个语言库（`libchs.so` / `libcht.so` / `libjpn.so` / `libkor.so` / `libeng.so` 等）。
+>
 
-`vvtts_core.c` 是这一套引擎的 JNI 封装，核心配方：
+## 测试路径
 
-```
-eciNewEx(dialect) → eciRegisterKlattHooks2(h, 0, 0, 0) → eciRegisterCallback
-→ eciSetOutputBuffer → eciAddText → eciSynthesize → eciSynchronize
-```
+CI（GitHub Actions `build.yml`）是唯一官方构建机器：NDK 出自 runner 镜像，产物直接进
+`build.sh` 的 APK 组装（`cp native-libs/arm64-v8a/*.so tmp_apk/lib/arm64-v8a/`）。本地只允许
+做源码级语法检查；开发机上不得跑 Android SDK/NDK 构建。
 
-关键点：
 
-- `eciAddText` 是标准 2 参（ECIHand, text），非广荣的 4 参
-- 必须注册空 Klatt 钩子，否则 CJK synthesize 内部 `blr` 空指针触发 SIGSEGV
-- 采样率 `SetParam(5,1)` = 11025Hz（苹果只支持 8k / 11.025k，不支持 22050）
+## 语言状态
 
-## 编译 libvvtts_core.so
-
-```bash
-NDK=/usr/lib/android-sdk/ndk/26.3.11579264
-/usr/lib/llvm-18/bin/clang -shared -fPIC -O2 \
-  --target=aarch64-linux-android28 \
-  --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
-  --rtlib=compiler-rt \
-  -resource-dir $NDK/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17 \
-  -I$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include \
-  -o libvvtts_core.so vvtts_core.c -landroid -llog
-```
-
-> 注意：NDK 自带的 `clang` 在部分环境有执行权限问题（`---x--x--x`），可用系统 `llvm-18` 交叉编译替代，通过 `--rtlib=compiler-rt -resource-dir` 解决 `-lgcc` 缺失。
-
-编译产物 `libvvtts_core.so` 放入 `native-libs/arm64-v8a/` 即可（语言库 `.so` 已预编译存放于该目录）。
+引擎打包 10 个 IBM 语言：en-US、en-GB、de-DE、fr-FR、fr-CA、es-ES、es-US、it-IT、
+ja-JP、pl-PL。Kotlin UI 中的 zh/pt/ko/fi 槽位暂由引擎默认回退；添加新语言（含 zh-CN）见
+`native/openevv/docs/language.md`（数据编写工程，非代码工程）；质量改进（采样率 22.05k/44.1k、
+韵律规则微调）同样在文档里。
