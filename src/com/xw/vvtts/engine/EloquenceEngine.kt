@@ -189,23 +189,31 @@ class EloquenceEngine(context: Context) {
         fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
             var volume = volume
             if (volume < 0) volume = 0
-            if (volume > 100) volume = 100
+            if (volume > 100) volume =   100
             // NOTE: unity gain at volume == 100. The engine already applies its own
             // eciVolume (Kona voicing, usually ~90) internally; scaling AGAIN by
             // volume/50.0 would double-amplify any signal and hard-clip the output
             // at the default setting of 100. volume/100.0 is clean unity at default.
+
+            // De-hiss DSP (v4(,: though raw 11,025 Hz Klatt output carries the engine's
+            // natural sibilant hiss straight along ( sharp "s's", super-crispy presence( in
+            // no DAC headroom left here).  A single one-pole LPF ( a=0.87 -> ~3.7 kHz at
+            // 11,025 Hz(,( rolls off exactly the ringing top band, and a tanh soft ceiling
+            // (-2.7 dBFS(,( guarantees headroom so peaks never hard-clip into harshness.
+
             val gain = volume / 100.0f
-            if (gain == 1.0f) return pcm
+            val a = 0.87f
+            val lim =   24000.0f
+            var lp =   0.0f
             val out = ShortArray(pcm.size)
             for (i in pcm.indices) {
-                var v = Math.round(pcm[i] * gain)
-                if (v < -32768) v = -32768
-                if (v > 32767) v = 32767
-                out[i] = v.toShort()
+                val s = pcm[i] * gain
+                lp += a * (s - lp)
+                val o = lim * kotlin.math.tanh(lp / lim)
+                out[i] = o.toInt().toShort()
             }
             return out
         }
-    }
 
     fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
         // 旧广荣通路已废弃，转发到 synthesizeCore（苹果引擎）
