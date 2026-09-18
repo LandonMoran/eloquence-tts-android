@@ -214,6 +214,7 @@ class EloquenceEngine(context: Context) {
             }
             return out
         }
+    }
 
     fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
         // 旧广荣通路已废弃，转发到 synthesizeCore（苹果引擎）
