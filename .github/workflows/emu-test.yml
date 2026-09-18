@@ -7,7 +7,8 @@ on:
 
 jobs:
   emulator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -16,9 +17,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK packages (incl. emulator + x86_64 image)
+      - name: Install Android SDK packages (incl. emulator + arm64-v8a image)
         run: |
-          SDK=/usr/local/lib/android/sdk
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            mkdir -p "$SDK/cmdline-tools" /tmp/cmdtools
+            unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
+            mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
+          fi
           "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$SDK/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
@@ -26,78 +33,80 @@ jobs:
             "build-tools;35.0.0" \
             "ndk;26.3.11579264" \
             "emulator" \
-            "system-images;android-34;google_apis;x86_64"
-          ls "$SDK/emulator/emulator" "$SDK/system-images/android-34/google_apis/x86_64"
+            "system-images;android-34;google_apis;arm64-v8a"
+          ls "$SDK/emulator/emulator" "$SDK/system-images/android-34/google_apis/arm64-v8a"
 
       - name: Fetch Kotlin compiler jars
         run: |
           fetch_jar() {
-                      local out="$1" path="$2" base
-                      for base in "https://repo.maven.apache.org" "https://maven-central.storage-download.googleapis.com" "https://repo1.maven.org"; do
-                        if curl --retry 3 --retry-delay 2 --retry-all-errors -fsSL -o "$out" "$base$path"; then
-                          echo "fetched $path via $base"
-                          return 0
-                        fi
-                      done
-                      echo "ERROR: all mirrors failed for $path" >&2
-                      return 1
-                    }
-                    fetch_jar /tmp/kotlin-compiler-embeddable-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
-                    fetch_jar /tmp/trove4j-1.0.20200330.jar /maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
-                    fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
-                    fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
+            local out="$1" path="$2" base
+            for base in "https://repo.maven.apache.org" "https://maven-central.storage-download.googleapis.com" "https://repo1.maven.org"; do
+              if curl --retry 3 --retry-delay 2 --retry-all-errors -fsSL -o "$out" "$base$path"; then
+                echo "fetched $path via $base"
+                return 0
+              fi
+            done
+            echo "ERROR: all mirrors failed for $path" >&2
+            return 1
+          }
+          fetch_jar /tmp/kotlin-compiler-embeddable-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
+          fetch_jar /tmp/trove4j-1.0.20200330.jar /maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
+          fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
+          fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
 
       - name: Generate keystore
         run: |
           keytool -genkeypair -v \
-            -keystore vvtts.jks -storepass android123 -keypass android123 \
-            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore vvttts.jks -storepass android123 -keypass android123 \
+            -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
-      - name: Build native bridge (x86_64 for emulator)
+      - name: Build native bridge (arm64-v8a)
         run: bash build_native.sh
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
-          ABI: x86_64
+          ABI: arm64-v8a
 
-      - name: Build APK (x86_64)
+      - name: Build APK (arm64-v8a)
         run: bash build.sh
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
-          KEYSTORE: vvtts.jks
+          KEYSTORE: vvttts.jks
           KS_PASS: android123
           KEY_PASS: android123
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
-          ABI: x86_64
+          ABI: arm64-v8a
 
       - name: Boot emulator
         run: |
-          SDK=/usr/local/lib/android/sdk
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           echo "no" | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd \
-            -n test -k "system-images;android-34;google_apis;x86_64" --device "pixel_2" --force
+            -n test -k "system-images;android-34;google_apis;arm64-v8a" --device "pixel_2" --force
           "$SDK/emulator/emulator" -avd test -no-window -no-audio -no-snapshot \
-            -gpu swiftshader_indirect -no-boot-anim &
+            -gpu swiftshader_indirect -no-boot-anim -memory 3072 &
           "$SDK/platform-tools/adb" wait-for-device
-          for i in $(seq 1 120); do
+          BOOT_DONE=0
+          for i in $(seq 1 600); do
             BOOT="$("$SDK/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-            [ "$BOOT" = "1" ] && break
+            if [ "$BOOT" = "1" ]; then BOOT_DONE=1; echo "BOOT_COMPLETED after ${i}x2s"; break; fi
             sleep 2
           done
+          if [ "$BOOT_DONE" != "1" ]; then echo "EMULATOR_BOOT_TIMEOUT"; exit 1; fi
           "$SDK/platform-tools/adb" shell input keyevent 82
           echo "BOOT_DONE"
 
       - name: Install and trigger test button path (autotest hook)
         run: |
-          SDK=/usr/local/lib/android/sdk
-          "$SDK/platform-tools/adb" install -r vvttts_signed.apk
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          "$SDK/platform-tools/adb" install -r vvtts_signed.apk
           "$SDK/platform-tools/adb" logcat -c
-          "$SDK/platform-tools/adb" shell am start -n com.xw.vvttts/.ui.SettingsActivity --es autotest chinese
-          sleep 40
+          "$SDK/platform-tools/adb" shell am start -n com.xw.vvtts/.ui.SettingsActivity --es autotest chinese
+          sleep 120
           "$SDK/platform-tools/adb" shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" || true
-          "$SDK/platform-tools/adb" logcat -d -v threadtime > logcat-full.txt || trueao
-          echo "=== FATAL / CRASH LINES ==="
+          "$SDK/platform-tools/adb" logcat -d -v threadtime > logcat-full.txt || true
+          echo "=== FATAL / CRASH LINES ===="
           grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process com.xw.vvtts" logcat-full.txt | head -40 || echo "NO_CRASH_MARKERS"
-          echo "=== TAIL ==="
+          echo "=== TAIL ===="
           tail -25 logcat-full.txt
 
       - name: Upload logcat

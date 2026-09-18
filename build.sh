@@ -13,7 +13,7 @@ set -u
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 BUILD_TOOLS="${BUILD_TOOLS:-35.0.0}"
 AAPT="$SDK/build-tools/$BUILD_TOOLS/aapt"
-D8="$SDK/cmdline-tools/latest/bin/d8"
+D8="$SDK/build-tools/$BUILD_TOOLS/d8"
 ZIPALIGN="$SDK/build-tools/$BUILD_TOOLS/zipalign"
 APKSIGNER="$SDK/build-tools/$BUILD_TOOLS/apksigner"
 ANDROID_JAR="$SDK/platforms/android-34/android.jar"
@@ -71,7 +71,7 @@ if [ $? -ne 0 ]; then echo "D8 FAILED"; exit 1; fi
 # 2.5. Build the native bridge first if missing (openevv + JNI core,; no Apple code(.
 # CI runs build_native.sh as its own earlier step; this guard covers fresh clones
 # where only build.sh was invoked.  ABI defaults to arm64-v8a (phones); the
-# emulator-test workflow passes ABI=x86_64.
+# emulator-test workflow also uses arm64-v8a.
 ABI="${ABI:-arm64-v8a}"
 if [ ! -f "native-libs/$ABI/libvvtts_core.so" ]; then
   echo "libvvtts_core.so missing -- running build_native.sh first..."

@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-}}"
 # ABI selects the target: phones (arm64-v8a, default( or the emulator-test
-# workflow (x86_64(.  The clang triple follows the same name.
+# workflow (arm64-v8a(.  The clang triple follows the same name.
 ABI="${ABI:-arm64-v8a}"
 TRIPLE="${ABI%%-*}"   # arm64 -> aarch64, x86_64 -> x86_64
 CLANG_NAME="${TRIPLE}-linux-android28-clang"
