@@ -26,14 +26,20 @@ jobs:
             unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
             mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
           fi
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;35.0.0" \
-            "ndk;26.3.11579264" \
-            "emulator" \
-            "system-images;android-34;google_apis;arm64-v8a"
+          sdk() {
+            for i in  1 2 3; do
+              if "$SDK/cmdline-tools/latest/bin/sdkmanager" "$@"; then
+                return 0
+              fi
+              echo "  sdkmanager $* failed (try $i); retrying in 15s..."
+              sleep 15
+            done
+            return 1
+          }
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
+          sdk --licenses > /dev/null || true
+          sdk "platform-tools" "platforms;android-34" "build-tools;35.0.0" "ndk;26.3.11579264"
+          sdk "emulator" "system-images;android-34;google_apis;arm64-v8a"
           ls "$SDK/emulator/emulator" "$SDK/system-images/android-34/google_apis/arm64-v8a"
 
       - name: Fetch Kotlin compiler jars
