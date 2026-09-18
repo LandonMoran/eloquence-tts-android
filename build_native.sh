@@ -14,15 +14,21 @@ cd "$(dirname "$0")"
 
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-}}"
+# ABI selects the target: phones (arm64-v8a, default( or the emulator-test
+# workflow (x86_64(.  The clang triple follows the same name.
+ABI="${ABI:-arm64-v8a}"
+TRIPLE="${ABI%%-*}"   # arm64 -> aarch64, x86_64 -> x86_64
+CLANG_NAME="${TRIPLE}-linux-android28-clang"
+if [ "$ABI" = "arm64-v8a" ]; then CLANG_NAME="aarch64-linux-android28-clang"; fi
 if [ -z "$NDK" ] && [ -d "$SDK/ndk" ]; then
   # Prefer the pinned toolchain when present; else whatever the image ships.
   for cand in "$SDK/ndk/26.3.11579264" "$SDK"/ndk/*/; do
     [ -n "$NDK" ] && continue
-    [ -x "$cand/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" ] && NDK="$cand"
+    [ -x "$cand/toolchains/llvm/prebuilt/linux-x86_64/bin/$CLANG_NAME" ] && NDK="$cand"
   done
 fi
 TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-CLANG="$TC/aarch64-linux-android28-clang"
+CLANG="$TC/$CLANG_NAME"
 if [ ! -x "$CLANG" ]; then
   echo "ERROR: no Android NDK found (looked for $CLANG(.  Set" >&2
   echo "  ANDROID_NDK=/path/to/ndk (or install 'ndk;26.3.11579264' via sdkmanager(.  No" >&2
@@ -30,7 +36,7 @@ if [ ! -x "$CLANG" ]; then
   exit 1
 fi
 
-OUT=native-libs/arm64-v8a
+OUT=native-libs/$ABI
 mkdir -p "$OUT"
 rm -f "$OUT"/*.so
 

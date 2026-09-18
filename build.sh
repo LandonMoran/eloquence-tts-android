@@ -70,20 +70,22 @@ if [ $? -ne 0 ]; then echo "D8 FAILED"; exit 1; fi
 
 # 2.5. Build the native bridge first if missing (openevv + JNI core,; no Apple code(.
 # CI runs build_native.sh as its own earlier step; this guard covers fresh clones
-# where only build.sh was invoked.;
-if [ ! -f native-libs/arm64-v8a/libvvtts_core.so ]; then
+# where only build.sh was invoked.  ABI defaults to arm64-v8a (phones); the
+# emulator-test workflow passes ABI=x86_64.
+ABI="${ABI:-arm64-v8a}"
+if [ ! -f "native-libs/$ABI/libvvtts_core.so" ]; then
   echo "libvvtts_core.so missing -- running build_native.sh first..."
-  bash build_native.sh || exit $?
+  ABI="$ABI" bash build_native.sh || exit $?
 fi
 
 # 3. 组装 APK
 rm -rf tmp_apk vvtts_base.apk vvtts_unsigned.apk vvtts_aligned.apk vvtts_signed.apk
-mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/assets
+mkdir -p "tmp_apk/lib/$ABI" tmp_apk/assets
 
 # 复制所有 dex（multidex）
 cp out_dex/classes*.dex tmp_apk/
 # 复制 native 语言库
-cp native-libs/arm64-v8a/*.so tmp_apk/lib/arm64-v8a/
+cp "native-libs/$ABI"/*.so "tmp_apk/lib/$ABI/"
 # 复制 Lingua 语言模型 JSON（必须放进 APK 根目录）
 cp -r language-models tmp_apk/
 
