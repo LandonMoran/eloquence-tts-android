@@ -119,7 +119,7 @@ class SettingsActivity : Activity() {
         dspBtnLocal.setOnClickListener { showDspDialog() }
         val dspLp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        dspLp.setMargins(0, dp(4), 0,  ​0)
+        dspLp.setMargins(0, dp(4), 0, 0)
         dspBtnLocal.layoutParams = dspLp
         root.addView(dspBtnLocal)
         refreshDspButton(dspBtnLocal)
