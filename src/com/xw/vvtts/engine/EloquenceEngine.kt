@@ -332,16 +332,16 @@ class EloquenceEngine(context: Context) {
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
 
-            // 语速：ECI 无连续 WPM——语速即输出采样率索引（env[5]=eciSampleRate）。
-                        // 引擎以此重采样：11025 Hz=1.0x（基准），22050=2x，32000≈2.9x，
-                        // 44100=4x；8000≈0.73x（低音电话质，供“慢”档）。音色不变。
-
-                        var rateIdx: Int
-                        if (uiRate < 95) { rateIdx = 0 } else if (uiRate < 140) { rateIdx = 1 } else if (uiRate < 180) { rateIdx = 2 } else if (uiRate < 220) { rateIdx = 4 } else { rateIdx = 5 }
-
-                        VvttsCore.setParam(handle, 5, rateIdx)      // eciSampleRate：语速=输出采样率
-
-                        if (rateIdx == 0) { lastSynthRate = 8000 } else if (rateIdx == 2) { lastSynthRate = 22050 } else if (rateIdx == 4) { lastSynthRate = 32000 } else if (rateIdx == 5) { lastSynthRate = 44100 } else { lastSynthRate = 11025 }
+            // 语速：eciSpeed 语音参数（voice param 6，范围 0..250，50=正常语速，
+                        // 与上方 8 参数注入中的 CSV speed 一致）。之前用 eciSampleRate
+                        // （env[5]）重采样充当语速，22050/32000/44100 档把 11 kHz 的
+                        // LPC 声线强行 sinc 拉高，听感全是“滋滋”的静电破音——已废弃。
+                        // 输出采样率固定在本机原生 11025，引擎自己保持音高不变地变速。
+                        val speedVal = Math.round(50.0f * uiRate / 100.0f)
+                            .toInt().coerceIn(5, 250)   // eciSpeed：0..250（引擎上限）
+                        VvtttsCore.setVoiceParam(handle, 0, 6, speedVal)
+                        VvtttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 → 恒 11025 Hz
+                        lastSynthRate = 11025
 
 
             // 音量：CSV 预置 volume + 不做二次 applyVolume 前先设 voice param
