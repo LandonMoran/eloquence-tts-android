@@ -55,7 +55,10 @@ ECIAPI ECIHand ECICALL eciDelete(ECIHand handle)
         return (ECIHand)0;
     api_delete(OI_NEW((OldInst *)handle));
     cpp_delete(OI_CONCAT((OldInst *)handle));
-    free(h);
+    /* The engine instance lives in its own arena (evv_arena, mmap'd), not
+     * malloc; free() here is an invalid free that corrupts the heap
+     * ("double free or corruption (out)" + SIGABRT) on glibc and bionic.
+     * api_delete/cpp_delete dispose the engine side. */
     return (ECIHand)0;
 }
 
@@ -145,3 +148,13 @@ ECIAPI int ECICALL eciCopyVoice(ECIHand handle, int from, int to)
     setRealWorldParamsFromECIParams(dst, -1);
     return 1;
 }
+
+/* Host-only stub: jp_rom_new is never defined in tree; the jajp ROM builder
+ * is not exercised in probes. Never ships on Android (build_native.sh links
+ * this file into libvvtts_core.so; the APK build already resolves fine
+ * without the symbol because evv_rom_maker is not pulled in there). */
+#if !defined(__ANDROID__)
+#include <stddef.h>
+typedef struct EvvRom EvvRom;
+EvvRom *jp_rom_new(const char *dir) { (void)dir; return NULL; }
+#endif
