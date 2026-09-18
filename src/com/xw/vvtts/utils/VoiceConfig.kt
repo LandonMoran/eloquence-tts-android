@@ -27,6 +27,9 @@ class VoiceConfig(context: Context) {
         get() = prefs.getInt(KEY_PITCH, 50)
     val volume: Int
         get() = prefs.getInt(KEY_VOLUME, 100)
+    /** DSP mode: 0 = standard (raw engine output), 1 = enhanced (de-hiss + limiter). Default: standard. */
+    val dspMode: Int
+        get() = prefs.getInt(KEY_DSP_MODE, 0)
     val isAutoDetect: Boolean
         get() = prefs.getBoolean(KEY_AUTO_DETECT, true)
 
@@ -34,6 +37,7 @@ class VoiceConfig(context: Context) {
     fun setRate(r: Int) { prefs.edit().putInt(KEY_RATE, r).commit() }
     fun setPitch(p: Int) { prefs.edit().putInt(KEY_PITCH, p).commit() }
     fun setVolume(v: Int) { prefs.edit().putInt(KEY_VOLUME, v).commit() }
+    fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).commit() }
     fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).commit() }
 
     companion object {
@@ -42,6 +46,7 @@ class VoiceConfig(context: Context) {
         const val KEY_RATE = "rate"
         const val KEY_PITCH = "pitch"
         const val KEY_VOLUME = "volume"
+        const val KEY_DSP_MODE = "dsp_mode"
         const val KEY_AUTO_DETECT = "auto_detect"
 
         // eciDialect 实测值：来自 openevv 各语言模块注册常量

@@ -31,6 +31,7 @@ class SettingsActivity : Activity() {
     private var rateVal: TextView? = null
     private var pitchVal: TextView? = null
     private var volumeVal: TextView? = null
+    private var dspBtn: Button? = null
     private var langBtn: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,7 +113,16 @@ class SettingsActivity : Activity() {
             volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
 
-        // 测试按钮（单一，按当前语言播放对应测试文本）
+        // 音质模式：0=标准（原始音色），1=增强（去嘶声+限幅）；默认标准
+        val dspBtnLocal = Button(this)
+        dspBtn = dspBtnLocal
+        dspBtnLocal.setOnClickListener { showDspDialog() }
+        val dspLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dspLp.setMargins(0, dp(4), 0,  ​0)
+        dspBtnLocal.layoutParams = dspLp
+        root.addView(dspBtnLocal)
+        refreshDspButton(dspBtnLocal)
         val testBtn = Button(this)
         testBtn.text = getString(R.string.test)
         val lp = LinearLayout.LayoutParams(
@@ -538,6 +548,26 @@ class SettingsActivity : Activity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** 音质模式：标准（原始音色）或增强（去嘶声+限幅） */
+    private fun showDspDialog() {
+        val items = arrayOf("标准（原始音色）", "增强（去嘶声）")
+        val cur = voiceConfig!!.dspMode
+        AlertDialog.Builder(this)
+            .setTitle("音质模式")
+            .setSingleChoiceItems(items, cur) { d, which ->
+                voiceConfig!!.setDspMode(which)
+                dspBtn!!.let { refreshDspButton(it) }
+                d.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun refreshDspButton(btn: Button) {
+        val name = if (voiceConfig!!.dspMode == 1) "增强（去嘶声）" else "标准（原始音色）"
+        btn.text = "音质模式：" + name
     }
 
     // SharedPreferences 持久化

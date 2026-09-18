@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.KonaVoice
+import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
 import java.io.FileWriter
@@ -186,25 +187,36 @@ class EloquenceEngine(context: Context) {
         }
 
         @JvmStatic
-        fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
+        fun applyVolume(pcm: ShortArray, volume: Int, mode: Int): ShortArray {
             var volume = volume
             if (volume < 0) volume = 0
-            if (volume > 100) volume =   100
+            if (volume > 100) volume = 100
             // NOTE: unity gain at volume == 100. The engine already applies its own
             // eciVolume (Kona voicing, usually ~90) internally; scaling AGAIN by
             // volume/50.0 would double-amplify any signal and hard-clip the output
             // at the default setting of 100. volume/100.0 is clean unity at default.
 
-            // De-hiss DSP (v4(,: though raw 11,025 Hz Klatt output carries the engine's
-            // natural sibilant hiss straight along ( sharp "s's", super-crispy presence( in
-            // no DAC headroom left here).  A single one-pole LPF ( a=0.87 -> ~3.7 kHz at
-            // 11,025 Hz(,( rolls off exactly the ringing top band, and a tanh soft ceiling
-            // (-2.7 dBFS(,( guarantees headroom so peaks never hard-clip into harshness.
-
             val gain = volume / 100.0f
+
+            // Mode 0 (standard, default): original engine output, gain only.
+            // No filtering or limiter -- preserves the raw Eloquence voice character.
+            if (mode <= 0) {
+                val out = ShortArray(pcm.size)
+                for (i in pcm.indices) {
+                    val s = (pcm[i] * gain).toInt()
+                    out[i] = if (s > 32767) 32767.toShort()
+                    else if (s < -32768) (-32768).toShort()
+                    else s.toShort()
+                }
+                return out
+            }
+
+            // Mode 1 (enhanced): de-hiss DSP. A one-pole LPF (a=0.87 -> ~3.7 kHz
+            // at 11,025 Hz) rolls off the ringing top band, and a tanh soft ceiling
+            // (-2.7 dBFS) guarantees headroom so peaks never hard-clip into harshness.
             val a = 0.87f
-            val lim =   24000.0f
-            var lp =   0.0f
+            val lim = 24000.0f
+            var lp = 0.0f
             val out = ShortArray(pcm.size)
             for (i in pcm.indices) {
                 val s = pcm[i] * gain
@@ -373,7 +385,10 @@ class EloquenceEngine(context: Context) {
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
             val outFile = File(appContext.cacheDir, "core_pcm_out")
             var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
-            if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)
+            // DSP mode read live from prefs so both the Settings test path and the
+            // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
+            val dspMode = VoiceConfig(appContext).dspMode
+            if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume, dspMode)
             pcm
         }
     }
