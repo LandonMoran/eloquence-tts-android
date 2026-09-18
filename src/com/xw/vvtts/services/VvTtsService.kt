@@ -145,9 +145,9 @@ class VvTtsService : TextToSpeechService() {
             }
 
             // 自动检测 + 分片
-            val segments = LanguageDetector.segment(text)
+            val segments = LanguageDetector.segment(text
 
-            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+            var started = false
 
             if (engine == null || !engine!!.isInitialized()) {
                 callback.done()
@@ -184,6 +184,10 @@ class VvTtsService : TextToSpeechService() {
                 }
                 val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
                 if (pcm != null && pcm.size > 0) {
+                    if (!started) {
+                        callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
+                        started = true
+                    }
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
                     var offset = 0

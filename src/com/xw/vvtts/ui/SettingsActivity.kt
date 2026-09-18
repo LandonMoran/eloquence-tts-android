@@ -177,7 +177,7 @@ class SettingsActivity : Activity() {
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
                 voiceConfig!!.pitch, voiceConfig!!.rate)
             if (pcmEn != null && pcmEn.size > 0) {
-                playPcm(pcmEn, EloquenceEngine.SAMPLE_RATE)
+                playPcm(pcmEn, engine!!.getCoreSampleRate())
                 Toast.makeText(this, "已发音（英语）", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "合成失败", Toast.LENGTH_SHORT).show()
@@ -188,7 +188,7 @@ class SettingsActivity : Activity() {
             voiceConfig!!.volume, preset,
             voiceConfig!!.pitch, voiceConfig!!.rate)
         if (pcm != null && pcm.size > 0) {
-            playPcm(pcm, EloquenceEngine.SAMPLE_RATE)
+            playPcm(pcm, engine!!.getCoreSampleRate())
             Toast.makeText(this, "已发音", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "合成失败", Toast.LENGTH_SHORT).show()

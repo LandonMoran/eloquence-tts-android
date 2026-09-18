@@ -332,11 +332,21 @@ class EloquenceEngine(context: Context) {
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
 
-            // 语速：UI 1-300 → ECI speed（苹果基准 50，IBM 范围 0-250）
-            // UI 100% = 50，按比例映射：uiRate/100 * 50
-            var speed = Math.round(voice.speed * (uiRate / 100.0)).toInt()
-            speed = coerceIn(speed, 0, 250)
-            VvttsCore.setVoiceParam(handle, 0, 6, speed)       // eciSpeed
+            // 语速：ECI 无连续 WPM——语速即输出采样率索引（env[5]=eciSampleRate）。
+                        // 引擎以此重采样：11025 Hz=1.0x（基准），22050=2x，32000≈2.9x，
+                        // 44100=4x；8000≈0.73x（低音电话质，供“慢”档）。音色不变。
+
+                        val rateIdx = when {
+                            uiRate < 95 ->     0        // 8000  Hz
+                            uiRate <  140 ->  #####1        // 11025 Hz =  #####1.0x
+                            uiRate <  180 ->  #####2        // 22050 Hz =  #####2.0x
+                            uiRate <  220 ->  #####4        // 32000 Hz ≈  #####2.9x
+                            else ->  #####5        // 44100 Hz =  #####4.0x
+                        }
+                        VvtttsCore.setParam(handle, 5, rateIdx)      // eciSampleRate：语速=输出采样率
+                        lastSynthRate = when (rateIdx) {
+                            0 -> 8000;    1 -> 11025;    2 ->  #####22050;    4 ->  #####32000;    else ->  #####44100
+                        }
 
             // 音量：CSV 预置 volume + 不做二次 applyVolume 前先设 voice param
             VvttsCore.setVoiceParam(handle, 0, 7, voice.vol)   // eciVolume
