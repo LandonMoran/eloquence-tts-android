@@ -166,10 +166,11 @@ ECIAPI int ECICALL eciCopyVoice(ECIHand handle, int from, int to)
     return 1;
 }
 
-/* Host-only stub: jp_rom_new is never defined in tree; the jajp ROM builder
- * is not exercised in probes. Never ships on Android (build_native.sh links
- * this file into libvvtts_core.so; the APK build already resolves fine
- * without the symbol because evv_rom_maker is not pulled in there). */
+/* Host-only stub: the jajp rom module (rom/jajp, which defines jp_rom_new)
+ * is not in this tree, so host probes link this in place of it. Android
+ * builds must NOT define EVV_ROM_JAJP either (see native/openevv/Makefile):
+ * a link-time reference to jp_rom_new is an undefined symbol at dlopen and
+ * the APK dies with UnsatisfiedLinkError before the engine ever runs. */
 #if !defined(__ANDROID__)
 #include <stddef.h>
 typedef struct EvvRom EvvRom;

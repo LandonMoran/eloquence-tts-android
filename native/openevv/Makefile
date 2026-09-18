@@ -175,11 +175,13 @@ LANGLIST := $(BUILD)/delta_langs_$(subst $(space),_,$(TAGS)).c
 # one, and an English build carries none of it.
 ROMS := $(sort $(foreach l,$(LANGS),$(wildcard rom/$(notdir $(l))/*.c)))
 
-# And which of them is linked, said to the one file that has to know how a
-# romanizer is found. IBM answers that question with the presence of a
-# link-time symbol; a build of ours can hold several languages, so it is
-# answered by name.
-ROMDEFS := $(if $(filter jajp,$(TAGS)),-DEVV_ROM_JAJP)
+# A romanizer makes itself known by registering with evv_rom_provide from
+# its own module. rom/jajp does not exist in this tree, so nothing defines
+# jp_rom_new, and the legacy -DEVV_ROM_JAJP pin above must not be set:
+# setting it makes eci_romedll.c take the address of jp_rom_new, an
+# undefined symbol at dlopen time -- the library then cannot load (Android
+# dies with UnsatisfiedLinkError: cannot locate symbol "jp_rom_new").
+# If rom/jajp ever lands, its module registers itself and this stays gone.
 
 # The engine, plus every language beside it. port_win32.c is the Windows
 # porting layer and belongs to the reference build; the two rule tables are
