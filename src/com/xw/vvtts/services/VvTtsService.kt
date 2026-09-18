@@ -100,17 +100,15 @@ class VvTtsService : TextToSpeechService() {
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("ko-KR", Locale.KOREA,
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        voices.add(Voice("zh-CN", Locale.SIMPLIFIED_CHINESE,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        voices.add(Voice("zh-TW", Locale.TRADITIONAL_CHINESE,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        // 仅广告本构建实际链接（可合成）的语言：zh-CN/zh-TW 未链接，
+        // 若仍广告，系统会选本引擎读中文 → 合成返回空 → 回退“正常TTS”→ 表现为“崩溃”。
         return voices
     }
 
     override fun onIsLanguageAvailable(language: String, country: String, variant: String): Int {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
         val lang = language.lowercase()
-        val supported = lang.startsWith("zh") || lang.startsWith("en") || lang.startsWith("de")
+        val supported = lang.startsWith("en") || lang.startsWith("de")
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
                 || lang.startsWith("pt") || lang.startsWith("fi")
                 || lang.startsWith("ja") || lang.startsWith("ko")
