@@ -339,8 +339,8 @@ class EloquenceEngine(context: Context) {
                         // 输出采样率固定在本机原生 11025，引擎自己保持音高不变地变速。
                         val speedVal = Math.round(50.0f * uiRate / 100.0f)
                             .toInt().coerceIn(5, 250)   // eciSpeed：0..250（引擎上限）
-                        VvtttsCore.setVoiceParam(handle, 0, 6, speedVal)
-                        VvtttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 → 恒 11025 Hz
+                        VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
+                        VvttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 → 恒 11025 Hz
                         lastSynthRate = 11025
 
 
