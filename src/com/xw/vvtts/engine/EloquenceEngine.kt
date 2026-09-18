@@ -339,7 +339,7 @@ class EloquenceEngine(context: Context) {
                         var rateIdx: Int
                         if (uiRate < 95) { rateIdx = 0 } else if (uiRate < 140) { rateIdx = 1 } else if (uiRate < 180) { rateIdx = 2 } else if (uiRate < 220) { rateIdx = 4 } else { rateIdx = 5 }
 
-                        VvtttsCore.setParam(handle, 5, rateIdx)      // eciSampleRate：语速=输出采样率
+                        VvttsCore.setParam(handle, 5, rateIdx)      // eciSampleRate：语速=输出采样率
 
                         if (rateIdx == 0) { lastSynthRate = 8000 } else if (rateIdx == 2) { lastSynthRate = 22050 } else if (rateIdx == 4) { lastSynthRate = 32000 } else if (rateIdx == 5) { lastSynthRate = 44100 } else { lastSynthRate = 11025 }
 

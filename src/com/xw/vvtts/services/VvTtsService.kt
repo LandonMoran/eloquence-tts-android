@@ -145,7 +145,7 @@ class VvTtsService : TextToSpeechService() {
             }
 
             // 自动检测 + 分片
-            val segments = LanguageDetector.segment(text
+            val segments = LanguageDetector.segment(text)
 
             var started = false
 
