@@ -31,10 +31,10 @@ jobs:
 
       - name: Fetch Kotlin compiler jars
         run: |
-          curl -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
-          curl -fsSL -o /tmp/trove4j-1.0.20200330.jar https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
-          curl -fsSL -o /tmp/kotlin-stdlib-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25.jar
-          curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
+          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
+          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/trove4j-1.0.20200330.jar https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
+          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/kotlin-stdlib-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25.jar
+          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
 
       - name: Generate keystore
         run: |
