@@ -31,10 +31,21 @@ jobs:
 
       - name: Fetch Kotlin compiler jars
         run: |
-          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
-          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/trove4j-1.0.20200330.jar https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
-          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/kotlin-stdlib-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25.jar
-          curl --retry 6 --retry-delay 3 --retry-all-errors -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
+          fetch_jar() {
+                      local out="$1" path="$2" base
+                      for base in "https://repo.maven.apache.org" "https://maven-central.storage-download.googleapis.com" "https://repo1.maven.org"; do
+                        if curl --retry 3 --retry-delay 2 --retry-all-errors -fsSL -o "$out" "$base$path"; then
+                          echo "fetched $path via $base"
+                          return 0
+                        fi
+                      done
+                      echo "ERROR: all mirrors failed for $path" >&2
+                      return 1
+                    }
+                    fetch_jar /tmp/kotlin-compiler-embeddable-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
+                    fetch_jar /tmp/trove4j-1.0.20200330.jar /maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
+                    fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
+                    fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
 
       - name: Generate keystore
         run: |
