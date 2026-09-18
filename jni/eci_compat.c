@@ -12,6 +12,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "eci.h"
 #include "eci/api/eci_old.h"
@@ -41,10 +42,26 @@ extern int setRealWorldVoiceParam(char *voice, int which, int value);
 extern int getRealWorldVoiceParam(ECIVoice v, int which);
 extern void setRealWorldParamsFromECIParams(char *voice, int which);
 
+extern void evv_port_start(void);
+extern void evvRunStaticInitialisers(void);
+
 /* ---- the 13 eci names the JNI bridge references. ---- */
+
+static pthread_once_t port_boot_once = PTHREAD_ONCE_INIT;
+
+static void port_boot(void)
+{
+    /* Upstream entry points (cli/probe.c( call these before any engine
+     * instance: they bring up the port's threading/audio resources, without
+     * which every engine mutex fails and synthesis stays silent. The JNI
+     * bridge creates instances through eciNewEx, so boot here -- once. */
+    evv_port_start();
+    evvRunStaticInitialisers();
+}
 
 ECIAPI ECIHand ECICALL eciNewEx(int language)
 {
+    pthread_once(&port_boot_once, port_boot);
     return (ECIHand)eo_newEx(language);
 }
 

@@ -24,6 +24,14 @@
 #include <time.h>
 #include "eci.h"
 
+/* The engine's own text layer (upstream cli/probe.c path): the eci*
+ * shims for add/synthesize are inert, so call the et_* entry points
+ * directly.  The handle is opaque (OldInst* in the engine); void* is
+ * ABI-compatible. */
+extern int et_insertIndex(void *h, long index);
+extern int et_addText(void *h, const char *text);
+extern int et_synthesize(void *h);
+
 #define APP_SAMPLES 4096
 
 typedef struct {
@@ -138,8 +146,10 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         free(s);
         return 0;
     }
-    eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk);
     eciRegisterCallback(s->hECI, vv_cb, s);
+    eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk);  /* callback first: engine
+                                                           * refuses a buffer until it has
+                                                           * somewhere to report samples */
     eciSetParam(s->hECI, eciSampleRate, 1); /* 11,025 Hz, the app's rate */
     return (jlong)(intptr_t)s;
 }
@@ -171,9 +181,10 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     s->pcmLen = 0;
 
     eciClearInput(s->hECI);
-    eciAddText(s->hECI, buf);
+    et_insertIndex(s->hECI, 4242);   /* upstream cli probe's index */
+    et_addText(s->hECI, buf);
     s->synthBusy = 1;
-    eciSynthesize(s->hECI);
+    et_synthesize(s->hECI);
     vv_wait_till_done(s);
 
     if (s->pcmLen == 0) return NULL;
