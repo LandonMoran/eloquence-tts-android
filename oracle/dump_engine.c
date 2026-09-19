@@ -128,7 +128,7 @@ static void run_text(ECIHand e, const char *text) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         fprintf(stderr, "usage: %s <dialect-hex> < in.txt\n", argv[0]);
         return 2;
     }

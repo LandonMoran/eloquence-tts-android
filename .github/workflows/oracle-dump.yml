@@ -36,6 +36,7 @@ jobs:
 
       - name: Dump zh-CN (dialect 0x60000
         run: |
+          set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"
@@ -43,6 +44,7 @@ jobs:
 
       - name: Dump zh-TW (dialect 0x60001
         run: |
+          set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"
@@ -50,12 +52,14 @@ jobs:
 
       - name: Dump ko (dialect 0xA0000
         run: |
+          set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
 
       - name: Dump ja (dialect 0x80000
         run: |
+          set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
@@ -64,4 +68,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: oracle-dumps
-          path: oracle/corpus/*.tsv
+          path: "oracle/corpus/*.tsv"
+          if-no-files-found: warn
