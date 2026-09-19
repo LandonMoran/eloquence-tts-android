@@ -62,6 +62,12 @@ jobs:
           DUMP_WORKDIR="$PWD/work_en" DUMP_ONESHOT=1 DUMP_TRACE=1 /tmp/dump_engine 0x10000 < /tmp/en2.txt 2>&1 | tail -2
           echo "--- dump ONESHOT zh-CN ---"
           DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_ONESHOT=1 DUMP_TRACE=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -2
+          echo "--- dump ONESHOT+pinyins zh-CN ---"
+          DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_ONESHOT=1 DUMP_PINYIN=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | grep -E 'pinyins|pcm' | head -4
+          echo "--- dump ONESHOT+phonemes zh-CN ---"
+          DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_ONESHOT=1 DUMP_WANT_PHONEME=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | grep -E 'pcm|phone' | head -4
+          echo "--- dump ONESHOT+both zh-CN ---"
+          DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_ONESHOT=1 DUMP_PINYIN=1 DUMP_WANT_PHONEME=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | grep -E 'pinyins|pcm|phone' | head -5
           echo "--- dump per-line zh-CN (current) ---"
           DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_TRACE=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -4
 
