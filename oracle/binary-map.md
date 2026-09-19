@@ -75,4 +75,15 @@ Sections: .m2e_text 0xfb0..0xb3c42 (~721KB interpreter+compiled rules),
 - PLAN: dump vstmtbl (256 entries), trace each handler's operand width,
   write python LPTA VM, run each syllable -> phone sequence, validate vs
   known pinyin ("zhong1" should yield zh-o-ng + tone allophone(s)).
+- vstmtbl @ 0xbb320 = 44 statements x 0x60 (NOT 256; entries 44+ are other
+  tables). Entry: +0 = NAME string ptr, +8 = handler/type struct.
+  STMT 0-8 = parse-tree field ops: char_count, inp, PHONE(2), morph, word,
+  inton_phr, klatt, syllable, Ms. STMT 9-43 = phone-feature variable pairs:
+  pgmin/pgmout, GAP/a, c/d, r/s, G/H, V/W, 7/8, '/(), `/$, digit/fraction,
+  GAP/_p, _v/_s, _G/_l, _U/_o, undefined/vow, liq/nas, high/mid,
+  unrounded/-, GAP/root, onoma/par, aobjc/be, place/status, ~down/down,
+  !! /alt?, l/h  (= per-feature assignment ops; first col = var name).
+- Driver loop confirmed: statement table = byte stream; starttest(N) at
+  9d60f sets stmt id; lpta_loadp_setscan_l/r loads the RPTA (replacement)
+  side; test_string_s(9d9e8) matches input chars; mark_s(9846f) commits.
 - Same format expected in cht.so / kor.so / jpn.so (shared Alchemy base).
