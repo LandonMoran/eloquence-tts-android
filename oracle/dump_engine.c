@@ -147,7 +147,9 @@ static void run_text(ECIHand e, const char *text) {
         int so_r = Synchronize ? Synchronize(e) : -1;
         int sp_r = Speaking ? Speaking(e) : -1;
         if (getenv("DUMP_TRACE")) fprintf(stderr, "ii=%d synth=%d sync=%d speak=%d\n", ii_r, sy_r, so_r, sp_r);
-        if (sp_r) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
+        /* Bounded spin: engine status can stall without a device; never let a
+         * stuck Speaking hold a row hostage (cap ~1s total). */
+        if (sp_r) { int g = 0; while (Speaking(e) && g++ < 5000) usleep(200); }
         printf("pcm\t%ld\n", g_pcm_samples);
     } else if (getenv("DUMP_NOSYNTH")) {
         printf("pcm\t0\n");
