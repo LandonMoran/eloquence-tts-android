@@ -54,6 +54,7 @@ typedef int     (*fn_SpeakText2)(ECIHand, const char *);
 typedef int     (*fn_GeneratePinyins)(ECIHand, int, void *);
 typedef int     (*fn_GeneratePhonemes)(ECIHand, int, void *);
 typedef void    (*fn_Version)(char *);
+typedef int     (*fn_RegKlattHooks2)(void *, void (*)(void *, void *), void (*)(void *, void *), void *);
 
 static fn_NewEx            NewEx;
 static fn_SetParam        SetParam;
@@ -71,6 +72,7 @@ static fn_SpeakText2 SpeakText2;
 static fn_GeneratePinyins GeneratePinyins;
 static fn_GeneratePhonemes GeneratePhonemes;
 static fn_Version         Version;
+static fn_RegKlattHooks2  RegKlattHooks2;
 
 static void *sym(void *lib, const char *name) {
     void *p = dlsym(lib, name);
@@ -187,27 +189,7 @@ static void run_text(ECIHand e, const char *text) {
     fflush(stdout);
 }
 
-static void klatt_const_noop(void *c, void *u);
-static void klatt_frame_noop(void *f, void *u);
 
-static void setup_klatt_hooks(void) {
-    void *ch = dlopen("lib/chs.so", RTLD_NOW | RTLD_NOLOAD);
-    if (!ch) ch = dlopen("lib/chs.so", RTLD_NOW);
-    if (!ch) { fprintf(stderr, "chs.so reopen failed: %s\n", dlerror()); return; }
-    void (*sc)(void (*)(void *, void *), void *) = (void(*)(void (*)(void*,void*),void*))dlsym(ch, "engsynSetKlattConstHook");
-    void (*sd)(void (*)(void *, void *), void *) = (void(*)(void (*)(void*,void*),void*))dlsym(ch, "engsynSetKlattDynamicHook");
-    if (sc && sd) {
-        sc(klatt_const_noop, NULL);
-        sd(klatt_frame_noop, NULL);
-        fprintf(stderr, "chs klatt hook slots set\n");
-    } else {
-        fprintf(stderr, "chs klatt hooks missing: const=%p dyn=%p\n", (void *)sc, (void *)sd);
-    }
-}
-
-typedef int (*fn_RegKlattHooks2)(void *, void (*)(void *, void *), void (*)(void *, void *), void *);
-static void klatt_const_noop(void *c, void *u) { (void)c; (void)u; }
-static void klatt_frame_noop(void *f, void *u) { (void)f; (void)u; }
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -233,6 +215,7 @@ int main(int argc, char **argv) {
     SpeakTextEx     = (fn_SpeakTextEx)sym(lib, "eciSpeakTextEx");
     SpeakText2      = (fn_SpeakText2)sym(lib, "eciSpeakText2");
     Version          = (fn_Version)sym(lib, "eciVersion");
+    RegKlattHooks2   = (fn_RegKlattHooks2)sym(lib, "eciRegisterKlattHooks2");
     if (!NewEx || !SetParam || !AddText || !Synthesize || !RegisterCallback || !SetOutputBuffer) {
         fprintf(stderr, "eci.so lacks required exports\n");
         return 1;
@@ -240,10 +223,14 @@ int main(int argc, char **argv) {
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
     if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
-    if (getenv("DUMP_KLATT_HOOKS")) {
-        setup_klatt_hooks();
+    /* PROVEN RECIPE (mirrors oracle/probe2.c ARM64 gate): the engine's synth
+     * thread stays silent until the app registers a klatt hook table; passing
+     * NULLs makes the engine use its own defaults and render real audio. */
+    if (RegKlattHooks2) {
+        RegKlattHooks2(eci, NULL, NULL, NULL);
+        if (getenv("DUMP_TRACE")) fprintf(stderr, "klatt hooks2 registered\n");
     } else {
-        fprintf(stderr, "klatt hooks skipped (phoneme-extract mode)\n");
+        fprintf(stderr, "missing eciRegisterKlattHooks2 (engine will be silent)\n");
     }
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     SetParam(eci, PARAM_SYNTHMODE,  1); /* NVDA-driver equivalent: synch to callback buffer */
