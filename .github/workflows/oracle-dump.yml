@@ -39,7 +39,6 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
@@ -49,12 +48,28 @@ jobs:
           taskset -c 0 gdb -q -batch -ex run --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN probe partial rc=${PIPESTATUS[0]}"; fi
           head -14 /tmp/probe.tsv
 
+      - name: A/B want-phoneme (wave vs phoneme stream
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          export DUMP_GENPHON=1
+          export DUMP_PINYIN=1
+          export DUMP_TRACE=1
+          iconv -f UTF-8 -t GB18030 -c "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" > /tmp/gb4.txt
+          echo "--- A: WANT_PHONEME unset (wave mode) ---"
+          unset DUMP_WANT_PHONEME
+          /tmp/dump_engine 0x60000 < /tmp/gb4.txt | awk -F'\t' '/pcm/{c[$2]++} END{for (k in c) print "pcm value",k,":",c[k]}' | sort
+          echo "--- B: WANT_PHONEME=1 (phoneme mode) ---"
+          export DUMP_WANT_PHONEME=1
+          /tmp/dump_engine 0x60000 < /tmp/gb4.txt | awk -F'\t' '/pcm/{c[$2]++} END{for (k in c) print "pcm value",k,":",c[k]}' | sort
+          echo "(empty histogram == no pcm lines printed)"
+
       - name: Dump zh-CN (dialect 0x60000
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
@@ -76,7 +91,6 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
@@ -97,7 +111,6 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
@@ -116,7 +129,6 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
