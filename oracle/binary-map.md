@@ -59,8 +59,20 @@ Sections: .m2e_text 0xfb0..0xb3c42 (~721KB interpreter+compiled rules),
   vretproc 0x997f5, get_parm 0x98fc5, push_ptr_init 0x99224,
   starttest 0x9d60f, adjust_phones 0x75554ish
 
-## NEXT PHASE (LPTA decode)
-Decode the LPTA table format from lpta_loadp_setscan_l + the scan/match
-functions (0x97bee..0x9a000 region), then parse every rule table in
-.m2e_data to produce pinyin->phone-sequence mapping without the runtime.
-Same format should hold for cht/kor/jpn. Verify against pool entries.
+## NEXT PHASE (LPTA decode) — FORMAT CONFIRMED, interpreter build next
+- LPTA = statement bytecode. Each rule table = byte stream of statement codes;
+  per code: handlers via vstmtbl @ 0xbb320 (0x60-byte entries: +0 handler fn,
+  +0x1e type i16; STMTYP(a0d80) = code*0x60 index into vstmtbl).
+- Driver (convert_to_lowercase, 0x2e420..0x2fad1): starttest(N) sets stmt id,
+  lpta_loadp_setscan_l/r (97be0 / 97c70) loads next TABLE from lea'd addr,
+  test_string_s (9d9e8) tests, mark_s (9846f) marks len, lpta_rpta_loadp
+  (9bd26) = RPTA = replacement (phone-emission) side; lpta_loadi/loadf
+  (9c842/9c8b7) load int/float operands; STMTYP via 0xa0d80.
+- Rule tables: lea'd inline in .m2e_text from apply_chi_*_rules (e.g. "e"
+  table at 0xb9fea); test-string tables at 0xb9160+ (sequential 1-byte codes
+  are the statement code stream). Phone pool codes 1-88 = allophone IDs
+  (48 base phoneme names at 0xb5d7e + ~40 tonal/context variants).
+- PLAN: dump vstmtbl (256 entries), trace each handler's operand width,
+  write python LPTA VM, run each syllable -> phone sequence, validate vs
+  known pinyin ("zhong1" should yield zh-o-ng + tone allophone(s)).
+- Same format expected in cht.so / kor.so / jpn.so (shared Alchemy base).
