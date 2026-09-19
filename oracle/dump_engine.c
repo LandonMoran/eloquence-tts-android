@@ -121,11 +121,13 @@ static void run_text(ECIHand e, const char *text) {
     }
     if (AddText) {
         AddText(e, (ECIInputText)text);
-        if (Synthesize) Synthesize(e);
-        if (Synchronize) Synchronize(e);
-        if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
-        if (getenv("DUMP_GENPHON") && GeneratePhonemes) ph_reply(e, 512);
-        printf("pcm\t%ld\n", g_pcm_samples);
+        if (getenv("DUMP_SYNTH") && Synthesize) {
+            Synthesize(e);
+            if (Synchronize) Synchronize(e);
+            if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
+            printf("pcm\t%ld\n", g_pcm_samples);
+        }
+        if (GeneratePhonemes) ph_reply(e, 512);
         fflush(stdout);
     }
 }
@@ -179,8 +181,12 @@ int main(int argc, char **argv) {
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
     if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
+    if (getenv("DUMP_KLATT_HOOKS")) {
         setup_klatt_hooks();
-        SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
+    } else {
+        fprintf(stderr, "klatt hooks skipped (phoneme-extract mode)\n");
+    }
+    SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);

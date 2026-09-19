@@ -40,11 +40,12 @@ jobs:
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
+          export DUMP_GENPHON=1
           pwd
           echo "--- eci.ini ---"
           head -8 eci.ini
-          echo "--- gdb run ---"
-          gdb -q -batch -ex run -ex bt -ex 'x/gx $rsi+0x280' -ex 'x/gx $rsi+0x288' -ex 'x/gx $rsi+0x290' --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -45
+          echo "--- phoneme extract ---"
+          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | sed -n '1,25p'
 
       - name: Dump zh-CN (dialect 0x60000
         run: |
@@ -52,6 +53,7 @@ jobs:
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
+          export DUMP_GENPHON=1
           /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"
           /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
 
@@ -61,6 +63,7 @@ jobs:
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
+          export DUMP_GENPHON=1
           /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"
           /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
 
@@ -70,6 +73,7 @@ jobs:
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
+          export DUMP_GENPHON=1
           /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
 
       - name: Dump ja (dialect 0x80000
@@ -78,6 +82,7 @@ jobs:
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
+          export DUMP_GENPHON=1
           /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
 
       - name: Upload oracle dumps
