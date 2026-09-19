@@ -230,7 +230,6 @@ int main(int argc, char **argv) {
     }
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
-        SetParam(eci, 12,1); /* eciWantWordIndex: index-reply messages on */
     /* Auto-collect pinyin: SynthThread::registerPinyinBuffer(buf, cap) arms
        eciGeneratePinyins (its 0x24dc flag); without it pinyins stay empty. */
     typedef int (*fn_regPb)(void *, void *, long);
