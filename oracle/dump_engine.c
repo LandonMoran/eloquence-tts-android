@@ -130,6 +130,10 @@ static void run_text(ECIHand e, const char *text) {
     }
 }
 
+typedef int (*fn_RegKlattHooks2)(void (*)(void *, void *), void (*)(void *, void *), void *);
+static void klatt_const_noop(void *c, void *u) { (void)c; (void)u; }
+static void klatt_frame_noop(void *f, void *u) { (void)f; (void)u; }
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s <dialect-hex> < in.txt\n", argv[0]);
@@ -157,6 +161,13 @@ int main(int argc, char **argv) {
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
     if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
+    fn_RegKlattHooks2 RegKlattHooks2 = (fn_RegKlattHooks2)sym(lib, "eciRegisterKlattHooks2");
+    if (RegKlattHooks2) {
+        RegKlattHooks2(klatt_const_noop, klatt_frame_noop, NULL);
+        fprintf(stderr, "klatt hooks registered\n");
+    } else {
+        fprintf(stderr, "eciRegisterKlattHooks2 not exported\n");
+    }
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
