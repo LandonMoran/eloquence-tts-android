@@ -45,7 +45,7 @@ jobs:
           echo "--- eci.ini ---"
           head -8 eci.ini
           echo "--- phoneme extract ---"
-          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | sed -n '1,25p'
+          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN probe rc=$rc partial"; sed -n '1,25p' /tmp/probe.tsv
 
       - name: Dump zh-CN (dialect 0x60000
         run: |
@@ -54,8 +54,8 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
-          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"
-          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN zh-cn-sample rc=$rc partial"
+          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN zh-cn-hanzi rc=$rc partial"
 
       - name: Dump zh-TW (dialect 0x60001
         run: |
@@ -64,8 +64,8 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
-          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"
-          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN zh-tw-sample rc=$rc partial"
+          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN zh-tw-hanzi rc=$rc partial"
 
       - name: Dump ko (dialect 0xA0000
         run: |
@@ -74,7 +74,7 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
-          /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
+          /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN ko-sample rc=$rc partial"
 
       - name: Dump ja (dialect 0x80000
         run: |
@@ -83,7 +83,7 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
-          /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
+          /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"; rc=${PIPESTATUS[0]}; [ $rc -ne 0 ] && echo "WARN ja-sample rc=$rc partial"
 
       - name: Upload oracle dumps
         uses: actions/upload-artifact@v4

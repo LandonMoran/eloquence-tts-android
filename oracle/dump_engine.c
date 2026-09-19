@@ -103,8 +103,9 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
         long n = lParam * (PHONEME_LEN + 2); /* sz[5] + wsz[5] per frame */
         printf("phbuf\t%ld\t", lParam);
         hexout(d, (n < 160) ? n : 160);
-        printf("\n");
-        return 1;
+                printf("\n");
+                fflush(stdout);
+                return 1;
     }
     return 1;
 }
@@ -121,14 +122,14 @@ static void run_text(ECIHand e, const char *text) {
     }
     if (AddText) {
         AddText(e, (ECIInputText)text);
-        if (getenv("DUMP_SYNTH") && Synthesize) {
-            Synthesize(e);
-            if (Synchronize) Synchronize(e);
-            if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
-            printf("pcm\t%ld\n", g_pcm_samples);
-        }
-        if (GeneratePhonemes) ph_reply(e, 512);
-        fflush(stdout);
+        if (!getenv("DUMP_NOSYNTH") && Synthesize) {
+                    Synthesize(e);
+                    if (Synchronize) Synchronize(e);
+                    if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
+                    printf("pcm\t%ld\n", g_pcm_samples);
+                }
+                if (GeneratePhonemes) ph_reply(e, 512);
+                fflush(stdout);
     }
 }
 
