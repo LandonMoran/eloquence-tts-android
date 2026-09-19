@@ -1,0 +1,60 @@
+name: oracle-assemble
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: LandonMoran/eloquence-tts-android
+          ref: oracle-dev
+          fetch-depth: 1
+      - name: Fetch pieces
+        uses: actions/download-artifact@v4
+        with:
+          pattern: oracle-piece-*
+          path: pieces
+      - name: Assemble tables
+        run: |
+          set -o pipefail
+          cd pieces
+          : > "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+          for d in 1 2 3 4; do cat "oracle-piece-zh-cn-p$d/output.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+          : > "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          for d in 1 2 3 4; do cat "oracle-piece-zh-tw-p$d/output.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          cp "oracle-piece-ko-p1/output.tsv" "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
+          cp "oracle-piece-ja-p1/output.tsv" "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
+          wc -l "$GITHUB_WORKSPACE/oracle/corpus"/*.tsv
+      - name: Validate oracle tables
+        run: |
+          set -o pipefail
+          cd "$GITHUB_WORKSPACE/oracle/corpus"
+          ok=0
+          for f in zh-cn-hanzi.tsv zh-tw-hanzi.tsv ko-sample.tsv ja-sample.tsv; do
+            pcm=$(grep -c '^pcm' "$f" || true)
+            nonzero=$(awk '/^pcm/{if ($2 > 0) n++} END{print n+0}' "$f")
+            echo "$f: pcm_rows=$pcm nonzero=$nonzero"
+            if [ "$nonzero" -gt 0 ]; then ok=1; fi
+          done
+          if [ "$ok" -eq 0 ]; then
+            echo "FATAL: no dialect produced waveform output (all zero)"
+            exit 1
+          fi
+          echo "VALIDATE-OK: all four tables produced audio"
+      - name: Upload oracle tables
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-tables
+          path: |
+            oracle/corpus/zh-cn-hanzi.tsv
+            oracle/corpus/zh-tw-hanzi.tsv
+            oracle/corpus/ko-sample.tsv
+            oracle/corpus/ja-sample.tsv
+          if-no-files-found: error
