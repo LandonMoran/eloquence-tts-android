@@ -96,17 +96,19 @@ static void ph_reply(ECIHand h, int size) {
 static long g_pcm_samples;
 static int cb(ECIHand h, int msg, long lParam, void *pData) {
     (void)h;
-    if (msg == 0 && lParam > 0) {   /* eciWaveformBuffer */
+    if (msg == MSG_WAVEFORM && lParam > 0) {
         g_pcm_samples += lParam;
         return 1;
     }
-    /* Log EVERY other message type:1-7 (phoneme buffer, index
-       replies, break( raw head of pData( as hex so the offline fitter sees all. */
-    if (msg >= 1 && msg <= 7) {
-           printf("cbmsg\t%d\t%ld\n", msg, lParam);
-           fflush(stdout);
-           return 1;
-       }
+    if (msg == MSG_PHONEME && lParam > 0) {
+        const unsigned char *d = (const unsigned char *)pData;
+        long n = lParam * (PHONEME_LEN + 2); /* sz[5] + wsz[5] per frame */
+        printf("phbuf\t%ld\t", lParam);
+        hexout(d, (n < 160) ? n : 160);
+                printf("\n");
+                fflush(stdout);
+                return 1;
+    }
     return 1;
 }
 
