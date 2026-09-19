@@ -46,7 +46,7 @@ jobs:
           echo "--- eci.ini ---"
           head -8 eci.ini
           echo "--- gdb probe ---"
-          gdb -q -batch -ex run --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN probe partial rc=${PIPESTATUS[0]}"; fi
+          taskset -c 0 gdb -q -batch -ex run --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN probe partial rc=${PIPESTATUS[0]}"; fi
           head -14 /tmp/probe.tsv
 
       - name: Dump zh-CN (dialect 0x60000
