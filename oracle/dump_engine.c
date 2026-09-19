@@ -130,6 +130,13 @@ static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
     if (AddText) {
         AddText(e, (ECIInputText)text);
+        if (getenv("DUMP_PINYIN") && GeneratePinyins) {
+            memset(g_pybuf, 0, 1024);
+            int r = GeneratePinyins(e, (int)strlen(text), g_pybuf);
+            printf("pinyins\t%d\t", r);
+            hexout(g_pybuf, 64);
+            printf("\n");
+        }
         if (!getenv("DUMP_NOSYNTH") && Synthesize) {
             Synthesize(e);
             if (Synchronize) Synchronize(e);
@@ -137,11 +144,6 @@ static void run_text(ECIHand e, const char *text) {
             printf("pcm\t%ld\n", g_pcm_samples);
         }
         if (GeneratePhonemes) ph_reply(e, 512);
-        if (getenv("DUMP_PINYIN")) {
-            printf("pybuf\t");
-            hexout(g_pybuf, 64);
-            printf("\n");
-        }
         fflush(stdout);
     }
 }
