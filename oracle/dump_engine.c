@@ -48,6 +48,9 @@ typedef int     (*fn_Speaking)(ECIHand);
 typedef int     (*fn_Stop)(ECIHand);
 typedef void    (*fn_RegisterCallback)(ECIHand, ECICallback, void *);
 typedef int     (*fn_SetOutputBuffer)(ECIHand, int, short *);
+typedef int     (*fn_AddText2)(ECIHand, const char *, long long, long long, long long, long long);
+typedef int     (*fn_SpeakTextEx)(ECIHand, const char *, int);
+typedef int     (*fn_SpeakText2)(ECIHand, const char *);
 typedef int     (*fn_GeneratePinyins)(ECIHand, int, void *);
 typedef int     (*fn_GeneratePhonemes)(ECIHand, int, void *);
 typedef void    (*fn_Version)(char *);
@@ -62,6 +65,9 @@ static fn_Speaking        Speaking;
 static fn_Stop            Stop;
 static fn_RegisterCallback RegisterCallback;
 static fn_SetOutputBuffer SetOutputBuffer;
+static fn_AddText2 AddText2;
+static fn_SpeakTextEx SpeakTextEx;
+static fn_SpeakText2 SpeakText2;
 static fn_GeneratePinyins GeneratePinyins;
 static fn_GeneratePhonemes GeneratePhonemes;
 static fn_Version         Version;
@@ -128,6 +134,29 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
 
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
+    const char *probe_mode = getenv("DUMP_MODE");
+        if (probe_mode && !strcmp(probe_mode, "addtext2") && AddText2) {
+
+                int r2 = AddText2(e, text, (long long)strlen(text),0,0,0);
+                printf("addtext2\t%d\tpcm\t%ld\n", r2, g_pcm_samples);
+                return;
+            }
+        if (probe_mode && !strcmp(probe_mode, "addtext2")) {
+                printf("addtext2\tmissing\n");
+                return;
+            }
+        if (probe_mode && !strcmp(probe_mode, "speak") && (SpeakTextEx || SpeakText2)) {
+
+                int rr = -1;
+                if (SpeakTextEx)                rr = SpeakTextEx(e, text, 0);
+                else if (SpeakText2)             rr = SpeakText2(e, text);
+                printf("speak\t%d\tpcm\t%ld\n", rr, g_pcm_samples);
+                return;
+            }
+        if (probe_mode && !strcmp(probe_mode, "speak")) {
+                printf("speak\tmissing\n");
+                return;
+            }
     int add_r = -1;
     if (AddText) {
         add_r = AddText(e, (ECIInputText)text);
@@ -200,6 +229,9 @@ int main(int argc, char **argv) {
     SetOutputBuffer = (fn_SetOutputBuffer)sym(lib, "eciSetOutputBuffer");
     GeneratePinyins = (fn_GeneratePinyins)sym(lib, "eciGeneratePinyins");
     GeneratePhonemes= (fn_GeneratePhonemes)sym(lib, "eciGeneratePhonemes");
+    AddText2        = (fn_AddText2)sym(lib, "eciAddText2");
+    SpeakTextEx     = (fn_SpeakTextEx)sym(lib, "eciSpeakTextEx");
+    SpeakText2      = (fn_SpeakText2)sym(lib, "eciSpeakText2");
     Version          = (fn_Version)sym(lib, "eciVersion");
     if (!NewEx || !SetParam || !AddText || !Synthesize || !RegisterCallback || !SetOutputBuffer) {
         fprintf(stderr, "eci.so lacks required exports\n");

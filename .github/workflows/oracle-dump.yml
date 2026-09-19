@@ -75,6 +75,11 @@ jobs:
                 printf "pinyin-mask nonzero=%d allzero=%d\n",nz+0,z+0
               }'
           done
+          echo "--- high-level speak paths (GB18030, 4 rows) ---"
+          for mode in speak addtext2; do
+            echo "[mode=$mode]"
+            DUMP_MODE=$mode /tmp/dump_engine 0x60000 < /tmp/in_gb.txt | grep -E '^speak|^addtext2' || echo "no rows"
+          done
           echo "(empty pcm histogram == no pcm lines; pinyin allzero == text never parsed to pinyin)"
 
       - name: Dump zh-CN (dialect 0x60000
