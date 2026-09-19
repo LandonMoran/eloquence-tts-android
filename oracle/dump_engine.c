@@ -124,26 +124,25 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
         return f;
     }
 
+static unsigned char g_pybuf[8192];
+
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
-    if (getenv("DUMP_PINYIN") && GeneratePinyins) {
-        static unsigned char pbuf[4096];
-        memset(pbuf, 0, sizeof(pbuf));
-        int r = GeneratePinyins(e, (int)strlen(text), pbuf);
-        printf("pinyins\t%d\t", r);
-        hexout(pbuf, 128);
-        printf("\t%.20s\n", text);
-    }
     if (AddText) {
         AddText(e, (ECIInputText)text);
         if (!getenv("DUMP_NOSYNTH") && Synthesize) {
-                    Synthesize(e);
-                    if (Synchronize) Synchronize(e);
-                    if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
-                    printf("pcm\t%ld\n", g_pcm_samples);
-                }
-                if (GeneratePhonemes) ph_reply(e, 512);
-                fflush(stdout);
+            Synthesize(e);
+            if (Synchronize) Synchronize(e);
+            if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
+            printf("pcm\t%ld\n", g_pcm_samples);
+        }
+        if (GeneratePhonemes) ph_reply(e, 512);
+        if (getenv("DUMP_PINYIN")) {
+            printf("pybuf\t");
+            hexout(g_pybuf, 64);
+            printf("\n");
+        }
+        fflush(stdout);
     }
 }
 
@@ -203,6 +202,16 @@ int main(int argc, char **argv) {
     }
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
+    /* Auto-collect pinyin: SynthThread::registerPinyinBuffer(buf, cap) arms
+       eciGeneratePinyins (its 0x24dc flag); without it pinyins stay empty. */
+    typedef int (*fn_regPb)(void *, void *, long);
+    fn_regPb regPb = (fn_regPb)sym(lib, "_ZN11SynthThread20registerPinyinBufferEPvl");
+    if (regPb) {
+        regPb(*(void **)eci, g_pybuf, (long)sizeof(g_pybuf));
+        fprintf(stderr, "pinyin buffer registered\n");
+    } else {
+        fprintf(stderr, "registerPinyinBuffer missing\n");
+    }
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     SetOutputBuffer(eci, 4096, chunk);
