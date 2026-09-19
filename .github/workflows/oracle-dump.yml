@@ -44,7 +44,7 @@ jobs:
           echo "--- eci.ini ---"
           head -8 eci.ini
           echo "--- gdb run ---"
-          gdb -q -batch -ex run -ex bt --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -45
+          gdb -q -batch -ex run -ex bt -ex 'x/gx $rsi+0x280' -ex 'x/gx $rsi+0x288' -ex 'x/gx $rsi+0x290' --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -45
 
       - name: Dump zh-CN (dialect 0x60000
         run: |

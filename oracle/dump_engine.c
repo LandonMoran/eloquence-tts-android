@@ -164,7 +164,7 @@ int main(int argc, char **argv) {
     fn_RegKlattHooks2 RegKlattHooks2 = (fn_RegKlattHooks2)sym(lib, "eciRegisterKlattHooks2");
     if (RegKlattHooks2) {
         RegKlattHooks2(eci, klatt_const_noop, klatt_frame_noop, NULL);
-        fprintf(stderr, "klatt hooks registered\n");
+        fprintf(stderr, "klatt hooks registered (noop_const=%p noop_frame=%p)\n", (void *)klatt_const_noop, (void *)klatt_frame_noop);
     } else {
         fprintf(stderr, "eciRegisterKlattHooks2 not exported\n");
     }
