@@ -28,8 +28,24 @@ jobs:
           curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-aarch64.tar.gz"
           tar -xzf aee.tar.gz
           cd apple-eloquence-elf-1.2.3-linux-aarch64
-          sed -i 's|/usr/lib/eloquence|'"$PWD"'/lib|g' eci.ini
           cc -O0 -g -rdynamic -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
+
+      - name: Prep oracle workdirs (gate layout, minimal ini + per-dialect libs)
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          mkdir -p work_en work_zh_cn work_zh_tw work_ko work_ja
+          cp lib/eci.so lib/enu.so work_en/
+          cp lib/eci.so lib/chs.so lib/chsrom.so work_zh_cn/
+          cp lib/eci.so lib/cht.so lib/chtrom.so work_zh_tw/
+          cp lib/eci.so lib/kor.so lib/korrom.so work_ko/
+          cp lib/eci.so lib/jpn.so lib/jpnrom.so work_ja/
+          printf '[1.0]\nPath=./enu.so\nVersion=6.1\n' > work_en/eci.ini
+          printf '[6.0]\nPath=./chs.so\nPath_Rom=./chsrom.so\nVersion=6.1\n' > work_zh_cn/eci.ini
+          printf '[6.1]\nPath=./cht.so\nPath_Rom=./chtrom.so\nVersion=6.1\n' > work_zh_tw/eci.ini
+          printf '[10.0]\nPath=./kor.so\nPath_Rom=./korrom.so\nVersion=6.1\n' > work_ko/eci.ini
+          printf '[8.0]\nPath=./jpn.so\nPath_Rom=./jpnrom.so\nVersion=6.1\n' > work_ja/eci.ini
+          echo prep-ok; ls work_zh_cn
 
       - name: Generate corpora
         run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
@@ -42,6 +58,7 @@ jobs:
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
+          export DUMP_WORKDIR="$PWD/work_zh_cn"
           echo "--- eci.ini ---"
           head -8 eci.ini
           echo "--- gdb probe ---"
@@ -56,6 +73,7 @@ jobs:
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
+          export DUMP_WORKDIR="$PWD/work_zh_cn"
           unset DUMP_WANT_PHONEME
           s="$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt"
           iconv -f UTF-8 -t GB18030 -c "$s" > /tmp/in_gb.txt
@@ -67,7 +85,7 @@ jobs:
               UTF-16LE) f=/tmp/in_u16.txt;;
             esac
             echo "--- ENC=$enc ---"
-            /tmp/dump_engine 0x60000 < "$f" | awk -F'\t' '
+            DUMP_WORKDIR="$PWD/work_zh_cn" /tmp/dump_engine 0x60000 < "$f" | awk -F'\t' '
               /pcm/{c[$2]++}
               /pinyins/{if (substr($3,1,80) ~ /[1-9]/) nz++; else z++}
               END{
@@ -78,14 +96,14 @@ jobs:
           echo "--- high-level speak paths (GB18030, 4 rows) ---"
           for mode in speak addtext2; do
             echo "[mode=$mode]"
-            DUMP_MODE=$mode /tmp/dump_engine 0x60000 < /tmp/in_gb.txt | grep -E '^speak|^addtext2' || echo "no rows"
+            DUMP_MODE=$mode DUMP_WORKDIR="$PWD/work_zh_cn" /tmp/dump_engine 0x60000 < /tmp/in_gb.txt | grep -E '^speak|^addtext2' || echo "no rows"
           done
           echo "--- ENGLISH CONTROL (dialect 0x10000, enu.so) ---"
-          printf 'Hello, world.\\nThis is a test sentence.\\n' > /tmp/en2.txt
-          /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\\t' '/pcm/{c[$2]++; if ($2>0) nz++} END{printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\\nnonzero=%d\\n", nz+0}'
+          printf 'Hello, world.\nThis is a test sentence.\n' > /tmp/en2.txt
+          DUMP_WORKDIR="$PWD/work_en" /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{c[$2]++; if ($2>0) nz++} END{printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\nnonzero=%d\n", nz+0}'
           echo "--- ENGLISH CONTROL via speak (eciSpeakTextEx) ---"
-          DUMP_MODE=speak /tmp/dump_engine 0x10000 < /tmp/en2.txt | grep -E '^speak' || true
-          en_nz=$(/tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
+          DUMP_MODE=speak DUMP_WORKDIR="$PWD/work_en" /tmp/dump_engine 0x10000 < /tmp/en2.txt | grep -E '^speak' || true
+          en_nz=$(DUMP_WORKDIR="$PWD/work_en" /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
           if [ "$en_nz" = "0" ]; then
             echo "FATAL: engine renders no audio even for English on this host"
             exit 1
@@ -100,7 +118,8 @@ jobs:
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
-          # UTF-8 control (current behavior)
+                    export DUMP_WORKDIR="$PWD/work_zh_cn"
+                  # UTF-8 control (current behavior)
           taskset -c 0 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" 2>/tmp/zh-cn-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-sample partial rc=${PIPESTATUS[0]}"; fi
           # GB18030 (IBM dialect default: eciMandarinChinese = GB2312)
           iconv -f UTF-8 -t GB18030 -c "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" > /tmp/zh-cn-gb.txt
@@ -121,6 +140,7 @@ jobs:
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
+          export DUMP_WORKDIR="$PWD/work_zh_tw"
           # UTF-8 control
           taskset -c 0 /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" 2>/tmp/zh-tw-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-sample partial rc=${PIPESTATUS[0]}"; fi
           # Big5 (eciTaiwaneseMandarin
@@ -141,6 +161,7 @@ jobs:
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
+          export DUMP_WORKDIR="$PWD/work_ko"
           # UTF-8 control
           taskset -c 0 /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv" 2>/tmp/ko-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ko-sample partial rc=${PIPESTATUS[0]}"; fi
           # UHC (eciKorean = UHC fallback
@@ -159,6 +180,7 @@ jobs:
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
           export DUMP_TRACE=1
+          export DUMP_WORKDIR="$PWD/work_ja"
           # UTF-8 control
           taskset -c 0 /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv" 2>/tmp/ja-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ja-sample partial rc=${PIPESTATUS[0]}"; fi
           # EUC-JP (eciStandardJapanese = SJIS; try Shift_JIS first

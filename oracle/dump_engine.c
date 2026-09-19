@@ -184,7 +184,9 @@ int main(int argc, char **argv) {
         return 2;
     }
     long dialect = strtol(argv[1], NULL, 16);
-    void *lib = dlopen("./lib/eci.so", RTLD_NOW | RTLD_GLOBAL);
+    const char *wd = getenv("DUMP_WORKDIR");
+    if (wd && chdir(wd) != 0) { perror("DUMP_WORKDIR"); return 1; }
+    void *lib = dlopen("./eci.so", RTLD_NOW | RTLD_GLOBAL); /* gate layout: work dir holds eci.so + dialect libs + minimal eci.ini */
     if (!lib) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
     NewEx            = (fn_NewEx)sym(lib, "eciNewEx");
     SetParam        = (fn_SetParam)sym(lib, "eciSetParam");
