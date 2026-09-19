@@ -135,10 +135,10 @@ jobs:
           set -o pipefail
           cd "$GITHUB_WORKSPACE/oracle/corpus"
           ok=0
-          for f in zh-cn-sample.tsv zh-cn-sample-gb.tsv zh-tw-sample.tsv zh-tw-sample-big5.tsv ko-sample.tsv ko-sample-uhc.tsv ja-sample.tsv ja-sample-sjis.tsv; do
+          for f in zh-cn-sample.tsv zh-cn-sample-gb.tsv zh-cn-hanzi.tsv zh-tw-sample.tsv zh-tw-sample-big5.tsv zh-tw-hanzi.tsv ko-sample.tsv ko-sample-uhc.tsv ja-sample.tsv ja-sample-sjis.tsv; do
             if [ -f "$f" ]; then
               pcm=$(grep -c '^pcm' "$f" || true)
-              nonzero=$(grep '^pcm' "$f" | grep -vc '\t0$' || true)
+              nonzero=$(awk -F'\t' '/^pcm/{if ($2 > 0) n++} END{print n+0}' "$f")
               echo "$f: pcm_rows=$pcm nonzero=$nonzero"
               if [ "$nonzero" -gt 0 ]; then ok=1; fi
             fi

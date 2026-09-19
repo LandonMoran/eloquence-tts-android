@@ -43,6 +43,7 @@ typedef int     (*fn_SetParam)(ECIHand, int, int);
 typedef int     (*fn_AddText)(ECIHand, ECIInputText);
 typedef int     (*fn_Synthesize)(ECIHand);
 typedef int     (*fn_Synchronize)(ECIHand);
+typedef int     (*fn_InsertIndex)(ECIHand, int);
 typedef int     (*fn_Speaking)(ECIHand);
 typedef int     (*fn_Stop)(ECIHand);
 typedef void    (*fn_RegisterCallback)(ECIHand, ECICallback, void *);
@@ -56,6 +57,7 @@ static fn_SetParam        SetParam;
 static fn_AddText         AddText;
 static fn_Synthesize      Synthesize;
 static fn_Synchronize     Synchronize;
+static fn_InsertIndex     InsertIndex;
 static fn_Speaking        Speaking;
 static fn_Stop            Stop;
 static fn_RegisterCallback RegisterCallback;
@@ -140,10 +142,11 @@ static void run_text(ECIHand e, const char *text) {
         printf("\t%.20s\n", text);
     }
     if (add_r && !getenv("DUMP_NOSYNTH") && Synthesize) {
+        int ii_r = InsertIndex ? InsertIndex(e, 0xFFFF) : -1; /* END_STRING_MARK */
         int sy_r = Synthesize(e);
         int so_r = Synchronize ? Synchronize(e) : -1;
         int sp_r = Speaking ? Speaking(e) : -1;
-        if (getenv("DUMP_TRACE")) fprintf(stderr, "synth=%d sync=%d speak=%d\n", sy_r, so_r, sp_r);
+        if (getenv("DUMP_TRACE")) fprintf(stderr, "ii=%d synth=%d sync=%d speak=%d\n", ii_r, sy_r, so_r, sp_r);
         if (sp_r) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
         printf("pcm\t%ld\n", g_pcm_samples);
     } else if (getenv("DUMP_NOSYNTH")) {
@@ -188,6 +191,7 @@ int main(int argc, char **argv) {
     AddText         = (fn_AddText)sym(lib, "eciAddText");
     Synthesize      = (fn_Synthesize)sym(lib, "eciSynthesize");
     Synchronize     = (fn_Synchronize)sym(lib, "eciSynchronize");
+    InsertIndex     = (fn_InsertIndex)sym(lib, "eciInsertIndex");
     Speaking        = (fn_Speaking)sym(lib, "eciSpeaking");
     Stop            = (fn_Stop)sym(lib, "eciStop");
     RegisterCallback= (fn_RegisterCallback)sym(lib, "eciRegisterCallback");
@@ -208,6 +212,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "klatt hooks skipped (phoneme-extract mode)\n");
     }
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
+    SetParam(eci, PARAM_SYNTHMODE,  1); /* NVDA-driver equivalent: synch to callback buffer */
+    SetParam(eci, PARAM_INPUTTYPE,  1); /* text input (per IBM SDK eci.h( */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
