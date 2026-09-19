@@ -109,8 +109,6 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
     return 1;
 }
 
-static void hook_slots_zero(char *eci);
-
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
     if (getenv("DUMP_PINYIN") && GeneratePinyins) {
@@ -123,9 +121,6 @@ static void run_text(ECIHand e, const char *text) {
     }
     if (AddText) {
         AddText(e, (ECIInputText)text);
-        /* SynthThread hook slots get clobbered during setup; re-zero right
-           before synthesis. NULL makes the Klatt dispatcher safe. */
-        hook_slots_zero(e);
         if (Synthesize) Synthesize(e);
         if (Synchronize) Synchronize(e);
         if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
@@ -135,13 +130,19 @@ static void run_text(ECIHand e, const char *text) {
     }
 }
 
-static void hook_slots_zero(char *eci) {
-    void *stt = *(void **)eci;
-    fprintf(stderr, "pre-synth fields 0x280=%p 0x288=%p 0x290=%p\n",
-            *(void **)((char *)stt + 0x280), *(void **)((char *)stt + 0x288), *(void **)((char *)stt + 0x290));
-    *(void **)((char *)stt + 0x280) = NULL;
-    *(void **)((char *)stt + 0x288) = NULL;
-    *(void **)((char *)stt + 0x290) = NULL;
+static void setup_klatt_hooks(void) {
+    void *ch = dlopen("lib/chs.so", RTLD_NOW | RTLD_NOLOAD);
+    if (!ch) ch = dlopen("lib/chs.so", RTLD_NOW);
+    if (!ch) { fprintf(stderr, "chs.so reopen failed: %s\n", dlerror()); return; }
+    void (*sc)(void (*)(void *, void *), void *) = (void(*)(void (*)(void*,void*),void*))dlsym(ch, "engsynSetKlattConstHook");
+    void (*sd)(void (*)(void *, void *), void *) = (void(*)(void (*)(void*,void*),void*))dlsym(ch, "engsynSetKlattDynamicHook");
+    if (sc && sd) {
+        sc(klatt_const_noop, NULL);
+        sd(klatt_frame_noop, NULL);
+        fprintf(stderr, "chs klatt hook slots set\n");
+    } else {
+        fprintf(stderr, "chs klatt hooks missing: const=%p dyn=%p\n", (void *)sc, (void *)sd);
+    }
 }
 
 typedef int (*fn_RegKlattHooks2)(void *, void (*)(void *, void *), void (*)(void *, void *), void *);
@@ -175,17 +176,8 @@ int main(int argc, char **argv) {
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
     if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
-    /* The ELF conversion doesn't zero SynthThread's hook slots; the original
-       Apple allocator did. A garbage fn pointer there crashes the Klatt
-       dispatcher. NULL is the safe fallback (dispatcher returns untouched). */
-    void *stt = *(void **)eci;      /* SynthThread* = first member of ECIinstance */
-    fprintf(stderr, "synththread=%p fields 0x280=%p 0x288=%p 0x290=%p\n",
-            stt, *(void **)((char *)stt + 0x280), *(void **)((char *)stt + 0x288), *(void **)((char *)stt + 0x290));
-    *(void **)((char *)stt + 0x280) = NULL;
-    *(void **)((char *)stt + 0x288) = NULL;
-    *(void **)((char *)stt + 0x290) = NULL;
-    fprintf(stderr, "klatt hook slots zeroed\n");
-    SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
+        setup_klatt_hooks();
+        SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
