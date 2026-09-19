@@ -111,7 +111,7 @@ jobs:
               UTF-16LE) f=/tmp/in_u16.txt;;
             esac
             echo "--- ENC=$enc ---"
-            DUMP_WORKDIR="$PWD/work_zh_cn" /tmp/dump_engine 0x60000 < "$f" | awk -F'\t' '
+            DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_ONESHOT=1 /tmp/dump_engine 0x60000 < "$f" | awk -F'\t' '
               /pcm/{c[$2]++}
               /pinyins/{if (substr($3,1,80) ~ /[1-9]/) nz++; else z++}
               END{
@@ -126,96 +126,137 @@ jobs:
           done
           echo "--- ENGLISH CONTROL (dialect 0x10000, enu.so) ---"
           printf 'Hello, world.\nThis is a test sentence.\n' > /tmp/en2.txt
-          DUMP_WORKDIR="$PWD/work_en" /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{c[$2]++; if ($2>0) nz++} END{printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\nnonzero=%d\n", nz+0}'
+          DUMP_WORKDIR="$PWD/work_en" DUMP_ONESHOT=1 /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{c[$2]++; if ($2>0) nz++} END{printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\nnonzero=%d\n", nz+0}'
           echo "--- ENGLISH CONTROL via speak (eciSpeakTextEx) ---"
           DUMP_MODE=speak DUMP_WORKDIR="$PWD/work_en" /tmp/dump_engine 0x10000 < /tmp/en2.txt | grep -E '^speak' || true
-          en_nz=$(DUMP_WORKDIR="$PWD/work_en" /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
+          en_nz=$(DUMP_WORKDIR="$PWD/work_en" DUMP_ONESHOT=1 /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
           if [ "$en_nz" = "0" ]; then
             echo "FATAL: engine renders no audio even for English on this host"
             exit 1
           fi
           echo "(empty pcm histogram == no pcm lines; pinyin allzero == text never parsed to pinyin)"
 
-      - name: Dump zh-CN (dialect 0x60000
+      - name: Dump zh-CN (dialect 0x60000)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_GENPHON=1
-          export DUMP_PINYIN=1
-          export DUMP_TRACE=1
-                    export DUMP_WORKDIR="$PWD/work_zh_cn"
-                  # UTF-8 control (current behavior)
-          taskset -c 0 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" 2>/tmp/zh-cn-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-sample partial rc=${PIPESTATUS[0]}"; fi
-          # GB18030 (IBM dialect default: eciMandarinChinese = GB2312)
-          iconv -f UTF-8 -t GB18030 -c "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" > /tmp/zh-cn-gb.txt
-          taskset -c 0 /tmp/dump_engine 0x60000 < /tmp/zh-cn-gb.txt | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample-gb.tsv" 2>/tmp/zh-cn-gb.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-sample-gb partial rc=${PIPESTATUS[0]}"; fi
+          export DUMP_WORKDIR="$PWD/work_zh_cn"
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          s="$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt"
+          echo "--- zh-cn sample UTF-8 (one row per line, one-shot) ---"
+          : > /tmp/z1.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x60000 >> /tmp/z1.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/z1.tsv
+          done < "$s"
+          cp /tmp/z1.tsv "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"
+          echo "--- zh-cn sample GB18030 ---"
+          : > /tmp/z2.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | iconv -f UTF-8 -t GB18030 -c | taskset -c 0 /tmp/dump_engine 0x60000 >> /tmp/z2.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/z2.tsv
+          done < "$s"
+          cp /tmp/z2.tsv "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample-gb.tsv"
+          echo "--- zh-cn FULL hanzi sweep (GB18030) ---"
           iconv -f UTF-8 -t GB18030 -c "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" > /tmp/hanzi-gb.txt 2>/dev/null || true
-          wc -l /tmp/hanzi-gb.txt
-          taskset -c 0 /tmp/dump_engine 0x60000 < /tmp/hanzi-gb.txt | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-hanzi partial rc=${PIPESTATUS[0]}"; fi
-          echo "--- utf8 rc trace ---"; head -4 /tmp/zh-cn-utf8.err
-          echo "--- gb rc trace ---"; head -4 /tmp/zh-cn-gb.err
-          echo "--- zh-cn utf8 rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" || true
-          echo "--- zh-cn gb rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample-gb.tsv" || true
+          wc -l < /tmp/hanzi-gb.txt
+          : > "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x60000 >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+            printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+          done < /tmp/hanzi-gb.txt
+          echo "--- zh-cn sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" || true
+          echo "--- zh-cn hanzi rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv" || true
 
-      - name: Dump zh-TW (dialect 0x60001
+      - name: Dump zh-TW (dialect 0x60001)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_GENPHON=1
-          export DUMP_PINYIN=1
-          export DUMP_TRACE=1
           export DUMP_WORKDIR="$PWD/work_zh_tw"
-          # UTF-8 control
-          taskset -c 0 /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" 2>/tmp/zh-tw-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-sample partial rc=${PIPESTATUS[0]}"; fi
-          # Big5 (eciTaiwaneseMandarin
-          iconv -f UTF-8 -t BIG5 -c "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" > /tmp/zh-tw-big5.txt
-          taskset -c 0 /tmp/dump_engine 0x60001 < /tmp/zh-tw-big5.txt | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample-big5.tsv" 2>/tmp/zh-tw-big5.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-sample-big5 partial rc=${PIPESTATUS[0]}"; fi
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          s="$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt"
+          echo "--- zh-tw sample UTF-8 ---"
+          : > /tmp/t1.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x60001 >> /tmp/t1.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/t1.tsv
+          done < "$s"
+          cp /tmp/t1.tsv "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"
+          echo "--- zh-tw sample BIG5 ---"
+          : > /tmp/t2.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | iconv -f UTF-8 -t BIG5 -c | taskset -c 0 /tmp/dump_engine 0x60001 >> /tmp/t2.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/t2.tsv
+          done < "$s"
+          cp /tmp/t2.tsv "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample-big5.tsv"
+          echo "--- zh-tw FULL hanzi sweep (BIG5) ---"
           iconv -f UTF-8 -t BIG5 -c "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" > /tmp/hanzi-big5.txt 2>/dev/null || true
-          taskset -c 0 /tmp/dump_engine 0x60001 < /tmp/hanzi-big5.txt | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-hanzi partial rc=${PIPESTATUS[0]}"; fi
-          echo "--- zh-tw utf8 rc ---"; head -3 /tmp/zh-tw-utf8.err
-          echo "--- zh-tw big5 rc ---"; head -3 /tmp/zh-tw-big5.err
-          echo "--- zh-tw utf8 pcm ---"; grep '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" | head -3
-          echo "--- zh-tw big5 pcm ---"; grep '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample-big5.tsv" | head -3
+          wc -l < /tmp/hanzi-big5.txt
+          : > "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x60001 >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+            printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          done < /tmp/hanzi-big5.txt
+          echo "--- zh-tw sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" || true
 
-      - name: Dump ko (dialect 0xA0000
+      - name: Dump ko (dialect 0xA0000)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_GENPHON=1
-          export DUMP_PINYIN=1
-          export DUMP_TRACE=1
           export DUMP_WORKDIR="$PWD/work_ko"
-          # UTF-8 control
-          taskset -c 0 /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv" 2>/tmp/ko-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ko-sample partial rc=${PIPESTATUS[0]}"; fi
-          # UHC (eciKorean = UHC fallback
-          iconv -f UTF-8 -t UHC -c "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" > /tmp/ko-uhc.txt
-          taskset -c 0 /tmp/dump_engine 0xA0000 < /tmp/ko-uhc.txt | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample-uhc.tsv" 2>/tmp/ko-uhc.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ko-sample-uhc partial rc=${PIPESTATUS[0]}"; fi
-          echo "--- ko utf8 rc ---"; head -3 /tmp/ko-utf8.err
-          echo "--- ko uhc rc ---"; head -3 /tmp/ko-uhc.err
-          echo "--- ko utf8 pcm ---"; grep '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv" | head -3
-          echo "--- ko uhc pcm ---"; grep '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ko-sample-uhc.tsv" | head -3
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          s="$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt"
+          echo "--- ko sample UTF-8 ---"
+          : > /tmp/k1.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0xA0000 >> /tmp/k1.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/k1.tsv
+          done < "$s"
+          cp /tmp/k1.tsv "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
+          echo "--- ko sample UHC ---"
+          : > /tmp/k2.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | iconv -f UTF-8 -t UHC -c | taskset -c 0 /tmp/dump_engine 0xA0000 >> /tmp/k2.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/k2.tsv
+          done < "$s"
+          cp /tmp/k2.tsv "$GITHUB_WORKSPACE/oracle/corpus/ko-sample-uhc.tsv"
+          echo "--- ko sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv" || true
 
-      - name: Dump ja (dialect 0x80000
+      - name: Dump ja (dialect 0x80000)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_GENPHON=1
-          export DUMP_PINYIN=1
-          export DUMP_TRACE=1
           export DUMP_WORKDIR="$PWD/work_ja"
-          # UTF-8 control
-          taskset -c 0 /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv" 2>/tmp/ja-utf8.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ja-sample partial rc=${PIPESTATUS[0]}"; fi
-          # EUC-JP (eciStandardJapanese = SJIS; try Shift_JIS first
-          iconv -f UTF-8 -t SHIFT_JIS -c "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" > /tmp/ja-sjis.txt
-          taskset -c 0 /tmp/dump_engine 0x80000 < /tmp/ja-sjis.txt | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample-sjis.tsv" 2>/tmp/ja-sjis.err; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ja-sample-sjis partial rc=${PIPESTATUS[0]}"; fi
-          echo "--- ja utf8 rc ---"; head -3 /tmp/ja-utf8.err
-          echo "--- ja sjis rc ---"; head -3 /tmp/ja-sjis.err
-          echo "--- ja utf8 pcm ---"; grep '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv" | head -3
-          echo "--- ja sjis pcm ---"; grep '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ja-sample-sjis.tsv" | head -3
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          s="$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt"
+          echo "--- ja sample UTF-8 ---"
+          : > /tmp/j1.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x80000 >> /tmp/j1.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/j1.tsv
+          done < "$s"
+          cp /tmp/j1.tsv "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
+          echo "--- ja sample SHIFT_JIS ---"
+          : > /tmp/j2.tsv
+          while IFS= read -r line; do
+            printf '%s\n' "$line" | iconv -f UTF-8 -t SHIFT_JIS -c | taskset -c 0 /tmp/dump_engine 0x80000 >> /tmp/j2.tsv
+            printf 'nl\t%s\n' "$line" >> /tmp/j2.tsv
+          done < "$s"
+          cp /tmp/j2.tsv "$GITHUB_WORKSPACE/oracle/corpus/ja-sample-sjis.tsv"
+          echo "--- ja sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv" || true
+
 
       - name: Validate oracle output
         run: |
