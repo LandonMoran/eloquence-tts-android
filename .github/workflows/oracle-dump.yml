@@ -164,10 +164,16 @@ jobs:
           iconv -f UTF-8 -t GB18030 -c "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" > /tmp/hanzi-gb.txt 2>/dev/null || true
           wc -l < /tmp/hanzi-gb.txt
           : > "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
-          while IFS= read -r line; do
-            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x60000 >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
-            printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
-          done < /tmp/hanzi-gb.txt
+          NPROC=$(nproc); [ "$NPROC" -gt 4 ] && NPROC=4
+          split -n "l/$NPROC" -d -a2 /tmp/hanzi-gb.txt /tmp/hz_
+          for f in /tmp/hz_[0-9][0-9]; do
+            ( while IFS= read -r line; do
+                printf '%s\n' "$line" | /tmp/dump_engine 0x60000 >> "$f.tsv"
+                printf 'nl\t%s\n' "$line" >> "$f.tsv"
+              done < "$f" ) &
+          done
+          wait
+          for f in /tmp/hz_[0-9][0-9]; do cat "$f.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
           echo "--- zh-cn sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" || true
           echo "--- zh-cn hanzi rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv" || true
 
@@ -199,10 +205,16 @@ jobs:
           iconv -f UTF-8 -t BIG5 -c "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" > /tmp/hanzi-big5.txt 2>/dev/null || true
           wc -l < /tmp/hanzi-big5.txt
           : > "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
-          while IFS= read -r line; do
-            printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine 0x60001 >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
-            printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
-          done < /tmp/hanzi-big5.txt
+          NPROC=$(nproc); [ "$NPROC" -gt 4 ] && NPROC=4
+          split -n "l/$NPROC" -d -a2 /tmp/hanzi-big5.txt /tmp/ht_
+          for f in /tmp/ht_[0-9][0-9]; do
+            ( while IFS= read -r line; do
+                printf '%s\n' "$line" | /tmp/dump_engine 0x60001 >> "$f.tsv"
+                printf 'nl\t%s\n' "$line" >> "$f.tsv"
+              done < "$f" ) &
+          done
+          wait
+          for f in /tmp/ht_[0-9][0-9]; do cat "$f.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
           echo "--- zh-tw sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" || true
 
       - name: Dump ko (dialect 0xA0000)
