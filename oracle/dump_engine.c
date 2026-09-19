@@ -211,7 +211,8 @@ int main(int argc, char **argv) {
     }
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
-    if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
+    if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s\n", ver); }
+
     /* PROVEN RECIPE (mirrors oracle/probe2.c ARM64 gate): the engine's synth
      * thread stays silent until the app registers a klatt hook table; passing
      * NULLs makes the engine use its own defaults and render real audio. */
@@ -234,6 +235,19 @@ int main(int argc, char **argv) {
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     SetOutputBuffer(eci, 4096, chunk);
+
+    if (getenv("DUMP_ONESHOT")) {
+        /* probe2-verbatim feed: whole stdin, single AddText/Synthesize/Synchronize. */
+        char text[1 << 20]; size_t n;
+        n  = fread(text, 1, sizeof(text) - 1, stdin);
+        text[n] = '\0';
+        int add_r = AddText ? AddText(eci, (ECIInputText)text) : -1;
+        int sy_r  = Synthesize ? Synthesize(eci) : -1;
+        int so_r  = Synchronize ? Synchronize(eci) : -1;
+        if (getenv("DUMP_TRACE")) fprintf(stderr, "oneshot add=%d synth=%d sync=%d len=%zu\n", add_r, sy_r, so_r, n);
+        printf("pcm\t%ld\n", g_pcm_samples);
+        return 0;
+    }
     char line[65536];
     while (fgets(line, sizeof(line), stdin)) {
         line[strcspn(line, "\r\n")] = '\0';

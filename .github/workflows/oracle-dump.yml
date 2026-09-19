@@ -29,6 +29,7 @@ jobs:
           tar -xzf aee.tar.gz
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           cc -O0 -g -rdynamic -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
+          cc -O0 -o /tmp/probe2 "$GITHUB_WORKSPACE/oracle/probe2.c" -ldl
 
       - name: Prep oracle workdirs (gate layout, minimal ini + per-dialect libs)
         run: |
@@ -46,6 +47,23 @@ jobs:
           printf '[10.0]\nPath=./kor.so\nPath_Rom=./korrom.so\nVersion=6.1\n' > work_ko/eci.ini
           printf '[8.0]\nPath=./jpn.so\nPath_Rom=./jpnrom.so\nVersion=6.1\n' > work_ja/eci.ini
           echo prep-ok; ls work_zh_cn
+
+      - name: Isolate probe2 vs dump_engine (same layout, one CI run
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          printf 'Hello, world.\nThis is a test sentence.\n' > /tmp/en2.txt
+          echo "--- probe2 newEx en (gate-proven binary, this layout) ---"
+          /tmp/probe2 work_en newEx 0x10000 < /tmp/en2.txt 2>&1 | tail -2
+          echo "--- probe2 newEx zh-CN ---"
+          /tmp/probe2 work_zh_cn newEx 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -2
+          echo "--- dump ONESHOT en ---"
+          DUMP_WORKDIR="$PWD/work_en" DUMP_ONESHOT=1 DUMP_TRACE=1 /tmp/dump_engine 0x10000 < /tmp/en2.txt 2>&1 | tail -2
+          echo "--- dump ONESHOT zh-CN ---"
+          DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_ONESHOT=1 DUMP_TRACE=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -2
+          echo "--- dump per-line zh-CN (current) ---"
+          DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_TRACE=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -4
 
       - name: Generate corpora
         run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
