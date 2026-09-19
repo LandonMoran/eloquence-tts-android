@@ -1,0 +1,131 @@
+name: oracle-fanout
+
+on:
+  workflow_dispatch:
+    inputs:
+      dialect:
+        type: choice
+        options:
+          - zh-cn
+          - zh-tw
+          - ko
+          - ja
+        required: true
+      piece:
+        type: choice
+        options:
+          - 1
+          - 2
+          - 3
+          - 4
+        default: 1
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: LandonMoran/eloquence-tts-android
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Install runtime libs
+        run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev gdb
+
+      - name: Fetch converted engine (oracle, dev-only)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-aarch64.tar.gz"
+          tar -xzf aee.tar.gz
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          cc -O0 -g -rdynamic -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
+
+      - name: Prep oracle workdirs (gate layout, minimal ini + per-dialect libs)
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          mkdir -p work_en work_zh_cn work_zh_tw work_ko work_ja
+          cp lib/eci.so lib/enu.so work_en/
+          cp lib/eci.so lib/chs.so lib/chsrom.so work_zh_cn/
+          cp lib/eci.so lib/cht.so lib/chtrom.so work_zh_tw/
+          cp lib/eci.so lib/kor.so lib/korrom.so work_ko/
+          cp lib/eci.so lib/jpn.so lib/jpnrom.so work_ja/
+          printf '[1.0]\nPath=./enu.so\nVersion=6.1\n' > work_en/eci.ini
+          printf '[6.0]\nPath=./chs.so\nPath_Rom=./chsrom.so\nVersion=6.1\n' > work_zh_cn/eci.ini
+          printf '[6.1]\nPath=./cht.so\nPath_Rom=./chtrom.so\nVersion=6.1\n' > work_zh_tw/eci.ini
+          printf '[10.0]\nPath=./kor.so\nPath_Rom=./korrom.so\nVersion=6.1\n' > work_ko/eci.ini
+          printf '[8.0]\nPath=./jpn.so\nPath_Rom=./jpnrom.so\nVersion=6.1\n' > work_ja/eci.ini
+          echo prep-ok
+
+      - name: Generate corpora
+        run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
+
+      - name: Dump piece (dialect ${{ inputs.dialect }}, piece ${{ inputs.piece }})
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          : > "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+          case "${{ inputs.dialect }}" in
+            zh-cn)
+              export DUMP_WORKDIR="$PWD/work_zh_cn"
+              ENC=GB18030
+              D=0x60000
+              ;;
+            zh-tw)
+              export DUMP_WORKDIR="$PWD/work_zh_tw"
+              ENC=BIG5
+              D=0x60001
+              ;;
+            ko)
+              export DUMP_WORKDIR="$PWD/work_ko"
+              D=0xA0000
+              ;;
+            ja)
+              export DUMP_WORKDIR="$PWD/work_ja"
+              D=0x80000
+              ;;
+          esac
+          if [ "${{ inputs.dialect }}" = "zh-cn" ] || [ "${{ inputs.dialect }}" = "zh-tw" ]; then
+            iconv -f UTF-8 -t "$ENC" -c "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" > /tmp/sweep.enc 2>/dev/null || true
+            wc -l < /tmp/sweep.enc
+            split -n "l/4" -d -a2 /tmp/sweep.enc /tmp/hz_
+            case "${{ inputs.piece }}" in
+              1) pc=/tmp/hz_00;;
+              2) pc=/tmp/hz_01;;
+              3) pc=/tmp/hz_02;;
+              4) pc=/tmp/hz_03;;
+            esac
+            NPROC=$(nproc); [ "$NPROC" -gt 8 ] && NPROC=8
+            split -n "l/$NPROC" -d -a2 "$pc" /tmp/hzp_
+            for c in /tmp/hzp_[0-9][0-9]; do
+              ( while IFS= read -r line; do
+                  printf '%s\n' "$line" | /tmp/dump_engine "$D" >> "$c.tsv"
+                  printf 'nl\t%s\n' "$line" >> "$c.tsv"
+                done < "$c" ) &
+            done
+            wait
+            for c in /tmp/hzp_[0-9][0-9]; do cat "$c.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+          else
+            src="$GITHUB_WORKSPACE/oracle/corpus/${{ inputs.dialect }}-sample.txt"
+            while IFS= read -r line; do
+              printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine "$D" >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+              printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+            done < "$src"
+          fi
+          echo "pcm_rows=$(grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/output.tsv" || true)"
+
+      - name: Upload piece
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-piece-${{ inputs.dialect }}-p${{ inputs.piece }}
+          path: oracle/corpus/output.tsv
+          if-no-files-found: error
