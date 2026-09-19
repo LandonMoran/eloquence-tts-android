@@ -21,6 +21,7 @@
  * Usage:   ./dump_engine <dialect-hex> < pinyin|phonemes|speak-corpus.txt
  */
 #include <dlfcn.h>
+#include <link.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -124,7 +125,29 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
         return f;
     }
 
+static void *g_orig_ph;
+static long g_ph_n;
 static unsigned char g_pybuf[8192];
+static void ph_interpose(int i, unsigned int j, void *p) {
+    (void)p;
+    if (g_ph_n++ < 4000000) {
+        printf("phon\t%d\t%u\n", i, j);
+        fflush(stdout);
+    }
+}
+
+static void arm_phoneme_got(void *lib) {
+    struct link_map *lm = NULL;
+    if (dlinfo(lib, RTLD_DI_LINKMAP, &lm) != 0 || !lm) {
+        fprintf(stderr, "dlinfo linkmap failed: %s\n", dlerror());
+        return;
+    }
+    void **slot = (void **)((char *)lm->l_addr + 0x21028);
+    g_orig_ph = *slot;
+    fprintf(stderr, "phoneme GOT slot %p => %p\n", (void *)slot, g_orig_ph);
+    *slot = (void *)ph_interpose;
+    fprintf(stderr, "phoneme dispatcher interposed\n");
+}
 
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
@@ -217,6 +240,7 @@ int main(int argc, char **argv) {
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     SetOutputBuffer(eci, 4096, chunk);
+    arm_phoneme_got(lib);
     char line[65536];
     while (fgets(line, sizeof(line), stdin)) {
         line[strcspn(line, "\r\n")] = '\0';
