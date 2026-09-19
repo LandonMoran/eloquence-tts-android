@@ -94,7 +94,7 @@ static void ph_reply(ECIHand h, int size) {
     memset(buf, 0, sizeof(buf));
     GeneratePhonemes(h, size, buf);
     printf("genphon\t%d\t", size);
-    hexout(buf, (size < 64) ? size : 64);
+    hexout(buf, (size < 256) ? size : 256);
     printf("\n");
 }
 
@@ -112,7 +112,7 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
         const unsigned char *d = (const unsigned char *)pData;
         long n = lParam * (PHONEME_LEN + 2); /* sz[5] + wsz[5] per frame */
         printf("phbuf\t%ld\t", lParam);
-        hexout(d, (n < 160) ? n : 160);
+        hexout(d, (n < 512) ? n : 512);
                 printf("\n");
                 fflush(stdout);
                 return 1;
