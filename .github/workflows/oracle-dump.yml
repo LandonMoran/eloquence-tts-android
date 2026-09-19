@@ -80,6 +80,16 @@ jobs:
             echo "[mode=$mode]"
             DUMP_MODE=$mode /tmp/dump_engine 0x60000 < /tmp/in_gb.txt | grep -E '^speak|^addtext2' || echo "no rows"
           done
+          echo "--- ENGLISH CONTROL (dialect 0x10000, enu.so) ---"
+          printf 'Hello, world.\\nThis is a test sentence.\\n' > /tmp/en2.txt
+          /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\\t' '/pcm/{c[$2]++; if ($2>0) nz++} END{printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\\nnonzero=%d\\n", nz+0}'
+          echo "--- ENGLISH CONTROL via speak (eciSpeakTextEx) ---"
+          DUMP_MODE=speak /tmp/dump_engine 0x10000 < /tmp/en2.txt | grep -E '^speak' || true
+          en_nz=$(/tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
+          if [ "$en_nz" = "0" ]; then
+            echo "FATAL: engine renders no audio even for English on this host"
+            exit 1
+          fi
           echo "(empty pcm histogram == no pcm lines; pinyin allzero == text never parsed to pinyin)"
 
       - name: Dump zh-CN (dialect 0x60000
