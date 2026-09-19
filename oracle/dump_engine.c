@@ -129,39 +129,40 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
 static void *g_orig_ph;
 static long g_ph_n;
 static unsigned char g_pybuf[8192];
-static void ph_interpose(int i, unsigned int j, void *p) {
-    (void)p;
-    if (g_ph_n++ < 4000000) {
-        printf("phon\t%d\t%u\n", i, j);
-        fflush(stdout);
-    }
+static void got_proxy(void *a, void *b, void *c) {
+    printf("evt\t%p\t%p\t%p\n", a, b, c);
+    fflush(stdout);
+    /* call the original static dispatcher (saved slot value, not our slot( */
+    ((void (*)(void *, void *, void *))g_orig_ph)(a, b, c);
 }
 
-static void arm_phoneme_got(void *lib) {
+static const struct { long off; const char *name; } g_got_slots[] = {
+    {0x21010, "word"},  {0x21018, "synth"}, {0x21020, "kconst"},
+    {0x21028, "phon"},   {0x21030, "kdyn"},   {0x21038, "uidx"},
+    {0x21040, "widx"},  {0x21048, "sidx"},  {0x21050, "didx"},
+};
+
+static void arm_all_gots(void *lib) {
     struct link_map *lm = NULL;
     if (dlinfo(lib, RTLD_DI_LINKMAP, &lm) != 0 || !lm) {
         fprintf(stderr, "dlinfo linkmap failed: %s\n", dlerror());
         return;
     }
-    void **slot = (void **)((char *)lm->l_addr + 0x21028);
-    g_orig_ph = *slot;
-    fprintf(stderr, "phoneme GOT slot %p => %p\n", (void *)slot, g_orig_ph);
-    *slot = (void *)ph_interpose;
-    fprintf(stderr, "phoneme dispatcher interposed\n");
+    size_t i;
+    for (i =  0; i < sizeof(g_got_slots)/sizeof(g_got_slots[0]); i++) {
+        void **slot = (void **)((char *)lm->l_addr + g_got_slots[i].off);
+        fprintf(stderr, "GOT[%s] %p => %p\n", g_got_slots[i].name, (void *)slot, *slot);
+        g_orig_ph = *slot;   /* saved; each slot reuses the proxy */
+        *slot = (void *)got_proxy;
+    }
+    fprintf(stderr, "all dispatcher slots interposed\n");
 }
 
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
     if (AddText) {
-        AddText(e, (ECIInputText)text);
-        if (getenv("DUMP_PINYIN") && GeneratePinyins) {
-            memset(g_pybuf, 0, 1024);
-            int r = GeneratePinyins(e, (int)strlen(text), g_pybuf);
-            printf("pinyins\t%d\t", r);
-            hexout(g_pybuf, 64);
-            printf("\n");
-        }
-        if (!getenv("DUMP_NOSYNTH") && Synthesize) {
+            AddText(e, (ECIInputText)text);
+            if (!getenv("DUMP_NOSYNTH") && Synthesize){
             Synthesize(e);
             if (Synchronize) Synchronize(e);
             if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
@@ -241,7 +242,7 @@ int main(int argc, char **argv) {
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     SetOutputBuffer(eci, 4096, chunk);
-    arm_phoneme_got(lib);
+    arm_all_gots(lib);
     char line[65536];
     while (fgets(line, sizeof(line), stdin)) {
         line[strcspn(line, "\r\n")] = '\0';
