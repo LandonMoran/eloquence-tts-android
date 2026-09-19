@@ -21,10 +21,13 @@
  * Usage:   ./dump_engine <dialect-hex> < pinyin|phonemes|speak-corpus.txt
  */
 #include <dlfcn.h>
+#include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 typedef void *ECIHand;
@@ -260,6 +263,40 @@ int main(int argc, char **argv) {
         if (getenv("DUMP_TRACE")) fprintf(stderr, "oneshot add=%d synth=%d sync=%d len=%zu\n", add_r, sy_r, so_r, n);
         printf("pcm\t%ld\n", g_pcm_samples);
         if (getenv("DUMP_WANT_PHONEME") && GeneratePhonemes) ph_reply(eci, 512);
+        return 0;
+    }
+    if (getenv("DUMP_FORKSERVER")) {
+        /* Sweep mode: the engine is initialized exactly ONCE above (NewEx +
+         * klatt hooks + callback + output buffer) and the parent NEVER
+         * synthesizes.  Each stdin line gets a fork()ed child that inherits
+         * the pristine initialized engine, synthesizes one hanzi, prints its
+         * rows and dies -- so every hanzi STILL runs on a fresh engine
+         * (the proven one-shot recipe) but without paying exec+dlopen+init
+         * per hanzi.  Parent prints the nl marker AFTER reaping the child,
+         * so rows stay grouped in input order.  A stuck child is killed by
+         * its own 10s alarm instead of hanging the whole sweep. */
+        char line[65536];
+        while (fgets(line, sizeof(line), stdin)) {
+            line[strcspn(line, "\r\n")] = '\0';
+            if (!line[0]) continue;
+            pid_t pid = fork();
+            if (pid < 0) {                /* fork failed: run serially, keep data honest */
+                run_text(eci, line);
+                fflush(stdout);
+                printf("nl\t%s\n", line);
+                fflush(stdout);
+                continue;
+            }
+            if (pid == 0) {
+                alarm(10);
+                run_text(eci, line);
+                fflush(stdout);
+                _exit(0);
+            }
+            while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) ;
+            printf("nl\t%s\n", line);
+            fflush(stdout);
+        }
         return 0;
     }
     char line[65536];
