@@ -46,10 +46,10 @@ jobs:
           echo "--- eci.ini ---"
           head -8 eci.ini
           echo "--- direct dump ---"
-          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN probe partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0x60800 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN probe partial rc=${PIPESTATUS[0]}"; fi
           head -12 /tmp/probe.tsv
 
-      - name: Dump zh-CN (dialect 0x60000
+      - name: Dump zh-CN (dialect 0x60800
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
@@ -57,10 +57,10 @@ jobs:
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
-          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-sample partial rc=${PIPESTATUS[0]}"; fi
-          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-hanzi partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0x60800 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-sample partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0x60800 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-cn-hanzi partial rc=${PIPESTATUS[0]}"; fi
 
-      - name: Dump zh-TW (dialect 0x60001
+      - name: Dump zh-TW (dialect 0x60801
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
@@ -68,10 +68,10 @@ jobs:
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
-          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-sample partial rc=${PIPESTATUS[0]}"; fi
-          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-hanzi partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0x60801 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-sample partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0x60801 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN zh-tw-hanzi partial rc=${PIPESTATUS[0]}"; fi
 
-      - name: Dump ko (dialect 0xA0000
+      - name: Dump ko (dialect 0xA0800
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
@@ -79,9 +79,9 @@ jobs:
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
-          /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ko-sample partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0xA0800 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ko-sample partial rc=${PIPESTATUS[0]}"; fi
 
-      - name: Dump ja (dialect 0x80000
+      - name: Dump ja (dialect 0x80800
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-x86_64
@@ -89,7 +89,7 @@ jobs:
           export DUMP_WANT_PHONEME=1
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
-          /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ja-sample partial rc=${PIPESTATUS[0]}"; fi
+          /tmp/dump_engine 0x80800 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN ja-sample partial rc=${PIPESTATUS[0]}"; fi
 
       - name: Upload oracle dumps
         uses: actions/upload-artifact@v4
