@@ -1,0 +1,67 @@
+name: oracle-dump
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [oracle-dev]
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: LandonMoran/eloquence-tts-android
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Install runtime libs
+        run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev
+
+      - name: Fetch converted engine (oracle, dev-only
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-x86_64.tar.gz"
+          tar -xzf aee.tar.gz
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          sed -i 's|/usr/lib/eloquence|'"$PWD"'/lib|g' eci.ini
+          cc -O2 -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
+
+      - name: Generate corpora
+        run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
+
+      - name: Dump zh-CN (dialect 0x60000
+        run: |
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv"
+          /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+
+      - name: Dump zh-TW (dialect 0x60001
+        run: |
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv"
+          /tmp/dump_engine 0x60001 < "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+
+      - name: Dump ko (dialect 0xA0000
+        run: |
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          /tmp/dump_engine 0xA0000 < "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
+
+      - name: Dump ja (dialect 0x80000
+        run: |
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          /tmp/dump_engine 0x80000 < "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.txt" | tee "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
+
+      - name: Upload oracle dumps
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-dumps
+          path: oracle/corpus/*.tsv
