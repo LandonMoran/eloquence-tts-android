@@ -1,0 +1,322 @@
+[
+  {
+    "code": 0,
+    "name": "char_count",
+    "operand_width": 6,
+    "semantics": "Test/commit op: counts characters in the input range; value = count (3x u16 fields, fns at +0x10/+0x18 read/write offsets +0,+2,+4). Operand is a numeric value, not a stream byte. In convert_to_lowercase used as starttest code only.",
+    "stmt_type": -4,
+    "value_size": 6
+  },
+  {
+    "code": 1,
+    "name": "inp",
+    "operand_width": 1,
+    "semantics": "Input-match op: compare ONE stream byte (operand, at the lea'd address) with the input character at the current scan token (token value +0x10+3 == char). test_string_s(obj,1,count,ptr) tests `count` consecutive stream bytes; on mismatch vcompare sets ctx+0x1fb8 flag and the test fails. Each successful test advances the scan by one token (vscanadv underlying code 0x2e484..0x2e4a0).",
+    "stmt_type": -1,
+    "value_size": 5,
+    "stream_unit_bytes": 1
+  },
+  {
+    "code": 2,
+    "name": "phone",
+    "operand_width": 1,
+    "semantics": "Phone-emission op. Operand stream: `count` x 1-byte phone ids at the lea'd address (insert_2pt_s(obj,2,count,ptr) -> ins_tokens_s -> vins_tok). Each token = 18-byte value struct seeded from template vstmtbl[2]+0x28; the operand byte (phone id, 1..88) is written to token value offset +0xa by the +0x18 field fn 0x90642. Tokens are linked into the object token list (next/prev at +0/+8) between obj+0x70 and obj+0x90.",
+    "stmt_type": -1,
+    "value_size": 18,
+    "stream_unit_bytes": 1
+  },
+  {
+    "code": 3,
+    "name": "morph",
+    "operand_width": 1,
+    "semantics": "Morph-table op (type 0xffff): 1-byte operands. vstmtbl[3]+0x30=1 sub-struct; used for word-morph markers.",
+    "stmt_type": -1,
+    "value_size": 1,
+    "stream_unit_bytes": 1
+  },
+  {
+    "code": 4,
+    "name": "word",
+    "operand_width": 16,
+    "semantics": "Word-level op (type 0xfffc); value = 16-byte struct (template vstmtbl[4]+0x28 = 0xbacc0); +0x40=10 sub-structs.",
+    "stmt_type": -4,
+    "value_size": 16
+  },
+  {
+    "code": 5,
+    "name": "inton_phr",
+    "operand_width": 12,
+    "semantics": "Intonation-phrase op; value = 12-byte struct (template 0xbd8ae); +0x40=8 sub-structs.",
+    "stmt_type": -4,
+    "value_size": 12
+  },
+  {
+    "code": 6,
+    "name": "klatt",
+    "operand_width": 48,
+    "semantics": "Klatt-parameter op; value = 48-byte struct (template 0xbb1e8); +0x40=15 sub-structs.",
+    "stmt_type": -4,
+    "value_size": 48
+  },
+  {
+    "code": 7,
+    "name": "syllable",
+    "operand_width": 6,
+    "semantics": "Syllable op; value = 6-byte struct (template 0xbd8ba); +0x40=3 sub-structs.",
+    "stmt_type": -4,
+    "value_size": 6
+  },
+  {
+    "code": 8,
+    "name": "Ms",
+    "operand_width": 2,
+    "semantics": "Ms op; value = 2-byte struct (template 0xbd8c0); +0x40=1 sub-struct.",
+    "stmt_type": -4,
+    "value_size": 2
+  },
+  {
+    "code": 9,
+    "name": "pgmin",
+    "operand_width": 0,
+    "semantics": "Phone-feature variable op (name from cstring; +8 struct ptr is a feature-name string, not a real struct). Type is data (non-0xffff) so mark_s on it fails; feature assignment goes through vinitflds/template merge.",
+    "value_size": 0
+  },
+  {
+    "code": 10,
+    "name": "GAP",
+    "operand_width": 0,
+    "semantics": "Feature var GAP.",
+    "value_size": 0
+  },
+  {
+    "code": 11,
+    "name": "c",
+    "operand_width": 0,
+    "semantics": "Feature var c (consonant class).",
+    "value_size": 0
+  },
+  {
+    "code": 12,
+    "name": "r",
+    "operand_width": 0,
+    "semantics": "Feature var r.",
+    "value_size": 0
+  },
+  {
+    "code": 13,
+    "name": "G",
+    "operand_width": 0,
+    "semantics": "Feature var G.",
+    "value_size": 0
+  },
+  {
+    "code": 14,
+    "name": "V",
+    "operand_width": 0,
+    "semantics": "Feature var V (vowel).",
+    "value_size": 0
+  },
+  {
+    "code": 15,
+    "name": "7",
+    "operand_width": 0,
+    "semantics": "Feature var 7.",
+    "value_size": 0
+  },
+  {
+    "code": 16,
+    "name": " ",
+    "operand_width": 0,
+    "semantics": "Feature var SPACE.",
+    "value_size": 0
+  },
+  {
+    "code": 17,
+    "name": "`",
+    "operand_width": 0,
+    "semantics": "Feature var BACKQUOTE.",
+    "value_size": 0
+  },
+  {
+    "code": 18,
+    "name": "\"",
+    "operand_width": 0,
+    "semantics": "Feature var DQUOTE.",
+    "value_size": 0
+  },
+  {
+    "code": 19,
+    "name": "\\xe9",
+    "operand_width": 0,
+    "semantics": "Feature var 0xE9 (e-acute).",
+    "value_size": 0
+  },
+  {
+    "code": 20,
+    "name": "\\xf4",
+    "operand_width": 0,
+    "semantics": "Feature var 0xF4 (o-circumflex).",
+    "value_size": 0
+  },
+  {
+    "code": 21,
+    "name": "\\xeb",
+    "operand_width": 0,
+    "semantics": "Feature var 0xEB (e-diaeresis).",
+    "value_size": 0
+  },
+  {
+    "code": 22,
+    "name": "\\xc6",
+    "operand_width": 0,
+    "semantics": "Feature var 0xC6 (AE).",
+    "value_size": 0
+  },
+  {
+    "code": 23,
+    "name": "\\xd1",
+    "operand_width": 0,
+    "semantics": "Feature var 0xD1 (N-tilde).",
+    "value_size": 0
+  },
+  {
+    "code": 24,
+    "name": "\\x94",
+    "operand_width": 0,
+    "semantics": "Feature var 0x94.",
+    "value_size": 0
+  },
+  {
+    "code": 25,
+    "name": "\\xb1",
+    "operand_width": 0,
+    "semantics": "Feature var 0xB1 (plus-minus).",
+    "value_size": 0
+  },
+  {
+    "code": 26,
+    "name": "\\x81",
+    "operand_width": 0,
+    "semantics": "Feature var 0x81.",
+    "value_size": 0
+  },
+  {
+    "code": 27,
+    "name": "\\xaf",
+    "operand_width": 0,
+    "semantics": "Feature var 0xAF (macron).",
+    "value_size": 0
+  },
+  {
+    "code": 28,
+    "name": "digit",
+    "operand_width": 0,
+    "semantics": "Feature var digit (0-9 class).",
+    "value_size": 0
+  },
+  {
+    "code": 29,
+    "name": "GAP",
+    "operand_width": 0,
+    "semantics": "Feature var GAP.",
+    "value_size": 0
+  },
+  {
+    "code": 30,
+    "name": "_v",
+    "operand_width": 0,
+    "semantics": "Feature var _v.",
+    "value_size": 0
+  },
+  {
+    "code": 31,
+    "name": "_G",
+    "operand_width": 0,
+    "semantics": "Feature var _G.",
+    "value_size": 0
+  },
+  {
+    "code": 32,
+    "name": "_U",
+    "operand_width": 0,
+    "semantics": "Feature var _U.",
+    "value_size": 0
+  },
+  {
+    "code": 33,
+    "name": "undefined",
+    "operand_width": 0,
+    "semantics": "Feature var undefined.",
+    "value_size": 0
+  },
+  {
+    "code": 34,
+    "name": "liq",
+    "operand_width": 0,
+    "semantics": "Feature var liq (lateral/liquid).",
+    "value_size": 0
+  },
+  {
+    "code": 35,
+    "name": "high",
+    "operand_width": 0,
+    "semantics": "Feature var high.",
+    "value_size": 0
+  },
+  {
+    "code": 36,
+    "name": "unrounded",
+    "operand_width": 0,
+    "semantics": "Feature var unrounded (entry +8 = 0, table hole).",
+    "value_size": 0
+  },
+  {
+    "code": 37,
+    "name": "GAP",
+    "operand_width": 0,
+    "semantics": "Feature var GAP.",
+    "value_size": 0
+  },
+  {
+    "code": 38,
+    "name": "onoma",
+    "operand_width": 0,
+    "semantics": "Feature var onoma.",
+    "value_size": 0
+  },
+  {
+    "code": 39,
+    "name": "aobjc",
+    "operand_width": 0,
+    "semantics": "Feature var aobjc.",
+    "value_size": 0
+  },
+  {
+    "code": 40,
+    "name": "place",
+    "operand_width": 0,
+    "semantics": "Feature var place.",
+    "value_size": 0
+  },
+  {
+    "code": 41,
+    "name": "~down",
+    "operand_width": 0,
+    "semantics": "Feature var ~down.",
+    "value_size": 0
+  },
+  {
+    "code": 42,
+    "name": "!!",
+    "operand_width": 0,
+    "semantics": "Feature var !! .",
+    "value_size": 0
+  },
+  {
+    "code": 43,
+    "name": "l",
+    "operand_width": 0,
+    "semantics": "Feature var l.",
+    "value_size": 0
+  }
+]

@@ -126,6 +126,11 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
 
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
+    int add_r = -1;
+    if (AddText) {
+        add_r = AddText(e, (ECIInputText)text);
+        if (getenv("DUMP_TRACE")) fprintf(stderr, "addtext=%d len=%zu\n", add_r, strlen(text));
+    }
     if (getenv("DUMP_PINYIN") && GeneratePinyins) {
         static unsigned char pbuf[4096];
         memset(pbuf, 0, sizeof(pbuf));
@@ -134,17 +139,18 @@ static void run_text(ECIHand e, const char *text) {
         hexout(pbuf, 128);
         printf("\t%.20s\n", text);
     }
-    if (AddText) {
-        AddText(e, (ECIInputText)text);
-        if (!getenv("DUMP_NOSYNTH") && Synthesize) {
-                    Synthesize(e);
-                    if (Synchronize) Synchronize(e);
-                    if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
-                    printf("pcm\t%ld\n", g_pcm_samples);
-                }
-                if (GeneratePhonemes) ph_reply(e, 512);
-                fflush(stdout);
+    if (add_r && !getenv("DUMP_NOSYNTH") && Synthesize) {
+        int sy_r = Synthesize(e);
+        int so_r = Synchronize ? Synchronize(e) : -1;
+        int sp_r = Speaking ? Speaking(e) : -1;
+        if (getenv("DUMP_TRACE")) fprintf(stderr, "synth=%d sync=%d speak=%d\n", sy_r, so_r, sp_r);
+        if (sp_r) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
+        printf("pcm\t%ld\n", g_pcm_samples);
+    } else if (getenv("DUMP_NOSYNTH")) {
+        printf("pcm\t0\n");
     }
+    if (GeneratePhonemes) ph_reply(e, 512);
+    fflush(stdout);
 }
 
 static void klatt_const_noop(void *c, void *u);
