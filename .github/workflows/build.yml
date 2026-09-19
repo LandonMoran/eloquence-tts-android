@@ -3,6 +3,9 @@ name: Build APK
 on:
   push:
     branches: ['**']
+    paths-ignore:
+      - 'oracle/**'
+      - '.github/workflows/oracle-dump.yml'
   pull_request:
     branches: [main]
 
