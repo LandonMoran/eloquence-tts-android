@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 1
 
       - name: Install runtime libs
-        run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev
+        run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev gdb
 
       - name: Fetch converted engine (oracle, dev-only
         run: |
@@ -29,10 +29,22 @@ jobs:
           tar -xzf aee.tar.gz
           cd apple-eloquence-elf-1.2.3-linux-x86_64
           sed -i 's|/usr/lib/eloquence|'"$PWD"'/lib|g' eci.ini
-          cc -O2 -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
+          cc -O0 -g -rdynamic -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
 
       - name: Generate corpora
         run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
+
+      - name: Probe zh-CN under gdb (diagnostic
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          export DUMP_WANT_PHONEME=1
+          pwd
+          echo "--- eci.ini ---"
+          head -8 eci.ini
+          echo "--- gdb run ---"
+          gdb -q -batch -ex run -ex bt --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -45
 
       - name: Dump zh-CN (dialect 0x60000
         run: |
