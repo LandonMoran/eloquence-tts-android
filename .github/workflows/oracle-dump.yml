@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   dump:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,9 +25,9 @@ jobs:
       - name: Fetch converted engine (oracle, dev-only
         run: |
           cd "$GITHUB_WORKSPACE"
-          curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-x86_64.tar.gz"
+          curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-arm64.tar.gz"
           tar -xzf aee.tar.gz
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           sed -i 's|/usr/lib/eloquence|'"$PWD"'/lib|g' eci.ini
           cc -O0 -g -rdynamic -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
 
@@ -37,7 +37,7 @@ jobs:
       - name: Probe zh-CN under gdb (diagnostic
         run: |
           set -o pipefail
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
@@ -51,7 +51,7 @@ jobs:
       - name: Encoding matrix (which text encoding feeds chs pinyin
         run: |
           set -o pipefail
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
@@ -95,7 +95,7 @@ jobs:
       - name: Dump zh-CN (dialect 0x60000
         run: |
           set -o pipefail
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
@@ -116,7 +116,7 @@ jobs:
       - name: Dump zh-TW (dialect 0x60001
         run: |
           set -o pipefail
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
@@ -136,7 +136,7 @@ jobs:
       - name: Dump ko (dialect 0xA0000
         run: |
           set -o pipefail
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
@@ -154,7 +154,7 @@ jobs:
       - name: Dump ja (dialect 0x80000
         run: |
           set -o pipefail
-          cd apple-eloquence-elf-1.2.3-linux-x86_64
+          cd apple-eloquence-elf-1.2.3-linux-arm64
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_GENPHON=1
           export DUMP_PINYIN=1
