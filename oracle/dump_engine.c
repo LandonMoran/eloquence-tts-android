@@ -109,6 +109,8 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
     return 1;
 }
 
+static void hook_slots_zero(char *eci);
+
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
     if (getenv("DUMP_PINYIN") && GeneratePinyins) {
@@ -121,6 +123,9 @@ static void run_text(ECIHand e, const char *text) {
     }
     if (AddText) {
         AddText(e, (ECIInputText)text);
+        /* SynthThread hook slots get clobbered during setup; re-zero right
+           before synthesis. NULL makes the Klatt dispatcher safe. */
+        hook_slots_zero(e);
         if (Synthesize) Synthesize(e);
         if (Synchronize) Synchronize(e);
         if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
@@ -128,6 +133,15 @@ static void run_text(ECIHand e, const char *text) {
         printf("pcm\t%ld\n", g_pcm_samples);
         fflush(stdout);
     }
+}
+
+static void hook_slots_zero(char *eci) {
+    void *stt = *(void **)eci;
+    fprintf(stderr, "pre-synth fields 0x280=%p 0x288=%p 0x290=%p\n",
+            *(void **)((char *)stt + 0x280), *(void **)((char *)stt + 0x288), *(void **)((char *)stt + 0x290));
+    *(void **)((char *)stt + 0x280) = NULL;
+    *(void **)((char *)stt + 0x288) = NULL;
+    *(void **)((char *)stt + 0x290) = NULL;
 }
 
 typedef int (*fn_RegKlattHooks2)(void *, void (*)(void *, void *), void (*)(void *, void *), void *);
