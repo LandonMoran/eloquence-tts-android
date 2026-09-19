@@ -159,7 +159,8 @@ static void run_text(ECIHand e, const char *text) {
         printf("\t%.20s\n", text);
     }
     if (add_r && !getenv("DUMP_NOSYNTH") && Synthesize) {
-        int ii_r = InsertIndex ? InsertIndex(e, 0xFFFF) : -1; /* END_STRING_MARK */
+        int ii_r = -1;
+        if (getenv("DUMP_INSERTINDEX")) ii_r = InsertIndex ? InsertIndex(e, 0xFFFF) : -1; /* END_STRING_MARK */
         int sy_r = Synthesize(e);
         int so_r = Synchronize ? Synchronize(e) : -1;
         int sp_r = Speaking ? Speaking(e) : -1;
@@ -218,9 +219,15 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "missing eciRegisterKlattHooks2 (engine will be silent)\n");
     }
-    SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
-    SetParam(eci, PARAM_SYNTHMODE,  1); /* NVDA-driver equivalent: synch to callback buffer */
-    SetParam(eci, PARAM_INPUTTYPE,  1); /* text input (per IBM SDK eci.h( */
+    /* probe2-verbatim init: the gate renders WITHOUT any SetParam and WITHOUT
+     * InsertIndex. The old params (samplerate/synthmode/inputtype) plus the
+     * 0xFFFF index mark broke text parsing (pinyin-mask all-zero, synth=0
+     * even for English). Keep them opt-in for later experiments only. */
+    if (getenv("DUMP_SYNTHPARAMS")) {
+        SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
+        SetParam(eci, PARAM_SYNTHMODE,  1); /* NVDA-driver equivalent: synch to callback buffer */
+        SetParam(eci, PARAM_INPUTTYPE,  1); /* text input (per IBM SDK eci.h) */
+    }
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
