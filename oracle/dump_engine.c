@@ -120,20 +120,6 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
     return 1;
 }
 
-/* Interpose the Klatt dispatchers: the crashing "self" lives in an
-       uninitialized object inside chs.so. Forcing the NULL path (return
-       untouched params) avoids trailing a garbage hook pointer. */
-    __attribute__((visibility("default")))
-    void *_ZN11SynthThread20staticKlattConstHookEP16KlattConstParamsPv(void *p, void *self){
-        (void)self;
-        return p;
-    }
-    __attribute__((visibility("default")))
-    void *_ZN11SynthThread22staticKlattDynamicHookEPfPv(void *f, void *self){
-        (void)self;
-        return f;
-    }
-
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
     const char *probe_mode = getenv("DUMP_MODE");
