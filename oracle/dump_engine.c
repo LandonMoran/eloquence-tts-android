@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 /*
  * dump_engine.c -- oracle data dumper for the converted Apple Eloquence engine.
  *
