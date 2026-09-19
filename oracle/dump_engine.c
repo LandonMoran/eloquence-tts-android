@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 /*
  * dump_engine.c -- oracle data dumper for the converted Apple Eloquence engine.
  *
@@ -22,7 +21,6 @@
  * Usage:   ./dump_engine <dialect-hex> < pinyin|phonemes|speak-corpus.txt
  */
 #include <dlfcn.h>
-#include <link.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -126,50 +124,26 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
         return f;
     }
 
-static void *g_orig_ph;
-static long g_ph_n;
-static unsigned char g_pybuf[8192];
-static void got_proxy(void *a, void *b, void *c) {
-    printf("evt\t%p\t%p\t%p\n", a, b, c);
-    fflush(stdout);
-    /* call the original static dispatcher (saved slot value, not our slot( */
-    ((void (*)(void *, void *, void *))g_orig_ph)(a, b, c);
-}
-
-static const struct { long off; const char *name; } g_got_slots[] = {
-    {0x21010, "word"},  {0x21018, "synth"}, {0x21020, "kconst"},
-    {0x21028, "phon"},   {0x21030, "kdyn"},   {0x21038, "uidx"},
-    {0x21040, "widx"},  {0x21048, "sidx"},  {0x21050, "didx"},
-};
-
-static void arm_all_gots(void *lib) {
-    struct link_map *lm = NULL;
-    if (dlinfo(lib, RTLD_DI_LINKMAP, &lm) != 0 || !lm) {
-        fprintf(stderr, "dlinfo linkmap failed: %s\n", dlerror());
-        return;
-    }
-    size_t i;
-    for (i =  0; i < sizeof(g_got_slots)/sizeof(g_got_slots[0]); i++) {
-        void **slot = (void **)((char *)lm->l_addr + g_got_slots[i].off);
-        fprintf(stderr, "GOT[%s] %p => %p\n", g_got_slots[i].name, (void *)slot, *slot);
-        g_orig_ph = *slot;   /* saved; each slot reuses the proxy */
-        *slot = (void *)got_proxy;
-    }
-    fprintf(stderr, "all dispatcher slots interposed\n");
-}
-
 static void run_text(ECIHand e, const char *text) {
     g_pcm_samples = 0;
+    if (getenv("DUMP_PINYIN") && GeneratePinyins) {
+        static unsigned char pbuf[4096];
+        memset(pbuf, 0, sizeof(pbuf));
+        int r = GeneratePinyins(e, (int)strlen(text), pbuf);
+        printf("pinyins\t%d\t", r);
+        hexout(pbuf, 128);
+        printf("\t%.20s\n", text);
+    }
     if (AddText) {
-            AddText(e, (ECIInputText)text);
-            if (!getenv("DUMP_NOSYNTH") && Synthesize){
-            Synthesize(e);
-            if (Synchronize) Synchronize(e);
-            if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
-            printf("pcm\t%ld\n", g_pcm_samples);
-        }
-        if (GeneratePhonemes) ph_reply(e, 512);
-        fflush(stdout);
+        AddText(e, (ECIInputText)text);
+        if (!getenv("DUMP_NOSYNTH") && Synthesize) {
+                    Synthesize(e);
+                    if (Synchronize) Synchronize(e);
+                    if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
+                    printf("pcm\t%ld\n", g_pcm_samples);
+                }
+                if (GeneratePhonemes) ph_reply(e, 512);
+                fflush(stdout);
     }
 }
 
@@ -229,20 +203,9 @@ int main(int argc, char **argv) {
     }
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
-    /* Auto-collect pinyin: SynthThread::registerPinyinBuffer(buf, cap) arms
-       eciGeneratePinyins (its 0x24dc flag); without it pinyins stay empty. */
-    typedef int (*fn_regPb)(void *, void *, long);
-    fn_regPb regPb = (fn_regPb)sym(lib, "_ZN11SynthThread20registerPinyinBufferEPvl");
-    if (regPb) {
-        regPb(*(void **)eci, g_pybuf, (long)sizeof(g_pybuf));
-        fprintf(stderr, "pinyin buffer registered\n");
-    } else {
-        fprintf(stderr, "registerPinyinBuffer missing\n");
-    }
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     SetOutputBuffer(eci, 4096, chunk);
-    arm_all_gots(lib);
     char line[65536];
     while (fgets(line, sizeof(line), stdin)) {
         line[strcspn(line, "\r\n")] = '\0';
