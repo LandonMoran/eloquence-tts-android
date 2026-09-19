@@ -1,0 +1,58 @@
+name: arm64-probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: LandonMoran/eloquence-tts-android
+          ref: oracle-dev
+          fetch-depth: 1
+
+      - name: Install runtime libs
+        run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev
+
+      - name: Fetch aarch64 engine + build dump harness
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-aarch64.tar.gz"
+          tar -xzf aee.tar.gz
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          sed -i 's|/usr/lib/eloquence|'"$PWD"'/lib|g' eci.ini
+          cc -O0 -g -rdynamic -o /tmp/dump_engine "$GITHUB_WORKSPACE/oracle/dump_engine.c" -ldl
+
+      - name: ARM64 sanity - English + zh-CN
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          uname -m
+          export LD_LIBRARY_PATH="$PWD/lib"
+          export DUMP_GENPHON=1
+          export DUMP_PINYIN=1
+          export DUMP_TRACE=1
+          echo "--- ENGLISH CONTROL ---"
+          printf 'Hello, world.\nThis is a test sentence.\n' > /tmp/en2.txt
+          taskset -c 0 /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{c[$2]++; if ($2>0) nz++} END{printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\nnonzero=%d\n", nz+0}'
+          en_nz=$(taskset -c 0 /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
+          if [ "$en_nz" = "0" ]; then
+            echo "FATAL: aarch64 engine renders no audio even for English"
+            exit 1
+          fi
+          echo "--- ZH-CN (UTF-8) ---"
+          s="$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt"
+          taskset -c 0 /tmp/dump_engine 0x60000 < "$s" | awk -F'\t' '
+            /pcm/{c[$2]++; if ($2>0) nz++}
+            /pinyins/{if (substr($3,1,80) ~ /[1-9]/) pnz++; else pz++}
+            END{
+              printf "pcm: "; for (k in c) printf "%s=%d ",k,c[k]; printf "\n";
+              printf "pinyin nonzero=%d allzero=%d\n", pnz+0, pz+0
+            }'
+          echo "ARM64 PROBE DONE"
