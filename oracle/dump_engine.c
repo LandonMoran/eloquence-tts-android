@@ -161,13 +161,16 @@ int main(int argc, char **argv) {
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
     if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
-    fn_RegKlattHooks2 RegKlattHooks2 = (fn_RegKlattHooks2)sym(lib, "eciRegisterKlattHooks2");
-    if (RegKlattHooks2) {
-        RegKlattHooks2(eci, klatt_const_noop, klatt_frame_noop, NULL);
-        fprintf(stderr, "klatt hooks registered (noop_const=%p noop_frame=%p)\n", (void *)klatt_const_noop, (void *)klatt_frame_noop);
-    } else {
-        fprintf(stderr, "eciRegisterKlattHooks2 not exported\n");
-    }
+    /* The ELF conversion doesn't zero SynthThread's hook slots; the original
+       Apple allocator did. A garbage fn pointer there crashes the Klatt
+       dispatcher. NULL is the safe fallback (dispatcher returns untouched). */
+    void *stt = *(void **)eci;      /* SynthThread* = first member of ECIinstance */
+    fprintf(stderr, "synththread=%p fields 0x280=%p 0x288=%p 0x290=%p\n",
+            stt, *(void **)((char *)stt + 0x280), *(void **)((char *)stt + 0x288), *(void **)((char *)stt + 0x290));
+    *(void **)((char *)stt + 0x280) = NULL;
+    *(void **)((char *)stt + 0x288) = NULL;
+    *(void **)((char *)stt + 0x290) = NULL;
+    fprintf(stderr, "klatt hook slots zeroed\n");
     SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
