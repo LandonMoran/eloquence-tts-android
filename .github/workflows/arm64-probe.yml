@@ -60,28 +60,27 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           cc -O0 -o /tmp/probe2 "$GITHUB_WORKSPACE/oracle/probe2.c" -ldl
-          mkdir -p work_en work_zh
+          mkdir -p work_en work_zh work_ko
           cp lib/eci.so lib/enu.so work_en/
           cp lib/eci.so lib/chs.so lib/chsrom.so work_zh/
+          cp lib/eci.so lib/kor.so lib/korrom.so work_ko/
           printf '[1.0]\nPath=./enu.so\nVersion=6.1\n' > work_en/eci.ini
           printf '[6.0]\nPath=./chs.so\nPath_Rom=./chsrom.so\nVersion=6.1\n' > work_zh/eci.ini
+          printf '[10.0]\nPath=./kor.so\nPath_Rom=./korrom.so\nVersion=6.1\n' > work_ko/eci.ini
           printf 'Hello, world.\nThis is a test sentence.\n' > /tmp/en2.txt
           s="$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt"
-          nz() { awk -F'\t' '/pcm/{if ($2>0) nz++} END{print nz+0}'; }
-          en_new=$(taskset -c 0 /tmp/probe2 work_en new < /tmp/en2.txt | nz)
-          echo "en  eciNew    pcm=$en_new"
-          if [ "$en_new" = "0" ]; then
-            echo "FATAL: eciNew() lane renders no audio for English"
-            exit 1
-          fi
-          en_ex=$(taskset -c 0 /tmp/probe2 work_en newEx 0x10000 < /tmp/en2.txt | nz)
-          echo "en  eciNewEx  pcm=$en_ex (informational"
-          zh_new=$(taskset -c 0 /tmp/probe2 work_zh new < "$s" | nz)
-          echo "zh  eciNew    pcm=$zh_new"
-          if [ "$zh_new" = "0" ]; then
-            echo "FATAL: eciNew() lane renders no audio for zh-CN"
-            exit 1
-          fi
-          zh_ex=$(taskset -c 0 /tmp/probe2 work_zh newEx 0x60000 < "$s" | nz)
-          echo "zh  eciNewEx  pcm=$zh_ex (informational"
-          echo "ARM64 RENDER GATE GREEN: eciNew() produces PCM for enu + zh-CN"
+          k="$GITHUB_WORKSPACE/oracle/corpus/ko-sample.txt"
+          run_p() { taskset -c 0 /tmp/probe2 "$1" "$2" "$3" < "$4" 2>/dev/null | awk -F'\t' '/pcm/{print $2, $3}'; }
+          en_n=$(run_p work_en new "" /tmp/en2.txt); read en_ne en_nt <<< "$en_n"
+          en_x=$(run_p work_en newEx 0x10000 /tmp/en2.txt); read en_xe en_xt <<< "$en_x"
+          zh_n=$(run_p work_zh new "" "$s"); read zh_ne zh_nt <<< "$zh_n"
+          zh_x=$(run_p work_zh newEx 0x60000 "$s"); read zh_xe zh_xt <<< "$zh_x"
+          ko_n=$(run_p work_ko new "" "$k"); read ko_ne ko_nt <<< "$ko_n"
+          ko_x=$(run_p work_ko newEx 0xA0000 "$k"); read ko_xe ko_xt <<< "$ko_x"
+          for l in "en:$en_ne:$en_nt:$en_xe:$en_xt" "zh:$zh_ne:$zh_nt:$zh_xe:$zh_xt" "ko:$ko_ne:$ko_nt:$ko_xe:$ko_xt"; do
+            IFS=':' read -r tag ne nt xe xt <<< "$l"
+            echo "$tag new: events=$ne samples=$nt | newEx+klatt2: events=$xe samples=$xt"
+            if [ "${nt:-0}" -le 0 ]; then echo "FATAL: $tag eciNew() lane produced no samples"; exit 1; fi
+            if [ "${xt:-0}" -le 0 ]; then echo "FATAL: $tag eciNewEx+KlattHooks2 lane produced no samples"; exit 1; fi
+          done
+          echo "ARM64 RENDER GATE GREEN: en+zh+ko produce PCM in both eciNew() and eciNewEx()+eciRegisterKlattHooks2 lanes"

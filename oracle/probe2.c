@@ -36,9 +36,10 @@ typedef int (*ECICallback)(ECIHand, int msg, long lParam, void *pData);
 enum { MSG_WAVEFORM = 0, MSG_PHONEME = 1 };
 
 static long g_pcm_samples;
+static long g_events;
 static int cb(ECIHand h, int msg, long lParam, void *pData) {
     (void)h; (void)pData;
-    if (msg == MSG_WAVEFORM && lParam > 0) g_pcm_samples += lParam;
+    if (msg == MSG_WAVEFORM && lParam > 0) { g_events++; g_pcm_samples += lParam; }
     return (int)sizeof(char);
 }
 
@@ -95,7 +96,7 @@ int main(int argc, char **argv) {
     int add = AddText(eng, text);
      int sy  = Synthesize(eng);
     int so  = Synchronize(eng);
-    printf("pcm\t%ld\n", g_pcm_samples);
+    printf("pcm\t%ld\t%ld\n", g_events, g_pcm_samples);
     fprintf(stderr, "add=%d synth=%d sync=%d\n", add, sy, so);
     rc =0;
 done:
