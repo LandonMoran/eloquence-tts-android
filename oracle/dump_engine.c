@@ -102,14 +102,11 @@ static int cb(ECIHand h, int msg, long lParam, void *pData) {
     }
     /* Log EVERY other message type:1-7 (phoneme buffer, index
        replies, break( raw head of pData( as hex so the offline fitter sees all. */
-    if (msg >=  1 && msg <=  7) {
-        const unsigned char *d = (const unsigned char *)pData;
-        printf("cbmsg\t%d\t%ld\t", msg, lParam);
-        hexout(d, 256);
-        printf("\n");
-        fflush(stdout);
-        return 1;
-    }
+    if (msg >= 1 && msg <= 7) {
+           printf("cbmsg\t%d\t%ld\n", msg, lParam);
+           fflush(stdout);
+           return 1;
+       }
     return 1;
 }
 
