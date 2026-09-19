@@ -29,7 +29,7 @@
 
 typedef void *ECIHand;
 typedef const void *ECIInputText;
-typedef void (*ECICallback)(ECIHand, int msg, long lParam, void *pData);
+typedef int (*ECICallback)(ECIHand, int msg, long lParam, void *pData);
 typedef long long ll;
 
 enum { MSG_WAVEFORM = 0, MSG_PHONEME = 1 };
@@ -92,11 +92,11 @@ static void ph_reply(ECIHand h, int size) {
  * (wsz, order as written by the engine; sz = the ASCII 4-letter names(.
  * We print both as hex so the offline fitter can test either interpretation. */
 static long g_pcm_samples;
-static void cb(ECIHand h, int msg, long lParam, void *pData) {
+static int cb(ECIHand h, int msg, long lParam, void *pData) {
     (void)h;
     if (msg == MSG_WAVEFORM && lParam > 0) {
         g_pcm_samples += lParam;
-        return;
+        return 1;
     }
     if (msg == MSG_PHONEME && lParam > 0) {
         const unsigned char *d = (const unsigned char *)pData;
@@ -104,7 +104,9 @@ static void cb(ECIHand h, int msg, long lParam, void *pData) {
         printf("phbuf\t%ld\t", lParam);
         hexout(d, (n < 160) ? n : 160);
         printf("\n");
+        return 1;
     }
+    return 1;
 }
 
 static void run_text(ECIHand e, const char *text) {
@@ -122,8 +124,9 @@ static void run_text(ECIHand e, const char *text) {
         if (Synthesize) Synthesize(e);
         if (Synchronize) Synchronize(e);
         if (Speaking) { int g = 0; while (Speaking(e) && g++ < 1000000) usleep(200); }
-        ph_reply(e, 512);
+        if (getenv("DUMP_GENPHON") && GeneratePhonemes) ph_reply(e, 512);
         printf("pcm\t%ld\n", g_pcm_samples);
+        fflush(stdout);
     }
 }
 
@@ -154,10 +157,8 @@ int main(int argc, char **argv) {
     char *eci = NewEx((int)dialect);
     if (!eci) { fprintf(stderr, "eciNewEx(0x%lx) failed\n", dialect); return 1; }
     if (Version) { char ver[64] = {0}; Version(ver); fprintf(stderr, "engine %s dialect 0x%lx\n", ver, dialect); }
-    SetParam(eci, PARAM_SYNTHMODE, 1);
-    SetParam(eci, PARAM_INPUTTYPE, 1);
-    SetParam(eci, PARAM_SAMPLERATE, 1);
-    SetParam(eci, PARAM_WANT_PHONEME, 1);
+    SetParam(eci, PARAM_SAMPLERATE, 1); /* 11025 Hz, exactly the JNI bridge path */
+    if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     SetOutputBuffer(eci, 4096, chunk);
@@ -166,7 +167,6 @@ int main(int argc, char **argv) {
         line[strcspn(line, "\r\n")] = '\0';
         if (!line[0]) continue;
         run_text(eci, line);
-        if (Stop) Stop(eci);
     }
     return 0;
 }
