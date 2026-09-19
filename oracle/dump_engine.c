@@ -130,6 +130,9 @@ static void run_text(ECIHand e, const char *text) {
     }
 }
 
+static void klatt_const_noop(void *c, void *u);
+static void klatt_frame_noop(void *f, void *u);
+
 static void setup_klatt_hooks(void) {
     void *ch = dlopen("lib/chs.so", RTLD_NOW | RTLD_NOLOAD);
     if (!ch) ch = dlopen("lib/chs.so", RTLD_NOW);
