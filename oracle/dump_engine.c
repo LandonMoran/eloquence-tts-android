@@ -107,8 +107,12 @@ static void ph_reply(ECIHand h, int size) {
     if (!GeneratePhonemes) return;
     if (size > (int)sizeof(buf)) size = (int)sizeof(buf);
     memset(buf, 0, sizeof(buf));
-    GeneratePhonemes(h, size, buf);
-    printf("genphon\t%d\t", size);
+    int r = GeneratePhonemes(h, size, buf);
+    /* First field = engine's return value -- the probe used to print the
+     * requested size and drop the result, so a failing GeneratePhonemes
+     * looked like "512 zero bytes" instead of "returned 0".  On the Apple
+     * engine this internally runs its own Synthesize+Synchronize. */
+    printf("genphon\t%d\t%d\t", r, size);
     hexout(buf, (size < 256) ? size : 256);
     printf("\n");
 }
@@ -290,10 +294,12 @@ int main(int argc, char **argv) {
         if (getenv("DUMP_PINYIN") && GeneratePinyins) {
             /* Converter path: the text is still pending here (manual mode
              * does not clear it on Synthesize).  eciGeneratePinyins converts
-             * the pending input -- the hanzi->pinyin rom-table shortcut. */
+             * the pending input -- the hanzi->pinyin rom-table shortcut.
+             * Size arg = BYTES OF BUFFER (not text length); the engine hands
+             * it to eciRegisterPhonemeBuffer2 verbatim as capacity. */
             static unsigned char pbuf[4096];
             memset(pbuf, 0, sizeof(pbuf));
-            int r = GeneratePinyins(eci, (int)n, pbuf);
+            int r = GeneratePinyins(eci, (int)sizeof(pbuf), pbuf);
             printf("pinyins\t%d\t", r);
             hexout(pbuf, 128);
             printf("\t%.20s\n", text);
