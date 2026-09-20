@@ -78,9 +78,7 @@ jobs:
           for s in $APPLIES; do
             printf 'break %s\ncommands\n  silent\n  printf "APL %s\\n"\n  continue\nend\n' "$s" "$s" >> /tmp/bp_apply.gdb
           done
-          cp "$GITHUB_WORKSPACE/oracle/trace.gdb" /tmp/trace_full.gdb
-          cat /tmp/bp_apply.gdb >> /tmp/trace_full.gdb
-          printf 'run %s < /tmp/sweep\nset logging off\n' "$D" >> /tmp/trace_full.gdb
+          { cat "$GITHUB_WORKSPACE/oracle/trace.gdb"; cat /tmp/bp_apply.gdb; echo; printf 'run %s < /tmp/sweep\nset logging off\n' "$D"; } > /tmp/trace_full.gdb
           echo "bp_count=$(grep -c '^break ' /tmp/trace_full.gdb)"
 
       - name: Generate corpora
