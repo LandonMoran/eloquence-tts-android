@@ -26,8 +26,24 @@ public class DllSurvey extends GhidraScript {
         for (MemoryBlock b : blks) {
             String flags = (b.isRead() ? "R" : "") + (b.isWrite() ? "W" : "") + (b.isExecute() ? "X" : "");
             println(String.format("SECTION %-16s size=0x%x flags=%s init=%s", b.getName(), b.getSize(), flags, b.isInitialized()));
-            if (b.isRead() && !b.isWrite() && b.isInitialized() && (largestRO == null || b.getSize() > largestRO.getSize()))
+            String bn = b.getName().toLowerCase();
+            boolean dataHunk = bn.contains("rdata") || bn.contains("const") || bn.contains("rodata") || bn.contains("cstring") || bn.contains("data.rel.ro");
+            if (b.isRead() && !b.isWrite() && b.isInitialized() && dataHunk && (largestRO == null || b.getSize() > largestRO.getSize()))
                 largestRO = b;
+        }
+        if (largestRO == null) {
+            for (MemoryBlock b : blks) {
+                String bn = b.getName().toLowerCase();
+                boolean dataHunk = bn.contains("rdata") || bn.contains("const") || bn.contains("rodata") || bn.contains("cstring") || bn.contains("data.rel.ro");
+                if (b.isRead() && !b.isWrite() && b.isInitialized() && dataHunk && (largestRO == null || b.getSize() > largestRO.getSize()))
+                    largestRO = b;
+            }
+        }
+        if (largestRO == null) {
+            for (MemoryBlock b : blks) {
+                if (b.isRead() && !b.isWrite() && b.isInitialized() && (largestRO == null || b.getSize() > largestRO.getSize()))
+                    largestRO = b;
+            }
         }
 
         // 2) strings in initialized non-exec sections
@@ -59,9 +75,9 @@ public class DllSurvey extends GhidraScript {
                     Map<Function, Integer> refcount = new LinkedHashMap<>();
                     ReferenceManager rm = p.getReferenceManager();
                     AddressSet roset = new AddressSet(largestRO.getStart(), largestRO.getEnd());
-                    AddressIterator it = rm.getReferenceSourceIterator(roset, true);
+                    ReferenceIterator it = rm.getReferenceIterator(roset);
                     while (it.hasNext()) {
-                        Address from = it.next();
+                        Address from = it.next().getFromAddress();
                         Function f = listing.getFunctionContaining(from);
                         if (f != null) {
                             refcount.put(f, refcount.getOrDefault(f, 0) + 1);
