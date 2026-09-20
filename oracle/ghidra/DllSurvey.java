@@ -81,17 +81,23 @@ public class DllSurvey extends GhidraScript {
                                         if (b.isExecute() && b.isInitialized()) { textSet.add(b.getStart()); textSet.add(b.getEnd().subtract(1)); }
                                     }
                                     if (textSet.isEmpty()) textSet = roset;
+                                    int nSrc =0; int nTo =0;
                                     AddressIterator it = rm.getReferenceSourceIterator(textSet, true);
                                     while (it.hasNext()) {
                                         Address from =it.next();
-                                        Reference[] refs = rm.getReferencesFrom(from);
-                                        for (Reference r : refs) {
-                                            if (roset.contains(r.getToAddress())) {
-                                                Function f = listing.getFunctionContaining(from);
-                                                if (f != null) refcount.merge(f, 1, Integer::sum);
+                                        nSrc++;
+                                        Reference[] refs = rm.getReferencesFrom(from;
+                                        if (refs != null) {
+                                            for (Reference r : refs) {
+                                                if (roset.contains(r.getToAddress())) {
+                                                    nTo++;
+                                                    Function f = listing.getFunctionContaining(from;
+                                                    if (f != null) refcount.merge(f, 1, Integer::sum);
+                                                }
                                             }
                                         }
                                     }
+                                    println("REFDEBUG src=" + nSrc + " into=" + nTo + " funcs=" + refcount.size());
                     List<Map.Entry<Function, Integer>> sorted = new ArrayList<>(refcount.entrySet());
                     sorted.sort((a, b) -> b.getValue() - a.getValue());
                     println("=== PROBERS top-15 referencing " + largestRO.getName() + ":");
