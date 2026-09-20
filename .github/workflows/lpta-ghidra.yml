@@ -51,6 +51,7 @@ jobs:
 
       - name: Decompile LPTA rule functions from ${{ inputs.lib }}
         run: |
+          find /opt/ghidra -path '*Decompiler*' -name 'decompile*' -o -path '*Decompiler/os*' -maxdepth 9 | head -20
           cd /opt/ghidra/ghidra_*
           mkdir -p /tmp/proj
           ./support/analyzeHeadless /tmp/proj lpta \
