@@ -4,7 +4,7 @@
 # the following token.
 
 rule apply_chi_o_rules from chs.obj
-shape frame 448 argbase 8 params 3
+shape frame 448 argbase 8 params 2
 label L0 was _apply_chi_o_rules
   load movl slotaddr -136 into r0
   push imm 0
