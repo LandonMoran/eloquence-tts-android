@@ -1,4 +1,4 @@
-// DllSurvey.java — Ghidra headless survey for Eloquence-family rom DLLs.
+// DllSurvey.java - Ghidra headless survey for Eloquence-family rom DLLs.
 // Usage: analyzeHeadless <proj> DllSurvey -import <file> -scriptPath <dir> -postScript DllSurvey.java -scriptlog <log>
 // Outputs to stdout (captured via -scriptlog):
 //   1) Section table (name, size, flags)
@@ -127,6 +127,37 @@ public class DllSurvey extends GhidraScript {
             w.close();
             println("DECOMP wrote " + out.getAbsolutePath());
             dec.dispose();
+        }
+
+        // 5) raw byte dump of every rom/delta/const/rdata block (the tables themselves)
+        PrintWriter bw = null;
+        try {
+            bw = new PrintWriter(new FileWriter("/tmp/dllsurv/" + p.getName() + ".survey.blocks.txt"));
+            int nb = 0;
+            long nbytes = 0;
+            for (MemoryBlock b : blks) {
+                String bn = b.getName().toLowerCase();
+                boolean romHunk = bn.contains("rom") || bn.contains("delta") || bn.contains("rdata")
+                        || bn.contains("const") || bn.contains("rodata") || bn.contains("cstring") || bn.contains("data.rel.ro");
+                if (!romHunk || !b.isInitialized() || b.getSize() <= 0) continue;
+                long cap = Math.min(b.getSize(), 2L *1024 *1024);
+                byte[] data = new byte[(int) cap];
+                int got = b.getBytes(b.getStart(), data);
+                bw.println("=== block " + b.getName() + " va=" + b.getStart() + " size=" + b.getSize() + " ===");
+                for (int i =0; i < got; i +=16) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(String.format("%08x ", b.getStart().getOffset() + i));
+                    for (int j =i; j < Math.min(i +16, got); j++) sb.append(String.format("%02x ", data[j] & 0xff));
+                    bw.println(sb.toString().trim());
+                }
+                nb++;
+                nbytes += got;
+            }
+            bw.println("// blocks=" + nb + " bytes=" + nbytes);
+            bw.close();
+            println("BLOCKS wrote blocks=" + nb + " bytes=" + nbytes + " -> /tmp/dllsurv/" + p.getName() + ".survey.blocks.txt");
+        } finally {
+            if (bw != null) bw.close();
         }
     }
 }
