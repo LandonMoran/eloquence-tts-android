@@ -1,5 +1,45 @@
 # CJK clean-room plan (chs / cht / kor) - where it actually stands
 
+## The chsrom dict reader - complete transcription spec (2026-09-20)
+
+All addresses: x86_64 slice of tvos18 chsrom.dylib (VA==fileoff).
+
+### getCharType (0x156c) - DECODED + cross-checked on the data
+```
+cl = *p; if (!cl) return 0;                 // EOS
+if (cl >= 0) return getAnsiCharType(p);      // ASCII path (module's own)
+al = p[1]; if (al >= 0) return 9;            // lead + ASCII second
+if ((cl + 0x5f) <= 0x0e && al > 0xa0) return 0x3f;  // A1-AF sym/punct band
+if (al < 0xa1) return 8;
+return (cl + 0x50) >= 0x4f ? 8 : 0x40;       // 0x40 = hanzi (lead >= B0)
+```
+Counters: _countHanziChars counts type==0x40; _countCharsFromBytes 1B/ASCII + 2B/GB.
+
+### ChiDict core (0x232e-0x27a4)
+- getGBIndexFromKey 0x232e: ((b0-0xb0)&ff)*0x5e + ((b1-0xa1)&ff)  [<0xb0 -> -1]  VERIFIED on 中=0xD6D0 -> idx 3619
+- getGBKeyFromIndex 0x23d8: idx/0x5e + 0xb0, idx%0x5e + 0xa1 (inverse, used in loops)
+- BIG5ToGBConverter 0x23f6: per char; <0x81 copy 1B; else m_pConvertTB[big5Index<<1] (big5Index = ((b0-0x81))*0x... two-band, from getBig5IndexFromKey 0x2638ish); invalid -> space
+- getBIG5ToGBTableOffsetFromKey 0x24?? : big5Index<<1
+- wordLookup 0x249c (type,key,cnt): type1=GB main: getGBIndexEntryFromKey; cnt==1 -> return the 6B index entry verbatim; else lexoff u16@+4 (0xffff=none) + m_pLexTB[which] + off -> Lexicon::getLexicon. type2=symb: m_nSizeofSymbEntry/m_pSymbTB/m_nSymbEntry + implicit key<<1 -> binaryLookupWord. type3=homo: walk m_aSizeofHomoEntry/m_aHomoEntryN over m_pHomoTB (2-size class: (ent>>1)<<1 for 2B, else 4B) -> binaryLookupWord at m_pHomoTB + acc.
+- getGBIndexEntryFromKey 0x25e4: idx=getGBIndexFromKey; which=WhichLexTB(idx) (m_aIndexRange[19] cumulative: [0,200,...,3600,4400]); off=GetIndOffset 0x27a4 = idx-ranges[which]; return m_pIndexTB[which] + 6*off. VERIFIED: which=18, off=19, entry=56 ff 58 2b 12 ea, lexoff u16@+4 = 0xea12.
+- getPinyinFromKey 0x26b8: entry -> if (!(b[2] || b[0])) return 0; Code2Pinyin(entry, out, 1); out[7]=0.
+- getWordGcat 0x26f0: category byte @+2 (0x58 for 中); type-1 gcat check `(b[2]!=0 || b[0]!=0)`.
+- PinYin::Code2Pinyin 0x1940: per word-pair (2 code bytes):
+    code0 != 0xff: strcpy(consonantTB + 3*code0)        -- consonantTB = initial[26] table (3B cells: "zh:ch:..."-style) @ c087e-ish
+    code1: q=code1/0x32, r=code1%0x32; q=='5' -> "5"; else sprintf("%s%c", vowelTB + 5*r, q|0x30)   -- vowelTB = final[38]-style 5B cells
+    => pinyin syllable = 2 bytes (consonant-code + (vowel-code with tone digit))
+- getToneFromPinyin 0x1c67: tone digit parse from the pinyin string ("...1".."5").
+
+### Open item (one function)
+initStaticDicts 0xc05a / DictData instance pointer arrays: m_pIndexTB[20] and
+m_pLexTB[20] assignment order (is m_pLexTB[i] == &aChiLexTB[i], or the
+lex-table reordering by WhichLexTB group?). The u16@+4 lexoff 0xea12 for 中
+lands in the concat span at lex7+0x39b2 (bytes 01 00 00 00 03 00 00 00 ...)
+which looks like a 4-byte-count prefix - bind the arrays to resolve.
+After that, the dict reader is 100% transcribed: sprache the C.
+
+## What has landed (committed, branches dll-survey + oracle-dev)
+
 ## Architecture (settled this session)
 
 The Eloquence pipeline for a CJK language = [romanizer module] -> [shared
