@@ -12,6 +12,13 @@ on:
           - jpn.so
         default: chs.so
         description: "language rule .so to decompile"
+      script:
+        type: choice
+        options:
+          - DecompileLptaV2
+          - DecompileLpta
+        default: DecompileLptaV2
+        description: "Ghidra post-script (V2 = adds FUN_* helpers + REF map)"
 
 permissions:
   contents: read
@@ -57,7 +64,7 @@ jobs:
           ./support/analyzeHeadless /tmp/proj lpta \
             -import "$GITHUB_WORKSPACE/apple-eloquence-elf-1.2.3-linux-aarch64/lib/${{ inputs.lib }}" \
             -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
-            -postScript DecompileLpta.java \
+            -postScript ${{ inputs.script }}.java \
             -deleteProject 2>&1 | tail -25
           ls -la /tmp/decomp.txt
 
