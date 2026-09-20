@@ -70,6 +70,7 @@ jobs:
             ja)    LIB=jpn.so; WORK=work_ja;    D=0x80000; ENC=;        SWEEP=ja-sample.txt ;;
           esac
           echo "DIALECT=${{ inputs.dialect }}" >> "$GITHUB_ENV"
+          echo "WORKDIR=$WORK" >> "$GITHUB_ENV"
           echo "ENCODING=$ENC" >> "$GITHUB_ENV"
           echo "SWEEPFILE=$SWEEP" >> "$GITHUB_ENV"
           echo "DIALECT_HEX=$D" >> "$GITHUB_ENV"
@@ -89,7 +90,7 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           export LD_LIBRARY_PATH="$PWD/lib"
-          export DUMP_WORKDIR="$PWD/work_${{ inputs.dialect }}"
+          export DUMP_WORKDIR="$PWD/$WORKDIR"
           export DUMP_ONESHOT=1
           export DUMP_WANT_PHONEME=1
           unset DUMP_NOSYNTH DUMP_TRACE DUMP_PINYIN DUMP_GENPHON
