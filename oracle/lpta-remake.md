@@ -162,3 +162,24 @@ shared engine that already speaks the other 8 languages.
   native/openevv/ - chase eci_rom.h, eci_romanizer.c, lang/jajp/.
 - Chase in dylib symbols: ChiDict::*, TextProcessor::*, PinYinOutput::*,
   eciGeneratePinyins, ConverterInterface::*.
+## Rules route (2026-09-21) - TRANSCRIPTION, not object-lift
+
+Apple shipped chs rules compiled (no analysis objs -> japanese.md pipeline
+cannot run). Found the Linux ELF release of the full runtime at
+/root/.scratch_cjk/apple-eloquence-elf-1.2.3-linux-x86_64 (lib/chs.so etc,
+dynsym'd). The tvos18.2 chs.dylib arm64 slice = the app's chs.so at
++0x100000 exactly (fileoff==VMA); llvm-nm --arch=arm64 gives every symbol.
+The rules' internals are OUTLINED_FUNCTION_n fragments at 0x5a000+; decoded
+map: see skill eloquence-engine-integration/references/lpta-rule-extraction.md.
+They call the same delta VM API as openevv, so the transcription is C rule
+natives (insert_2pt_s(d,f,n,str,mode) = engine delta.c:5294).
+
+State: delta_rules_chs.h (full enum + 3 chs-only entries: delete_syll_from_left,
+followed_by_er, chi_word_cat_anno), delta_rules_chs.c (empty bytecode pools),
+delta_rules_shim_chs.c (a_rules transcription: tone ladder DAT_198ede,
+test runs DAT_198ec3/ec4, cat-anno x19+0x88). sets/globals/codepoints/ini
+stubbed. `make build/libevv-chs.a LANGS=lang/chs RULES=c` = CLEAN.
+Remaining: 32 more apply functions (same pattern; each = ventproc/fence ->
+tests -> ladder inserts), the -a-follow jump table (0x8d6ae, 16-bit pairs),
+the multi-char lex binding, settings/statements lift, then run the audio
+validation on the eci side.
