@@ -71,6 +71,27 @@ def hex_of(row, part, key):
     return ""
 
 
+def phidx_of(row):
+    """Join the per-phoneme 'phidx' rows into one space-separated sequence:
+    each row contributes the hex-escaped phoneme name (or 0xa4 = end of
+    utterance)."""
+    seq = []
+    for r in row[2].get("phidx", []):
+        parts = r.split(b"\t")
+        if len(parts) >= 2:
+            seq.append(parts[1].decode("ascii", errors="replace"))
+    return " ".join(seq)
+
+
+def pinyins_of(row):
+    """Pinyin payload (hex bytes from eciGeneratePinyins) + return count."""
+    for r in row[2].get("pinyins", []):
+        parts = r.split(b"\t")
+        if len(parts) >= 3:
+            return parts[1].decode(), parts[2].split(b"|")[0].decode("ascii", errors="replace")
+    return "", ""
+
+
 def main():
     summary = []
     for path in sorted(glob.glob(os.path.join(CORPUS, "*.tsv"))):
@@ -84,7 +105,7 @@ def main():
         n_badmask = 0
         total_pcm = 0
         with open(out_path, "w", encoding="utf-8") as out, open(rows_path, "w", encoding="utf-8") as rp:
-            rp.write("input\tpcm\tphbuf_hex_len\tgenphon_hex_len\n")
+            rp.write("input\tpcm\tphbuf_hex_len\tgenphon_hex_len\tphidx_count\tpinyins\n")
             for line, order, rec in rows:
                 pcm = 0
                 for r in rec.get("pcm", []):
@@ -94,10 +115,13 @@ def main():
                         pcm = 0
                 ph = hex_of((line, order, rec), rec, "phbuf")
                 gp = hex_of((line, order, rec), rec, "genphon")
+                px = phidx_of((line, order, rec))
+                py, pyn_hex = pinyins_of((line, order, rec))
                 if gp and len(gp) != 512:
                     n_badmask += 1
-                out.write(f"{line}\t{pcm}\t{ph}\t{gp}\n")
-                rp.write(f"{line}\t{pcm}\t{len(ph) // 2}\t{len(gp) // 2}\n")
+                n_phidx = len([1 for _ in px.split()]) if px else 0
+                out.write(f"{line}\t{pcm}\t{ph}\t{gp}\t{px}\n")
+                rp.write(f"{line}\t{pcm}\t{len(ph) // 2}\t{len(gp) // 2}\t{n_phidx}\t{py} {pyn_hex[:128]}\n")
                 total_pcm += pcm
                 if pcm > 0:
                     n_nonzero += 1
