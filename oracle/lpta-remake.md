@@ -1,61 +1,114 @@
-# LPTA payload & the clean-room remake roadmap (chs / cht / kor / jpn)
+# CJK clean-room plan (chs / cht / kor) - where it actually stands
 
-State after the 2026-09-2x push. Cutting through what has been established
-and what the remake still needs.
+## Architecture (settled this session)
 
-## What the reference binaries are
+The Eloquence pipeline for a CJK language = [romanizer module] -> [shared
+delta/evv engine]. The romanizer is the `-rom` dylib (chsrom/chtrom/korrom):
+takes text in the script, hands the engine a phoneme string. docs/japanese.md
+documents the same shape for jajp. The openevv engine reaches a romanizer
+through the EvvRomOps table in src/eci/lang/eci_rom.h (addText,
+processSentence, UCS2ToMBCS, setParam ...); ours are compiled in; a lang
+module registers its romanizer from its bind function.
 
-| file | role |
-|---|---|
-| `reference/apple-eloquence-tvos18.2/{chs,cht,kor}.dylib` | Apple tvOS 18.2 speech modules, Mach-O fat (x86_64 + arm64). x86_64 slice VAs == file offsets. |
-| Apple-Eloquence-ELF 1.2.3 (Mudb0y) | Mach-O → ELF conversions of the same dylibs, `linux-aarch64` (+x86_64). Ghidra imports the aarch64 ones with image base **0x100000** — `DAT_0019xxxx` ⇒ `.m2e_data + (0x0009xxxx − 0x98000)`. |
-| `reference/vvtts-6.1-chs/` | i386 Windows ELoquence 6.1: `eci.dll` (engine), `chsrom.dll` (rom), `chs.syn`, `eci.ini` (31KB settings **text**), `t2c.txt` (variant-char table). |
-| `reference/eloquence-win/` | 6.2-era Windows installer leftovers. |
-| `upstream-openevv/lang/` | The openevv tree. **`cht` there = itit chassis copy (glob.dr identical), `chs` = stub with `delta_rules_none`, `kor` = absent.** No real CJK lift exists anywhere upstream or on this box. |
+Everything below the romanizer (phoneme synthesis, prosody, output) is the
+shared engine that already speaks the other 8 languages.
 
-## Facts that make the remake possible (all verified this session)
+## The data (all extracted, on branch dll-survey)
 
-1. `apply_chi_*_rules` (14 of them in chs/cht) are **compiled rule statements**, not a bytecode interpreter: prologue = `ventproc`/`vretproc`/`get_parm`/`push_ptr_init` (activation record + setjmp landing), body = chains of calls to runtime primitives with literal table operands.
-2. The runtime primitives have the **same names and signatures as openevv's own `delta.c`**: `test_string_s(d, st, n, str)`, `insert_2pt_s(d, f, n, str, …)`, `if_testeq_v_lng(d, loc, x)`, `insert_2pt`, `test_string`… So Apple's engine and openevv descend from the same IBM LPTA code; the Apple rule content transcribes 1:1 into openevv rules.
-3. Rule table operands live in `.m2e_data` (per-lang offsets in `lpta/lpta_manifest.json`); refs from the decompiled chains resolve to **byte-string phone sequences** (e.g. chs `.m2e_data+0xedf` = `+!*"5'& -$)(#,` — the phone alphabet for pinyin). The `ffff`-delimited u16 maps (chs tail 0xbd160) are char→phone maps.
-4. kor has **no `apply_kor_*_rules`** — text rules live in its `.m2e_data` (0x24f00, ~151KB: jamo/johab/dict tables). kor needs a table-port, not a chain transcription.
-5. `lpta-ghidra.yml` (oracle/ghidra/DecompileLpta.java) already dispatches on GH runners (aarch64 libs); artifacts `ghidra-decomp-{chs,cht,kor}.so` downloaded into `lpta/decomp/`.
-6. chs vs cht: `apply_chi_*` op chains are **identical** and `.m2e_data` is byte-identical (0 diff); the language difference lives in inline tables inside `.m2e_text` (687K/732K differ — real dict/test-table data there) + 1 byte in `.m2e_cstring`. A single transcribed rule engine + per-lang table data serves both.
-7. fin.so contains the same `ffff`-delimited u16 table structure (pattern match verified) — the extraction techniques generalize to every language in the release.
+- rom_tables.json: labeled chs/cht/kor starter tables (initial/final/punct/
+  punct_raw/special/counters/tones/math/digits + kor jamo/johab/hanja) from
+  parse_blocks.py, plus Windows DLL variants.
+- oracle/rom_lift/: byte-for-byte lift of the NAMED tables out of the tvos18
+  chsrom/chtrom/korrom dylibs - 349+349+125 tables, 1.36MB (StaticDict
+  aChiInd/aChiLex/aChiBig5/aChiHomo + korData Hangul2Johab/Johab2Hangul/
+  Hanja2Hangul). x86_64 slice: VA==fileoff, symbol address == file offset.
+  manifest.json holds sym -> section/addr/end/size/sha.
+- lang/{chs,cht,kor}/rom_tables_{tag}.c/.h: jajp-contract generated source
+  (one aligned blob per contiguous run + named pointer & length per table),
+  all cc -fsyntax-only clean.
+- lpta/ payloads: .m2e_data bins (chs 18KB / cht 25KB / kor 151KB / jpn 12KB
+  / fin 288KB), the aarch64 chs/cht/kor .so Ghidra decompiles (117 sections
+  of apply_chi_*_rules chains calling the openevv-identical runtime
+  primitives test_string_s/insert_2pt_s/if_testeq_v_lng/fence), and
+  rules_*.ops.json (6811 ops/language).
+- The vvtts-6.1-chs Windows DLLs contain NO rule bytecode either (compiled
+  chains on all three platforms) - the tvOS chains + tables ARE the rules;
+  there is no .dr text upstream of them.
+
+## Findings
+
+1. chs and cht rule code is op-for-op identical; their .m2e_data are
+   byte-identical. The chs/cht difference is entirely inline tables in
+   .m2e_text and one .m2e_cstring byte. One engine + per-lang tables.
+2. kor has no apply_kor_*_rules: pure table/dictionary engine. Its whole
+   conversion sits in korData tables (Hangul2Johab, Johab2Hangul,
+   Hanja2Hangul) - all already lifted.
+3. Ghidra image base 0x100000: a DAT_0019xxxx operand is `.m2e_data +
+   (0x0009xxxx - 0x98000)`.
+4. Dictionary tables use GB2312 2-byte codes + single-byte pinyin alphabet:
+   aChiLexTB* = run of GB codes each followed by pinyin bytes; aChiIndTB* =
+   index of offsets; aChiHomoTB* = homophone groups (GB pairs, 0x53
+   separators); aChiBig5TB = Big5 columns of the same dict.
+5. The chain-call vocabulary (test_string_s, insert_2pt_s, if_testeq_v_lng,
+   fence) maps 1:1 onto openevv's src/delta/delta_rules_c.h - transcribed
+   rules can be written in the openevv C-rule idiom.
+6. jajp precedent: 30-file romanizer port (rom/jajp/...), machine rules
+   emitted from the original objects. plpl precedent: a language without
+   original material uses a sibling chassis + own tables + own census test
+   cases. chs/cht/kor HAVE original tvOS material, so the romanizer
+   text-analysis (TextProcessor/ChiDict/PinYinOutput) can be transcribed
+   from the dylib disassembly (symbols present) + the dict blobs above.
+
+## Remaining work (order matters)
+
+1. Transcribe the dict LOOKUP (ChiDict) from the dylib disassembly - the
+   readers of aChiIndTB/aChiLexTB + the pinyin-byte alphabet - as
+   romdict.c (symbols: ConverterInterface at 0x2194, size ~0xa00).
+2. Transcribe TextProcessor (segmentation, comma/space/punct/digits) +
+   PinYinOutput (tone/syllable assembly) - names known in the symbol table.
+3. Walk the apply_chi_*_rules ops JSON to drive the STRING emission (the
+   LPTA half of eciGeneratePinyins behavior) - only where the phone-string
+   assembly needs the context rules.
+4. Write the EvvRomOps front-door (addText/processSentence/stop/resume/
+   UCS2ToMBCS/setParam/getParam) per language - the actual integration.
+5. Author the machine-module texts (statements/globals/sets/settings/
+   consts/eci_ini) - partly mechanical from the dylib cstrings + chassis
+   (settings give the phone inventory + voice params; eci.ini in
+   reference/vvtts-6.1-chs/ is text).
+6. Wire into evv.py/Makefile: NAMES += chs cht kor, LANGS += lang/chs ...;
+   build_native.sh rebuild; add probe cases (matrix.sh) with own baselines
+   (no oracle audio). Build + validate on the runner; validator checks pcm
+   content (audio, not exit codes).
 
 ## Payloads committed under oracle/ghidra/
 
-- `lpta/{chs,cht,kor,jpn,fin}.m2e_data.bin` — the LPTA rule-table/phone pools
-- `lpta/decomp/ghidra-decomp-{chs,cht,kor}.so.txt` — decompiled rule chains
-- `lpta/lpta_manifest.json` — per-lang .m2e_data offsets/sizes + full section maps
-- `rom_tables.json` + `parse_blocks.py` — chs/cht/kor rom tables (initial/final/punct/special/digits/tones/johab maps)
-- `fetch_lpta_data.py`, `extract_lpta.py`, `extract_m2edata.py` — extraction tools
-
-## Roadmap
-
-1. **chs/cht rules (in progress)**: transcription engine — parse each
-   `apply_chi_*_rules` decomp chain (op + operands) + resolve DAT refs →
-   strings → emit notation `.dr` → `make rulecode` → delta_rules_c*.c.
-   Iterate a diff-verifier: run the evv engine on sample pinyin for chs and
-   byte-compare vs probe audio.
-2. **kor tables**: parse the 0x24f00 bin (jamo/johab/syllable tables + dict) →
-   delta_globals/statements/sets; kor rules are table-driven so this is
-   mostly a structured port + the char classes.
-3. **settings/statements/etc. per lang**: derive from `eci.ini`, `chs.syn`
-   phone inventory, and the decompiled kernel (`.m2e_text` strings).
-4. **Build & validate on GH runners** (`lpta-ghidra.yml` / `oracle-fanout.yml`):
-   `make per-lang`, tables-check, probe — validator asserts pcm content
-   (audio), not exit codes.
-5. Wire `kor/chs/cht` into `build_native.sh` `LANGS`, drop Apple binaries.
+- lpta/{chs,cht,kor,jpn,fin}.m2e_data.bin - LPTA rule-table/phone pools
+- lpta/decomp/ghidra-decomp-{chs,cht,kor}.so.txt - decompiled rule chains
+- lpta/rules_{chs,cht,kor}.ops.json - op chains per apply_chi_*_rules
+- oracle/rom_lift/ - named static-dict/kor tables lifted byte-for-byte
+- rom_tables.json + parse_blocks.py - labeled rom tables
+- fetch_lpta_data.py, extract_lpta.py, extract_m2edata.py, rom_lift.py,
+  rom_tables_gen.py, parse_lpta_ops.py, DecompileLpta.java + V2 - tools
 
 ## Pitfalls
 
-- Ghidra image base 0x100000 for the aarch64 ELFs — resolve `DAT_0019xxxx`
-  via `.m2e_data` + 0x9810 (see fetch_lpta_data.py docstring).
+- Ghidra image base 0x100000 for the aarch64 ELFs - resolve DAT_0019xxxx
+  via .m2e_data + 0x9810 (see fetch_lpta_data.py docstring).
 - x86_64 slice VAs == file offsets; arm64 slice section offsets carry
-  virtualisation bits — read the x86_64 slice (or the ELF conversion) for
-  any direct byte work.
-- `llvm-readelf -S` tokenizes `[ 9]` as `[` + `9]` — match section names by
+  virtualisation bits - read the x86_64 slice (or the ELF conversion) for
+  direct byte work.
+- llvm-readelf -S tokenizes '[ 9]' as '[' + '9]' - match section names by
   membership, not fixed columns.
-- `upstream-openevv/lang/cht` etc. are *untracked* chassis copies — never
+- upstream-openevv/lang/cht etc. are UNTRACKED chassis copies - never
   treat them as genuine lifts.
+
+## Reference anchors
+
+- tvos18 dylibs: reference/apple-eloquence-tvos18.2/ (symbol table present:
+  llvm-objdump --macho -t)
+- x86_64 .so dir: /root/.scratch_cjk/apple-eloquence-elf-1.2.3-linux-x86_64/lib/
+- aarch64 ELF libs: /tmp/art_check/aee/apple-eloquence-elf-1.2.3-linux-aarch64/lib/
+- openevv: upstream-openevv/ (docs/japanese.md precedent); android copy:
+  native/openevv/ - chase eci_rom.h, eci_romanizer.c, lang/jajp/.
+- Chase in dylib symbols: ChiDict::*, TextProcessor::*, PinYinOutput::*,
+  eciGeneratePinyins, ConverterInterface::*.
