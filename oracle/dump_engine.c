@@ -271,7 +271,14 @@ int main(int argc, char **argv) {
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
     short chunk[4096];
     RegisterCallback(eci, cb, NULL);
-    SetOutputBuffer(eci, 4096, chunk);
+    /* The conversion gate (eciGeneratePhonemes/eciGeneratePinyins) tells
+     * the engine to switch its output to null for the internal pass it
+     * runs; a registered output buffer makes that switch fail and nothing
+     * lands in the phoneme buffer (the engine's own strings:
+     * "setOutputToNull failed").  So the output buffer is registered for
+     * the pcm gate only. */
+    if (!getenv("DUMP_PINYIN") && !getenv("DUMP_GENPHON"))
+        SetOutputBuffer(eci, 4096, chunk);
 
     if (getenv("DUMP_ONESHOT")) {
         /* probe2-verbatim feed: whole stdin, single AddText/Synthesize/Synchronize. */
