@@ -1,0 +1,67 @@
+name: lpta-ghidra
+
+on:
+  workflow_dispatch:
+    inputs:
+      lib:
+        type: choice
+        options:
+          - chs.so
+          - cht.so
+          - kor.so
+          - jpn.so
+        default: chs.so
+        description: "language rule .so to decompile"
+
+permissions:
+  contents: read
+
+jobs:
+  decompile:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: LandonMoran/eloquence-tts-android
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Install JDK
+        run: sudo apt-get update && sudo apt-get install -y openjdk-17-jdk-headless unzip
+
+      - name: Fetch converted engine (oracle, dev-only)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          curl -sL -o aee.tar.gz "https://github.com/Mudb0y/Apple-Eloquence-ELF/releases/download/1.2.3/apple-eloquence-elf-1.2.3-linux-aarch64.tar.gz"
+          tar -xzf aee.tar.gz
+
+      - name: Install Ghidra headless
+        run: |
+          URL=$(
+            curl -s "https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest" \
+              | grep browser_download_url | grep '\.zip"' | head -1 | cut -d'"' -f4
+          )
+          echo "ghidra_url=$URL"
+          curl -sL -o /tmp/ghidra.zip "$URL"
+          sudo mkdir -p /opt/ghidra
+          sudo unzip -q /tmp/ghidra.zip -d /opt/ghidra
+          sudo chmod -R a+rX /opt/ghidra
+          ls /opt/ghidra
+
+      - name: Decompile LPTA rule functions from ${{ inputs.lib }}
+        run: |
+          cd /opt/ghidra/ghidra_*
+          ./support/analyzeHeadless /tmp/proj lpta \
+            -import "$GITHUB_WORKSPACE/apple-eloquence-elf-1.2.3-linux-aarch64/lib/${{ inputs.lib }}" \
+            -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
+            -postScript DecompileLpta.java \
+            -deleteProject 2>&1 | tail -25
+          ls -la /tmp/decomp.txt
+
+      - name: Upload decompiled C
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghidra-decomp-${{ inputs.lib }}
+          path: /tmp/decomp.txt
+          if-no-files-found: error
