@@ -81,23 +81,25 @@ public class DllSurvey extends GhidraScript {
                                         if (b.isExecute() && b.isInitialized()) { textSet.add(b.getStart()); textSet.add(b.getEnd().subtract(1)); }
                                     }
                                     if (textSet.isEmpty()) textSet = roset;
-                                    int nSrc =0; int nTo =0;
-                                    AddressIterator it = rm.getReferenceSourceIterator(textSet, true);
-                                    while (it.hasNext()) {
-                                        Address from =it.next();
-                                        nSrc++;
-                                        Reference[] refs = rm.getReferencesFrom(from);
-                                        if (refs != null) {
-                                            for (Reference r : refs) {
-                                                if (roset.contains(r.getToAddress())) {
-                                                    nTo++;
-                                                    Function f = listing.getFunctionContaining(from);
-                                                    if (f != null) refcount.merge(f, 1, Integer::sum);
+                                    int nF =0; int nHits =0;
+                                    FunctionIterator fit = listing.getFunctions(true);
+                                    while (fit.hasNext()) {
+                                        Function fn = fit.next();
+                                        nF++;
+                                        int hits =0;
+                                        InstructionIterator ins = listing.getInstructions(fn.getBody(), true);
+                                        while (ins.hasNext()) {
+                                            Instruction instr = ins.next();
+                                            Reference[] refs = instr.getReferencesFrom();
+                                            if (refs != null) {
+                                                for (Reference r : refs) {
+                                                    if (roset.contains(r.getToAddress())) hits++;
                                                 }
                                             }
                                         }
+                                        if (hits > 0) { refcount.put(fn, hits); nHits++; }
                                     }
-                                    println("REFDEBUG src=" + nSrc + " into=" + nTo + " funcs=" + refcount.size());
+                                    println("REFDEBUG funcs=" + nF + " withHits=" + nHits);
                     List<Map.Entry<Function, Integer>> sorted = new ArrayList<>(refcount.entrySet());
                     sorted.sort((a, b) -> b.getValue() - a.getValue());
                     println("=== PROBERS top-15 referencing " + largestRO.getName() + ":");
