@@ -1,11 +1,11 @@
-# The a rule: pinyin 'a' - the first vowel.  Transcribed from
-# apply_chi_a_rules at 0x57910.  Fences on the tone ladder, tests the
-# a-grapheme, inserts the a final, and falls into the vback loop that
-# retries the following token.
+# The i rule: pinyin 'i' - the front vowel.  Transcribed from
+# apply_chi_i_rules at 0x58298.  Same engine as the e rule: fences,
+# then a chained test on the i-grapheme, an insert of the i final, and
+# the vback retry on the following token.
 
-rule apply_chi_a_rules from chs.obj
+rule apply_chi_i_rules from chs.obj
 shape frame 480 argbase 8 params 3
-label L0 was _apply_chi_a_rules
+label L0 was _apply_chi_i_rules
   load movl slotaddr -136 into r0
   push imm 0
   push slotaddr -136
@@ -30,45 +30,45 @@ label L0 was _apply_chi_a_rules
   popn 6
   cmp testl reg r0 reg r0
   branch jne to L1
-  load movl param 3 into r7
-  push reg r7
-  load movl slotaddr -16 into r0
-  push slotaddr -16
-  push param 1
-  load movl slotaddr -24 into r0
-  push slotaddr -24
-  push state 0
-  call get_parm arity 5 depth 5
   push imm 0
   push imm 0
   push state 0
-  call fence arity 3 depth 8
+  call fence arity 3 depth 9
   push imm 1
   push sym chs_a_ladder
   push state 0
-  call fence arity 3 depth 11
+  call fence arity 3 depth 12
   push imm 1
   push state 0
-  call starttest arity 2 depth 13
+  call starttest arity 2 depth 14
   push imm 1
   push state 0
-  call setscan_r arity 2 depth 15
+  call setscan_r arity 2 depth 16
   cmp testl reg r0 reg r0
   branch jne to L2
-  push sym chs_a_t1
+  push imm 16
+  push state 0
+  call starttest arity 2 depth 18
+  push imm 17
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_t1
   push imm 1
   push state 0
-  call test_string_s arity 3 depth 18
+  call test_string_s arity 3 depth 23
   cmp testl reg r0 reg r0
   branch jne to L2
-  push sym chs_a_fin1
+  push imm 20
+  push state 0
+  call starttest arity 2 depth 26
+  push sym chs_a_fin6
   push imm 1
   push imm 2
   push state 0
-  call insert_2pt_s arity 4 depth 22
+  call insert_2pt_s arity 4 depth 30
   cmp testl reg r0 reg r0
   branch je to L4
-label L2 was the_retry_scan
+label L2 was_the_retry_scan
   push imm 0
   push state 0
   call vback arity 2 depth 20
