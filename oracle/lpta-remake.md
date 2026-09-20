@@ -20,6 +20,8 @@ and what the remake still needs.
 3. Rule table operands live in `.m2e_data` (per-lang offsets in `lpta/lpta_manifest.json`); refs from the decompiled chains resolve to **byte-string phone sequences** (e.g. chs `.m2e_data+0xedf` = `+!*"5'& -$)(#,` — the phone alphabet for pinyin). The `ffff`-delimited u16 maps (chs tail 0xbd160) are char→phone maps.
 4. kor has **no `apply_kor_*_rules`** — text rules live in its `.m2e_data` (0x24f00, ~151KB: jamo/johab/dict tables). kor needs a table-port, not a chain transcription.
 5. `lpta-ghidra.yml` (oracle/ghidra/DecompileLpta.java) already dispatches on GH runners (aarch64 libs); artifacts `ghidra-decomp-{chs,cht,kor}.so` downloaded into `lpta/decomp/`.
+6. chs vs cht: `apply_chi_*` op chains are **identical** and `.m2e_data` is byte-identical (0 diff); the language difference lives in inline tables inside `.m2e_text` (687K/732K differ — real dict/test-table data there) + 1 byte in `.m2e_cstring`. A single transcribed rule engine + per-lang table data serves both.
+7. fin.so contains the same `ffff`-delimited u16 table structure (pattern match verified) — the extraction techniques generalize to every language in the release.
 
 ## Payloads committed under oracle/ghidra/
 
