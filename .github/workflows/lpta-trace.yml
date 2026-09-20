@@ -105,6 +105,7 @@ jobs:
           else
             head -n "${{ inputs.lines }}" /tmp/sweep.all > /tmp/sweep
           fi
+          sed -i "1i set solib-search-path $DUMP_WORKDIR" /tmp/trace_full.gdb
           gdb -batch -ex "file /tmp/dump_engine" -x /tmp/trace_full.gdb 2>/tmp/gdb.err || true
           echo "in_lines=$(wc -l < /tmp/sweep)"
           echo "fire_bp=$(grep -c '^breakpoint' /tmp/gdb.err || true)"
