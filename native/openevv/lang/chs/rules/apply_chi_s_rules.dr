@@ -38,8 +38,10 @@ label L0 was _apply_chi_s_rules
   push slotaddr -20
   push state 0
   call get_parm arity 5 depth 5
+  push imm 0
+  push imm 0
   push state 0
-  call fence arity 1 depth 6
+  call fence arity 3 depth 6
   push imm 1
   push state 0
   call starttest arity 2 depth 8

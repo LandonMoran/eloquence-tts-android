@@ -15,6 +15,12 @@ at chs.obj chs_s_phone1 chs_evv_data 34
 at chs.obj chs_s_phone2 chs_evv_data 31
 at chs.obj chs_n_test chs_evv_data 34
 at chs.obj chs_n_phone chs_evv_data 40
+at chs.obj chs_a_t1 chs_evv_data 16
+at chs.obj chs_a_t2 chs_evv_data 15
+at chs.obj chs_a_ladder chs_evv_data 42
+at chs.obj chs_a_fin1 chs_evv_data 43
+at chs.obj chs_a_fin2 chs_evv_data 44
+at chs.obj chs_a_fin3 chs_evv_data 45
 at chs.obj chs_phone_h chs_evv_data 39
 at chs.obj chs_c_phone1 chs_evv_data 58
 at chs.obj chs_c_phone2 chs_evv_data 60
