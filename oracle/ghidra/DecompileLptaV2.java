@@ -52,19 +52,18 @@ public class DecompileLptaV2 extends GhidraScript {
                 targets.add(f);
             }
         }
-        // pass 2: add every function called from the seeds (local helpers)
-        boolean grew = true;
-        while (grew) {
-            grew = false;
-            for (Function f : new ArrayList<>(targets)) {
+        // pass 2: add every function called from the seeds (local helpers),
+        // bounded to 2 rounds so the artifact stays the rule layer, not the
+        // whole image.
+        for (int round = 0; round < 2; round++) {
+            List<Function> frontier = new ArrayList<>(targets);
+            for (Function f : frontier) {
                 for (Instruction insn : listing.getInstructions(f.getBody(), true)) {
                     Address[] flows = insn.getFlows();
                     if (flows == null) continue;
                     for (Address a : flows) {
                         Function callee = fm.getFunctionAt(a);
-                        if (callee != null && !targets.contains(callee)) {
-                            targets.add(callee); grew = true;
-                        }
+                        if (callee != null) targets.add(callee);
                     }
                 }
             }
