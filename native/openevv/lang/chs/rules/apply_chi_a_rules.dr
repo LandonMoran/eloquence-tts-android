@@ -1,7 +1,9 @@
-# The a rule: pinyin 'a' — the first vowel.  Transcribed from
-# apply_chi_a_rules at 0x5791c.  The main arm fences on the a-ladder,
-# starts the test, loads-and-scans, then inserts the a-final from the
-# ladder: the plain a, the tone two, and the compound fallbacks.
+# The a rule: pinyin 'a' - the first and most common vowel, and the
+# syllable engine for every a-final.  Transcribed from
+# apply_chi_a_rules at 0x5791c.  The machine fences on the tone ladder,
+# then walks the compound-final arms: each is a savescptr/set-test
+# pair, an advance on the token stream, a synchronised fence on one of
+# the a family's substrings, and an insert of the final's phone.
 
 rule apply_chi_a_rules from chs.obj
 shape frame 480 argbase 8 params 3
@@ -50,41 +52,119 @@ label L0 was _apply_chi_a_rules
   push imm 1
   push state 0
   call starttest arity 2 depth 13
+  push imm 1
+  push state 0
+  call setscan_r arity 2 depth 15
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push imm 8
+  push state 0
+  call starttest arity 2 depth 17
   push sym chs_a_t1
   push imm 1
   push state 0
-  call test_string_s arity 3 depth 16
+  call test_string_s arity 3 depth 20
   cmp testl reg r0 reg r0
-  branch jne to L2
-  push sym chs_a_fin1
+  branch je to L6
+  push imm 5
+  push sym chs_a_ladder
+  push state 0
+  call test_synch arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L5
+  push sym chs_a_fin6
   push imm 1
   push imm 2
   push state 0
-  call insert_2pt_s arity 4 depth 20
+  call insert_2pt_s arity 4 depth 27
   cmp testl reg r0 reg r0
-  branch je to L3
-label L2 was the_tone_two_arm
-  push sym chs_a_t2
-  push imm 1
+  branch je to L4
+label L6 was the_fall_arm
+  push imm 6
+  push sym chs_a_ladder
   push state 0
-  call test_string_s arity 3 depth 19
+  call test_synch arity 3 depth 20
   cmp testl reg r0 reg r0
-  branch jne to L4
-  push sym chs_a_fin2
-  push imm 1
-  push imm 2
-  push state 0
-  call insert_2pt_s arity 4 depth 23
-  cmp testl reg r0 reg r0
-  branch je to L3
-label L4 was the_compound_arm
-  push sym chs_a_fin3
+  branch jne to L5
+  push sym chs_a_b1
   push imm 1
   push imm 2
   push state 0
-  call insert_2pt_s arity 4 depth 20
+  call insert_2pt_s arity 4 depth 24
   cmp testl reg r0 reg r0
-  branch je to L3
+  branch je to L4
+label L5 was the_second_arm
+  push imm 11
+  push state 0
+  call starttest arity 2 depth 19
+  push sym chs_a_b3
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 22
+  cmp testl reg r0 reg r0
+  branch je to L7
+  push imm 16
+  push state 0
+  call starttest arity 2 depth 25
+  push sym chs_a_b4
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 28
+  cmp testl reg r0 reg r0
+  branch je to L7
+  push imm 18
+  push state 0
+  call starttest arity 2 depth 31
+  push sym chs_a_b5
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 34
+  cmp testl reg r0 reg r0
+  branch je to L2
+  push sym chs_a_fin8
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 38
+  cmp testl reg r0 reg r0
+  branch je to L4
+label L7 was the_er_arm
+  push sym chs_a_fin6
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 25
+  cmp testl reg r0 reg r0
+  branch je to L4
+label L2 was the_third_arm
+  push imm 7
+  push sym chs_a_ladder
+  push state 0
+  call test_synch arity 3 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to L8
+  push sym chs_a_fin7
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 26
+  cmp testl reg r0 reg r0
+  branch je to L4
+label L8 was the_fourth_arm
+  push sym chs_a_b2
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L3
+  push sym chs_a_fin8
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 27
+  cmp testl reg r0 reg r0
+  branch je to L4
+label L3 was the_fail
   load movl slotaddr -4 into r0
   push slotaddr -4
   push state 0
@@ -99,7 +179,7 @@ label L1 was_at_done
   popreg r1
   load movl imm 94 into r0
   return reg r0
-label L3 was_succeed
+label L4 was_succeed
   push reg r6
   call succeed arity 1 depth 1
   load movl imm 0 into r0

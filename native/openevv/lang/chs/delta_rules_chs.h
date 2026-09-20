@@ -55,13 +55,15 @@ enum {
     DELTA_ENTRY_get_parm = 2,
     DELTA_ENTRY_fence = 3,
     DELTA_ENTRY_starttest = 4,
-    DELTA_ENTRY_test_string_s = 5,
-    DELTA_ENTRY_insert_2pt_s = 6,
-    DELTA_ENTRY_backtrack_function = 7,
-    DELTA_ENTRY_vretproc = 8,
-    DELTA_ENTRY_succeed = 9,
-    DELTA_ENTRY_setscan_nof_r = 10,
-    DELTA_ENTRY_lpta_rpta_loadp = 11,
+    DELTA_ENTRY_setscan_r = 5,
+    DELTA_ENTRY_test_string_s = 6,
+    DELTA_ENTRY_test_synch = 7,
+    DELTA_ENTRY_insert_2pt_s = 8,
+    DELTA_ENTRY_backtrack_function = 9,
+    DELTA_ENTRY_vretproc = 10,
+    DELTA_ENTRY_succeed = 11,
+    DELTA_ENTRY_setscan_nof_r = 12,
+    DELTA_ENTRY_lpta_rpta_loadp = 13,
 };
 
 /* The largest frame any rule asks for, base and arguments
