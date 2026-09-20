@@ -32,7 +32,7 @@ int32_t chs_apply_chi_h_rules(int32_t a0, int32_t a1)
                           &chs_delta_rules[1], a, 2);
 }
 
-int32_t chs_apply_chi_w_rules(int32_t a0, int32_t a1)
+int32_t chs_apply_chi_j_rules(int32_t a0, int32_t a1)
 {
     int32_t a[2];
 
@@ -42,7 +42,7 @@ int32_t chs_apply_chi_w_rules(int32_t a0, int32_t a1)
                           &chs_delta_rules[2], a, 2);
 }
 
-int32_t chs_apply_chi_y_rules(int32_t a0, int32_t a1)
+int32_t chs_apply_chi_q_rules(int32_t a0, int32_t a1)
 {
     int32_t a[2];
 
@@ -50,5 +50,35 @@ int32_t chs_apply_chi_y_rules(int32_t a0, int32_t a1)
     a[1] = a1;
     return delta_run_rule(EVV_AT(void *, a0),
                           &chs_delta_rules[3], a, 2);
+}
+
+int32_t chs_apply_chi_w_rules(int32_t a0, int32_t a1)
+{
+    int32_t a[2];
+
+    a[0] = a0;
+    a[1] = a1;
+    return delta_run_rule(EVV_AT(void *, a0),
+                          &chs_delta_rules[4], a, 2);
+}
+
+int32_t chs_apply_chi_y_rules(int32_t a0, int32_t a1)
+{
+    int32_t a[2];
+
+    a[0] = a0;
+    a[1] = a1;
+    return delta_run_rule(EVV_AT(void *, a0),
+                          &chs_delta_rules[5], a, 2);
+}
+
+int32_t chs_apply_chi_z_rules(int32_t a0, int32_t a1)
+{
+    int32_t a[2];
+
+    a[0] = a0;
+    a[1] = a1;
+    return delta_run_rule(EVV_AT(void *, a0),
+                          &chs_delta_rules[6], a, 2);
 }
 
