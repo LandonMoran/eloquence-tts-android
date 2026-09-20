@@ -80,7 +80,7 @@ jobs:
           done
           cp "$GITHUB_WORKSPACE/oracle/trace.gdb" /tmp/trace_full.gdb
           cat /tmp/bp_apply.gdb >> /tmp/trace_full.gdb
-          printf 'run %s < /tmp/sweep\nset logging off\n' "$DIALECT_HEX" >> /tmp/trace_full.gdb
+          printf 'run %s < /tmp/sweep\nset logging off\n' "$D" >> /tmp/trace_full.gdb
           echo "bp_count=$(grep -c '^break ' /tmp/trace_full.gdb)"
 
       - name: Generate corpora
