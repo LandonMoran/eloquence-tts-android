@@ -80,7 +80,7 @@ jobs:
           done
           cp "$GITHUB_WORKSPACE/oracle/trace.gdb" /tmp/trace_full.gdb
           cat /tmp/bp_apply.gdb >> /tmp/trace_full.gdb
-          printf 'run < /tmp/sweep\nset logging off\n' >> /tmp/trace_full.gdb
+          printf 'run %s < /tmp/sweep\nset logging off\n' "$DIALECT_HEX" >> /tmp/trace_full.gdb
           echo "bp_count=$(grep -c '^break ' /tmp/trace_full.gdb)"
 
       - name: Generate corpora
@@ -105,7 +105,7 @@ jobs:
           else
             head -n "${{ inputs.lines }}" /tmp/sweep.all > /tmp/sweep
           fi
-          gdb -batch -x /tmp/trace_full.gdb --args /tmp/dump_engine "$DIALECT_HEX" 2>/tmp/gdb.err || true
+          gdb -batch -ex "file /tmp/dump_engine" -x /tmp/trace_full.gdb 2>/tmp/gdb.err || true
           echo "in_lines=$(wc -l < /tmp/sweep)"
           echo "fire_bp=$(grep -c '^breakpoint' /tmp/gdb.err || true)"
           echo "tst_rows=$(grep -c '^TST' /tmp/rulefire.log || true)"
