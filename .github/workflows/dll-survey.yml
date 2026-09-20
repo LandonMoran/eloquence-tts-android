@@ -42,15 +42,19 @@ jobs:
             echo "=== SURVEYING $b"
             # raw strings snapshot for offline vocab diffing
             strings -n 2 "$f" > "/tmp/dllsurv/$b.strings.txt" || true
+            set -x
             ./support/analyzeHeadless /tmp/proj surv \
               -import "$f" \
               -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
               -scriptlog "/tmp/dllsurv/$b.log" \
               -postScript DllSurvey.java \
-              -deleteProject >/dev/null 2>&1
-            grep -E '^ERROR|Exception|Importing|Missing' "/tmp/dllsurv/$b.log" | head -5 || true
+              -deleteProject 2>&1 | tail -25
+            echo "analyzeHeadless rc=${PIPESTATUS[0]}"
+            set +x
+            ls -la /tmp/dllsurv
           done
-          ls -la /tmp/dllsurv
+          echo "--- final artifact sizes:"
+          du -sb /tmp/dllsurv/*
 
       - name: Upload survey outputs
         uses: actions/upload-artifact@v4
