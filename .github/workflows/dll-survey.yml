@@ -45,8 +45,10 @@ jobs:
             ./support/analyzeHeadless /tmp/proj surv \
               -import "$f" \
               -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
+              -scriptlog "/tmp/dllsurv/$b.log" \
               -postScript DllSurvey.java \
-              -deleteProject >/dev/null 2>&1 || true
+              -deleteProject >/dev/null 2>&1
+            grep -E '^ERROR|Exception|Importing|Missing' "/tmp/dllsurv/$b.log" | head -5 || true
           done
           ls -la /tmp/dllsurv
 
