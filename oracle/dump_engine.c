@@ -35,10 +35,22 @@ typedef const void *ECIInputText;
 typedef int (*ECICallback)(ECIHand, int msg, long lParam, void *pData);
 typedef long long ll;
 
-enum { MSG_WAVEFORM = 0, MSG_PHONEME = 1 };
-enum { PARAM_SYNTHMODE = 0, PARAM_INPUTTYPE = 1, PARAM_SAMPLERATE = 5,
-       PARAM_WANT_PHONEME =  7, PARAM_DIALECT =  9 };
+/* ECIMessage / ECIParam per the IBM TTS API (tts.txt): 0-based enums. */
+enum { MSG_WAVEFORM = 0, MSG_PHONEME_BUFFER = 1, MSG_INDEX_REPLY = 2,
+       MSG_PHONEME_INDEX_REPLY = 3 };
+enum { PARAM_SYNTHMODE = 0, PARAM_INPUTTYPE = 1, PARAM_TEXMODE = 2,
+       PARAM_DICTIONARY = 3, PARAM_SAMPLERATE = 4, PARAM_WANT_PHONEME = 5,
+       PARAM_REAL_WORLD_UNITS = 6, PARAM_DIALECT = 7, PARAM_NUMBER_MODE = 8 };
 enum { PHONEME_LEN = 4 };
+
+/* eciPhonemeIndexReply (msg 3) carries ECIMouthData: ASCIIZ phoneme name
+ * (or 0xA4 end-of-utterance) + language dialect + 8 mouth params. */
+typedef struct {
+    char szPhoneme[PHONEME_LEN + 1];
+    long eciLanguageDialect;
+    unsigned char mouthHeight, mouthWidth, mouthUpturn, jawOpen;
+    unsigned char teethUpperVisible, teethLowerVisible, tonguePosn, lipTension;
+} MouthData;
 
 /* function pointer types */
 typedef ECIHand (*fn_NewEx)(int);
@@ -101,24 +113,42 @@ static void ph_reply(ECIHand h, int size) {
     printf("\n");
 }
 
-/* Callback capture: phoneme messages give per-frame 5-phoneme indices
- * (wsz, order as written by the engine; sz = the ASCII 4-letter names(.
- * We print both as hex so the offline fitter can test either interpretation. */
+/* Callback capture: the engine's phoneme-index replies (msg 3, one per
+ * spoken phoneme) arrive as ECIMouthData -- ASCIIZ phoneme name + mouth
+ * params.  Also collect waveform-buffer fills (msg 0) to count PCM. */
 static long g_pcm_samples;
 static int cb(ECIHand h, int msg, long lParam, void *pData) {
     (void)h;
-    if (msg == MSG_WAVEFORM && lParam > 0) {
-        g_pcm_samples += lParam;
+    if (msg == MSG_WAVEFORM) {
+        if (lParam > 0) g_pcm_samples += lParam;
         return 1;
     }
-    if (msg == MSG_PHONEME && lParam > 0) {
-        const unsigned char *d = (const unsigned char *)pData;
-        long n = lParam * (PHONEME_LEN + 2); /* sz[5] + wsz[5] per frame */
+    if (msg == MSG_PHONEME_INDEX_REPLY && pData) {
+        /* One row per spoken phoneme: hex-escaped ASCIIZ name (0xA4 =
+         * end of utterance) + dialect + 8 mouth params. */
+        const MouthData *m = (const MouthData *)pData;
+        printf("phidx\t");
+        {
+            long i;
+            for (i = 0; i < PHONEME_LEN + 1 && m->szPhoneme[i]; i++)
+                printf("%02x", (unsigned char)m->szPhoneme[i]);
+        }
+        printf("\t%ld\t%02x%02x%02x%02x%02x%02x%02x%02x\n",
+               m->eciLanguageDialect,
+               m->mouthHeight, m->mouthWidth, m->mouthUpturn, m->jawOpen,
+               m->teethUpperVisible, m->teethLowerVisible, m->tonguePosn,
+               m->lipTension);
+        fflush(stdout);
+        return 1;
+    }
+    if (msg == MSG_PHONEME_BUFFER && pData && lParam > 0) {
+        /* SPR buffer fill from eciGeneratePhonemes; raw bytes (may be
+         * ASCII phoneme names or indices -- the fitter decides). */
         printf("phbuf\t%ld\t", lParam);
-        hexout(d, (n < 512) ? n : 512);
-                printf("\n");
-                fflush(stdout);
-                return 1;
+        hexout((const unsigned char *)pData, (lParam < 512) ? lParam : 512);
+        printf("\n");
+        fflush(stdout);
+        return 1;
     }
     return 1;
 }
@@ -175,7 +205,7 @@ static void run_text(ECIHand e, const char *text) {
     } else if (getenv("DUMP_NOSYNTH")) {
         printf("pcm\t0\n");
     }
-    if (GeneratePhonemes) ph_reply(e, 512);
+    if (getenv("DUMP_GENPHON") && GeneratePhonemes) ph_reply(e, 512);
     fflush(stdout);
 }
 
@@ -262,7 +292,7 @@ int main(int argc, char **argv) {
         }
         if (getenv("DUMP_TRACE")) fprintf(stderr, "oneshot add=%d synth=%d sync=%d len=%zu\n", add_r, sy_r, so_r, n);
         printf("pcm\t%ld\n", g_pcm_samples);
-        if (getenv("DUMP_WANT_PHONEME") && GeneratePhonemes) ph_reply(eci, 512);
+        if (getenv("DUMP_GENPHON") && GeneratePhonemes) ph_reply(eci, 512);
         return 0;
     }
     if (getenv("DUMP_FORKSERVER")) {

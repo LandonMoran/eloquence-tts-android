@@ -76,59 +76,74 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_ONESHOT=1
           export DUMP_WANT_PHONEME=1
-          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          if [ "${{ inputs.dialect }}" = "zh-cn" ] || [ "${{ inputs.dialect }}" = "zh-tw" ]; then
+            export DUMP_PINYIN=1
+          else
+            unset DUMP_PINYIN
+          fi
+          unset DUMP_TRACE DUMP_GENPHON
           : > "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
           case "${{ inputs.dialect }}" in
             zh-cn)
               export DUMP_WORKDIR="$PWD/work_zh_cn"
               ENC=GB18030
               D=0x60000
+              SWEEP=hanzi-sweep.txt
               ;;
             zh-tw)
               export DUMP_WORKDIR="$PWD/work_zh_tw"
               ENC=BIG5
               D=0x60001
+              SWEEP=hanzi-sweep.txt
               ;;
             ko)
               export DUMP_WORKDIR="$PWD/work_ko"
               D=0xA0000
+              SWEEP=kor-sweep.txt
               ;;
             ja)
               export DUMP_WORKDIR="$PWD/work_ja"
               D=0x80000
+              SWEEP=ja-sample.txt
               ;;
           esac
-          if [ "${{ inputs.dialect }}" = "zh-cn" ] || [ "${{ inputs.dialect }}" = "zh-tw" ]; then
-            iconv -f UTF-8 -t "$ENC" -c "$GITHUB_WORKSPACE/oracle/corpus/hanzi-sweep.txt" > /tmp/sweep.enc 2>/dev/null || true
-            wc -l < /tmp/sweep.enc
-            TL=$(wc -l < /tmp/sweep.enc); PER=$(( (TL + 7) / 8 )); split -l "$PER" -d -a2 /tmp/sweep.enc /tmp/hz_
-            case "${{ inputs.piece }}" in
-              1) pc=/tmp/hz_00;;
-              2) pc=/tmp/hz_01;;
-              3) pc=/tmp/hz_02;;
-              4) pc=/tmp/hz_03;;
-              5) pc=/tmp/hz_04;;
-              6) pc=/tmp/hz_05;;
-              7) pc=/tmp/hz_06;;
-              8) pc=/tmp/hz_07;;
-            esac
-            NPROC=$(nproc); [ "$NPROC" -gt 8 ] && NPROC=8
-            TL=$(wc -l < "$pc"); PER=$(( (TL + $NPROC - 1) / $NPROC )); split -l "$PER" -d -a2 "$pc" /tmp/hzp_
-            for c in /tmp/hzp_[0-9][0-9]; do
-              ( while IFS= read -r line; do
-                  printf '%s\n' "$line" | /tmp/dump_engine "$D" >> "$c.tsv"
-                  printf 'nl\t%s\n' "$line" >> "$c.tsv"
-                done < "$c" ) &
-            done
-            wait
-            for c in /tmp/hzp_[0-9][0-9]; do cat "$c.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
-          else
-            src="$GITHUB_WORKSPACE/oracle/corpus/${{ inputs.dialect }}-sample.txt"
-            while IFS= read -r line; do
-              printf '%s\n' "$line" | taskset -c 0 /tmp/dump_engine "$D" >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
-              printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
-            done < "$src"
-          fi
+          case "${{ inputs.dialect }}" in
+            ja)
+              src="$GITHUB_WORKSPACE/oracle/corpus/$SWEEP"
+              while IFS= read -r line; do
+                printf '%s\n' "$line" | /tmp/dump_engine "$D" >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+                printf 'nl\t%s\n' "$line" >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+              done < "$src"
+              ;;
+            *)
+              if [ -n "${ENC:-}" ]; then
+                iconv -f UTF-8 -t "$ENC" -c "$GITHUB_WORKSPACE/oracle/corpus/$SWEEP" > /tmp/sweep.enc 2>/dev/null || true
+              else
+                cp "$GITHUB_WORKSPACE/oracle/corpus/$SWEEP" /tmp/sweep.enc
+              fi
+              TL=$(wc -l < /tmp/sweep.enc); PER=$(( (TL + 7) / 8 )); split -l "$PER" -d -a2 /tmp/sweep.enc /tmp/hz_
+              case "${{ inputs.piece }}" in
+                1) pc=/tmp/hz_00;;
+                2) pc=/tmp/hz_01;;
+                3) pc=/tmp/hz_02;;
+                4) pc=/tmp/hz_03;;
+                5) pc=/tmp/hz_04;;
+                6) pc=/tmp/hz_05;;
+                7) pc=/tmp/hz_06;;
+                8) pc=/tmp/hz_07;;
+              esac
+              NPROC=$(nproc); [ "$NPROC" -gt 8 ] && NPROC=8
+              TL=$(wc -l < "$pc"); PER=$(( (TL + $NPROC - 1) / $NPROC )); split -l "$PER" -d -a2 "$pc" /tmp/hzp_
+              for c in /tmp/hzp_[0-9][0-9]; do
+                ( while IFS= read -r line; do
+                    printf '%s\n' "$line" | /tmp/dump_engine "$D" >> "$c.tsv"
+                    printf 'nl\t%s\n' "$line" >> "$c.tsv"
+                  done < "$c" ) &
+              done
+              wait
+              for c in /tmp/hzp_[0-9][0-9]; do cat "$c.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
+              ;;
+          esac
           echo "pcm_rows=$(grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/output.tsv" || true)"
 
       - name: Upload piece
