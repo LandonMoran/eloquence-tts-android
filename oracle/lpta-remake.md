@@ -55,9 +55,19 @@ shared engine that already speaks the other 8 languages.
 6. jajp precedent: 30-file romanizer port (rom/jajp/...), machine rules
    emitted from the original objects. plpl precedent: a language without
    original material uses a sibling chassis + own tables + own census test
-   cases. chs/cht/kor HAVE original tvOS material, so the romanizer
+   cases. chs/cht/kor HAVE original tvos material, so the romanizer
    text-analysis (TextProcessor/ChiDict/PinYinOutput) can be transcribed
    from the dylib disassembly (symbols present) + the dict blobs above.
+
+7. ChiDict API (chsrom.dylib x86_64 VAs): ctor 0x21c0,<initDicts
+   0x221a/0x22a2(load), initStaticDicts 0xc05a, BIG5ToGBConverter
+   0x23f6, getGBIndexFromKey 0x232e, getGBKeyFromIndex 0x23d8,<
+   getGBIndexEntryFromKey 0x25e4, wordLookup 0x249c, WhichLexTB<
+   0x2626/0x2770, getLexAddr 0x268a, getWordGcat 0x26f0,<
+   GetIndOffset 0x27a4, getPinyinFromKey 0x26b8. The whole dict layer
+   spans ~0x21c0-0x27a4 (~1.5KB of x86 code) - tiny; transcribe
+   directly. TextProcessor::*, PinYinOutput::*, eciGeneratePinyins<
+   0x4e8e, UnicodeConverter 0x37fa stay named in the same table.
 
 ## Remaining work (order matters)
 
