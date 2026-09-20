@@ -86,4 +86,13 @@ Sections: .m2e_text 0xfb0..0xb3c42 (~721KB interpreter+compiled rules),
 - Driver loop confirmed: statement table = byte stream; starttest(N) at
   9d60f sets stmt id; lpta_loadp_setscan_l/r loads the RPTA (replacement)
   side; test_string_s(9d9e8) matches input chars; mark_s(9846f) commits.
-- Same format expected in cht.so / kor.so / jpn.so (shared Alchemy base).
+## Raw DLL survey v7.6 - raw DLLs on Ghidra arm64 runners
+Same table layout as converted ELF 1.2.3, confirmed in the tvos18 dylibs:
+
+- tvos18_chsrom.dylib __const VA 0000f5c0 size 732313. INITIAL table begins at VA 0xf5c0 stride 3 zh\0ch\0sh\0b... FINAL table begins at VA 0xf610 stride 5 iang\0iong\0uang...
+- chs/cht: DLL VA equals ELF file offset plus  0x1000. Check each binary.
+- tvos18_chtrom.dylib __const VA 0000f5b0 same layout 0x10 earlier than chs.
+
+- tvos18_korrom.dylib __const VA 00008390 size  213636. Kor tables anchors TODO.
+- viavoice2002_chsrom.dll .rdata VA  10011000 size  1175552. Older layout TODO.
+
