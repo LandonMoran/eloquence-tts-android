@@ -75,9 +75,9 @@ public class DllSurvey extends GhidraScript {
                     Map<Function, Integer> refcount = new LinkedHashMap<>();
                     ReferenceManager rm = p.getReferenceManager();
                     AddressSet roset = new AddressSet(largestRO.getStart(), largestRO.getEnd());
-                    ReferenceIterator it = rm.getReferenceIterator(roset);
-                    while (it.hasNext()) {
-                        Address from = it.next().getFromAddress();
+                    AddressIterator it = rm.getReferenceSourceIterator(roset, true);
+                                        while (it.hasNext()) {
+                                            Address from =it.next();
                         Function f = listing.getFunctionContaining(from);
                         if (f != null) {
                             refcount.put(f, refcount.getOrDefault(f, 0) + 1);

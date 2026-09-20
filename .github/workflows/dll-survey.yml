@@ -47,7 +47,7 @@ jobs:
               -import "$f" \
               -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
               -scriptlog "/tmp/dllsurv/$b.log" \
-              -postScript DllSurvey.py \
+              -postScript DllSurvey.java \
               -deleteProject 2>&1 | tail -80
             echo "analyzeHeadless rc=${PIPESTATUS[0]}"
             set +x
