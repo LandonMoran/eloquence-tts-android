@@ -54,37 +54,37 @@ public class DllSurvey extends GhidraScript {
         }
 
         // 3) functions referencing the largest RO block (rom probers)
-        if (largestRO != null) {
-            Listing listing = p.getListing();
-            Map<String, Integer> refcount = new TreeMap<>();
-            ReferenceManager rm = p.getReferenceManager();
-            AddressIterator it = rm.getReferenceSourceIterator(largestRO.getStart(), largestRO.getEnd(), true);
-            while (it.hasNext()) {
-                Address from = it.next();
-                Function f = listing.getFunctionContaining(from);
-                if (f != null) {
-                    String n = f.getName();
-                    refcount.put(n, refcount.getOrDefault(n, 0) + 1);
-                }
-            }
-            List<Map.Entry<String, Integer>> sorted = new ArrayList<>(refcount.entrySet());
-            sorted.sort((a, b) -> b.getValue() - a.getValue());
-            println("=== PROBERS top-15 referencing " + largestRO.getName() + ":");
-            int shown = 0;
-            for (Map.Entry<String, Integer> e : sorted) {
-                if (shown++ >= 15) break;
-                println("  " + e.getKey() + " refs=" + e.getValue());
-            }
-            // 4) decompile them
-            DecompInterface dec = new DecompInterface();
-            dec.toggleCCode(true); dec.toggleSyntaxTree(true);
-            if (!dec.openProgram(p)) { println("DecompInterface failed: " + dec.getLastMessage()); return; }
-            File out = new File("/tmp/dllsurv/" + p.getName() + ".survey.decomp.txt");
-            PrintWriter w = new PrintWriter(new FileWriter(out));
-            shown = 0;
-            for (Map.Entry<String, Integer> e : sorted) {
-                if (shown++ >= 15) break;
-                Function f = listing.getFunction(e.getKey());
+                if (largestRO != null) {
+                    Listing listing = p.getListing();
+                    Map<Function, Integer> refcount = new LinkedHashMap<>();
+                    ReferenceManager rm = p.getReferenceManager();
+                    AddressSet roset = new AddressSet(largestRO.getStart(), largestRO.getEnd());
+                    AddressIterator it = rm.getReferenceSourceIterator(roset, true);
+                    while (it.hasNext()) {
+                        Address from = it.next();
+                        Function f = listing.getFunctionContaining(from);
+                        if (f != null) {
+                            refcount.put(f, refcount.getOrDefault(f, 0) + 1);
+                        }
+                    }
+                    List<Map.Entry<Function, Integer>> sorted = new ArrayList<>(refcount.entrySet());
+                    sorted.sort((a, b) -> b.getValue() - a.getValue());
+                    println("=== PROBERS top-15 referencing " + largestRO.getName() + ":");
+                    int shown = 0;
+                    for (Map.Entry<Function, Integer> e : sorted) {
+                        if (shown++ >= 15) break;
+                        println("  " + e.getKey().getName() + " refs=" + e.getValue());
+                    }
+                    // 4) decompile them
+                    DecompInterface dec = new DecompInterface();
+                    dec.toggleCCode(true); dec.toggleSyntaxTree(true);
+                    if (!dec.openProgram(p)) { println("DecompInterface failed: " + dec.getLastMessage()); return; }
+                    File out = new File("/tmp/dllsurv/" + p.getName() + ".survey.decomp.txt");
+                    PrintWriter w = new PrintWriter(new FileWriter(out));
+                    shown =0;
+                    for (Map.Entry<Function, Integer> e : sorted) {
+                        if (shown++ >= 15) break;
+                        Function f = e.getKey();
                 if (f == null) continue;
                 DecompileResults res = dec.decompileFunction(f, 60, monitor);
                 w.println("// ===== " + e.getKey() + " refs=" + e.getValue());
