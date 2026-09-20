@@ -15,7 +15,7 @@ public class DecompileLpta extends GhidraScript {
     public void run() throws Exception {
         DecompInterface dec = new DecompInterface();
         if (!dec.openProgram(currentProgram)) {
-            println("DecompInterface failed");
+            println("DecompInterface failed: " + dec.getLastMessage());
             return;
         }
         dec.toggleCCode(true);
