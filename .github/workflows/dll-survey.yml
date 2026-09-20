@@ -48,7 +48,7 @@ jobs:
               -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
               -scriptlog "/tmp/dllsurv/$b.log" \
               -postScript DllSurvey.java \
-              -deleteProject 2>&1 | tail -25
+              -deleteProject 2>&1 | tail -80
             echo "analyzeHeadless rc=${PIPESTATUS[0]}"
             set +x
             ls -la /tmp/dllsurv
