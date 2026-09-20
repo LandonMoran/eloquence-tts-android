@@ -274,15 +274,23 @@ int main(int argc, char **argv) {
         char text[1 << 20]; size_t n;
         n  = fread(text, 1, sizeof(text) - 1, stdin);
         text[n] = '\0';
+        /* Two mutually-exclusive capture styles:
+         * - SPR converter (DUMP_PINYIN/DUMP_GENPHON): eciGeneratePinyins /
+         *   eciGeneratePhonemes need MANUAL mode set before AddText and
+         *   CONSUME the pending input, so no synthesis can also run on the
+         *   same buffer (the IBM doc's own precondition).
+         * - Phoneme-index reply (DUMP_WANT_PHONEME): eciWantPhonemeIndices
+         *   fires msg-3 ECIMouthData DURING normal synthesis, so manual mode
+         *   must NOT be set; synthesis proceeds unchanged. */
+        int want_conv = getenv("DUMP_PINYIN") || getenv("DUMP_GENPHON");
+        if (want_conv) SetParam(eci, PARAM_SYNTHMODE, 1);
+        if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
         int add_r = AddText ? AddText(eci, (ECIInputText)text) : -1;
-        int sy_r  = -1, so_r = -1;
-        if (!getenv("DUMP_NOSYNTH")) {
-            sy_r  = Synthesize ? Synthesize(eci) : -1;
-            so_r  = Synchronize ? Synchronize(eci) : -1;
-        }
+        int sy_r = -1, so_r = -1;
         if (getenv("DUMP_PINYIN") && GeneratePinyins) {
-            /* AFTER synchronization: pinyins between AddText and Synthesize
-             * kills audio (proven), so extract the romanizer data post-sync. */
+            /* Converter path: the text is still pending here (manual mode
+             * does not clear it on Synthesize).  eciGeneratePinyins converts
+             * the pending input -- the hanzi->pinyin rom-table shortcut. */
             static unsigned char pbuf[4096];
             memset(pbuf, 0, sizeof(pbuf));
             int r = GeneratePinyins(eci, (int)n, pbuf);
@@ -290,9 +298,13 @@ int main(int argc, char **argv) {
             hexout(pbuf, 128);
             printf("\t%.20s\n", text);
         }
+        if (getenv("DUMP_GENPHON") && GeneratePhonemes) ph_reply(eci, 512);
+        if (!getenv("DUMP_NOSYNTH")) {
+            sy_r  = Synthesize ? Synthesize(eci) : -1;
+            so_r  = Synchronize ? Synchronize(eci) : -1;
+        }
         if (getenv("DUMP_TRACE")) fprintf(stderr, "oneshot add=%d synth=%d sync=%d len=%zu\n", add_r, sy_r, so_r, n);
         printf("pcm\t%ld\n", g_pcm_samples);
-        if (getenv("DUMP_GENPHON") && GeneratePhonemes) ph_reply(eci, 512);
         return 0;
     }
     if (getenv("DUMP_FORKSERVER")) {

@@ -23,6 +23,13 @@ on:
           - 7
           - 8
         default: 1
+      mode:
+        type: choice
+        options:
+          - pcm
+          - conv
+        default: pcm
+        description: "pcm = audio gate (synth, DUMP_WANT_PHONEME on); conv = SPR conversion gate (manual mode + pinyins/genphon, no synth)"
 
 permissions:
   contents: read
@@ -76,12 +83,18 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/lib"
           export DUMP_ONESHOT=1
           export DUMP_WANT_PHONEME=1
-          if [ "${{ inputs.dialect }}" = "zh-cn" ] || [ "${{ inputs.dialect }}" = "zh-tw" ]; then
-            export DUMP_PINYIN=1
+          if [ "${{ inputs.mode }}" = "conv" ]; then
+            if [ "${{ inputs.dialect }}" = "zh-cn" ] || [ "${{ inputs.dialect }}" = "zh-tw" ]; then
+              export DUMP_PINYIN=1
+            else
+              unset DUMP_PINYIN
+            fi
+            export DUMP_GENPHON=1
+            export DUMP_NOSYNTH=1
           else
-            unset DUMP_PINYIN
+            unset DUMP_PINYIN DUMP_GENPHON DUMP_NOSYNTH
           fi
-          unset DUMP_TRACE DUMP_GENPHON
+          unset DUMP_TRACE
           : > "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
           case "${{ inputs.dialect }}" in
             zh-cn)
