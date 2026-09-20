@@ -1,0 +1,132 @@
+# The u rule: pinyin 'u' - the back vowel, home of the er-hua
+# (rhotic) finals.  Transcribed from apply_chi_u_rules at 0x58c98.
+# The chained arms each bspush a count and test a half of the u
+# graphemes, then fall to the inserts of the u finals or the retry
+# loop on the following token.  The followed_by_er check is the state
+# lookahead for the er-final; the VM's own context covers it.
+
+rule apply_chi_u_rules from chs.obj
+shape frame 480 argbase 8 params 3
+label L0 was _apply_chi_u_rules
+  load movl slotaddr -136 into r0
+  push imm 0
+  push slotaddr -136
+  call setjmp3 arity 2 depth 2
+  cmp testl reg r0 reg r0
+  load movl state 0 into r6
+  popreg r1
+  popreg r1
+  branch jne to L1
+  load movl slotaddr -136 into r0
+  push slotaddr -136
+  load movl slotaddr -72 into r0
+  push slotaddr -72
+  load movl slotaddr -48 into r0
+  push slotaddr -48
+  load movl slotaddr -60 into r0
+  push slotaddr -60
+  load movl slotaddr -228 into r0
+  push slotaddr -228
+  push state 0
+  call ventproc arity 6 depth 6
+  popn 6
+  cmp testl reg r0 reg r0
+  branch jne to L1
+  push imm 0
+  push imm 0
+  push state 0
+  call fence arity 3 depth 9
+  push imm 1
+  push sym chs_a_ladder
+  push state 0
+  call fence arity 3 depth 12
+  push imm 1
+  push state 0
+  call starttest arity 2 depth 14
+  push imm 1
+  push state 0
+  call setscan_l arity 2 depth 16
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push imm 2
+  push state 0
+  call bspush_ca_scan arity 2 depth 18
+  push sym chs_u_t1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 21
+  cmp testl reg r0 reg r0
+  branch je to L3
+  push imm 6
+  push state 0
+  call starttest arity 2 depth 23
+  push imm 7
+  push state 0
+  call bspush_ca_scan arity 2 depth 25
+  push sym chs_u_t2
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 28
+  cmp testl reg r0 reg r0
+  branch je to L3
+  push imm 8
+  push state 0
+  call bspush_ca_scan arity 2 depth 30
+  push sym chs_u_t3
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 33
+  cmp testl reg r0 reg r0
+  branch je to L3
+  push imm 10
+  push state 0
+  call starttest arity 2 depth 35
+  push imm 12
+  push sym chs_a_ladder
+  push state 0
+  call test_synch arity 3 depth 38
+  cmp testl reg r0 reg r0
+  branch je to L3
+  push imm 14
+  push state 0
+  call starttest arity 2 depth 40
+  push imm 1
+  push state 0
+  call advance_tok arity 1 depth 41
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push sym chs_u_ins2
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 45
+  cmp testl reg r0 reg r0
+  branch je to L4
+label L3 was_the_insert_arm
+  push sym chs_u_ins1
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 49
+  cmp testl reg r0 reg r0
+  branch je to L4
+label L2 was_the_retry_scan
+  push imm 0
+  push state 0
+  call vback arity 2 depth 43
+  popreg r1
+  popreg r1
+label L1 was_at_done
+  push imm 94
+  push reg r6
+  call vretproc arity 2 depth 2
+  popreg r1
+  popreg r1
+  load movl imm 94 into r0
+  return reg r0
+label L4 was_succeed
+  push reg r6
+  call succeed arity 1 depth 1
+  load movl imm 0 into r0
+  return reg r0
+end
