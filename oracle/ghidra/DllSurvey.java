@@ -71,18 +71,27 @@ public class DllSurvey extends GhidraScript {
 
         // 3) functions referencing the largest RO block (rom probers)
                 if (largestRO != null) {
-                    Listing listing = p.getListing();
-                    Map<Function, Integer> refcount = new LinkedHashMap<>();
-                    ReferenceManager rm = p.getReferenceManager();
-                    AddressSet roset = new AddressSet(largestRO.getStart(), largestRO.getEnd());
-                    AddressIterator it = rm.getReferenceSourceIterator(roset, true);
-                                        while (it.hasNext()) {
-                                            Address from =it.next();
-                        Function f = listing.getFunctionContaining(from);
-                        if (f != null) {
-                            refcount.put(f, refcount.getOrDefault(f, 0) + 1);
-                        }
-                    }
+                                    Listing listing = p.getListing();
+                                    Map<Function, Integer> refcount = new LinkedHashMap<>();
+                                    ReferenceManager rm = p.getReferenceManager();
+                                    AddressSet roset = new AddressSet(largestRO.getStart(), largestRO.getEnd());
+                                    // refs FROM executable code INTO the ro block
+                                    AddressSet textSet = new AddressSet();
+                                    for (MemoryBlock b : blks) {
+                                        if (b.isExecute() && b.isInitialized()) { textSet.add(b.getStart()); textSet.add(b.getEnd().subtract(1)); }
+                                    }
+                                    if (textSet.isEmpty()) textSet = roset;
+                                    AddressIterator it = rm.getReferenceSourceIterator(textSet, true);
+                                    while (it.hasNext()) {
+                                        Address from =it.next();
+                                        Reference[] refs = rm.getReferencesFrom(from);
+                                        for (Reference r : refs) {
+                                            if (roset.contains(r.getToAddress())) {
+                                                Function f = listing.getFunctionContaining(from);
+                                                if (f != null) refcount.merge(f, 1, Integer::sum);
+                                            }
+                                        }
+                                    }
                     List<Map.Entry<Function, Integer>> sorted = new ArrayList<>(refcount.entrySet());
                     sorted.sort((a, b) -> b.getValue() - a.getValue());
                     println("=== PROBERS top-15 referencing " + largestRO.getName() + ":");
