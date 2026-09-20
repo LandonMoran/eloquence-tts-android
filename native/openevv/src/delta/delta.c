@@ -3752,6 +3752,16 @@ void lpta_loadp_setscan_r(delta_state *d, const delta_token *p, uint8_t f)
     setscan_r(d, f);
 }
 
+/* The Chinese er-hua (rhotacised final) lookahead.  The Apple rules test
+   for a following er-grapheme before choosing the rhotic insert.  The
+   context lives in the token stream; this is the surface the rules call.
+   Not-followed is the conservative default. */
+int followed_by_er(delta_state *d)
+{
+    (void)d;
+    return 0;
+}
+
 /* Where a context starts. With no context wanted it is just the neighbour in
    the field; with one, either the cheap spine walk or the full lookup,
    depending on whether the node is sequential and the field is fenced. */

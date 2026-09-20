@@ -1,0 +1,51 @@
+# The comma rule: Chinese punctuation.  Transcribed from
+# apply_chi_comma_rules at 0x5b39c.  The whole rule is a fence on the
+# comma marker - no get_parm, no insert - the comma hands control
+# straight through to the callers.
+
+rule apply_chi_comma_rules from chs.obj
+shape frame 448 argbase 8 params 3
+label L0 was _apply_chi_comma_rules
+  load movl slotaddr -136 into r0
+  push imm 0
+  push slotaddr -136
+  call setjmp3 arity 2 depth 2
+  cmp testl reg r0 reg r0
+  load movl state 0 into r6
+  popreg r1
+  popreg r1
+  branch jne to L1
+  load movl slotaddr -136 into r0
+  push slotaddr -136
+  load movl slotaddr -72 into r0
+  push slotaddr -72
+  load movl slotaddr -48 into r0
+  push slotaddr -48
+  load movl slotaddr -60 into r0
+  push slotaddr -60
+  load movl slotaddr -228 into r0
+  push slotaddr -228
+  push state 0
+  call ventproc arity 6 depth 6
+  popn 6
+  cmp testl reg r0 reg r0
+  branch jne to L1
+  push imm 0
+  push imm 0
+  push state 0
+  call fence arity 3 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to L1
+  push reg r6
+  call succeed arity 1 depth 1
+  load movl imm 0 into r0
+  return reg r0
+label L1
+  push imm 94
+  push reg r6
+  call vretproc arity 2 depth 2
+  popreg r1
+  popreg r1
+  load movl imm 94 into r0
+  return reg r0
+end

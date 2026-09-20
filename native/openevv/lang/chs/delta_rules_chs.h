@@ -66,9 +66,11 @@ enum {
     DELTA_ENTRY_test_synch = 13,
     DELTA_ENTRY_lpta_rpta_loadp = 14,
     DELTA_ENTRY_bspush_ca_scan = 15,
-    DELTA_ENTRY_advance_tok = 16,
-    DELTA_ENTRY_savescptr = 17,
-    DELTA_ENTRY_setscan_l = 18,
+    DELTA_ENTRY_savescptr = 16,
+    DELTA_ENTRY_testFldeq = 17,
+    DELTA_ENTRY_advance_tok = 18,
+    DELTA_ENTRY_followed_by_er = 19,
+    DELTA_ENTRY_setscan_l = 20,
 };
 
 /* The largest frame any rule asks for, base and arguments
