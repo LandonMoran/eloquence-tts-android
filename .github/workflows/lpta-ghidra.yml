@@ -46,7 +46,7 @@ jobs:
           curl -sL -o /tmp/ghidra.zip "$URL"
           sudo mkdir -p /opt/ghidra
           sudo unzip -q /tmp/ghidra.zip -d /opt/ghidra
-          sudo chmod -R a+rX /opt/ghidra
+          sudo chmod -R a+x /opt/ghidra
           ls /opt/ghidra
 
       - name: Decompile LPTA rule functions from ${{ inputs.lib }}
