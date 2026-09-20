@@ -86,12 +86,12 @@ public class DllSurvey extends GhidraScript {
                                     while (it.hasNext()) {
                                         Address from =it.next();
                                         nSrc++;
-                                        Reference[] refs = rm.getReferencesFrom(from;
+                                        Reference[] refs = rm.getReferencesFrom(from);
                                         if (refs != null) {
                                             for (Reference r : refs) {
                                                 if (roset.contains(r.getToAddress())) {
                                                     nTo++;
-                                                    Function f = listing.getFunctionContaining(from;
+                                                    Function f = listing.getFunctionContaining(from);
                                                     if (f != null) refcount.merge(f, 1, Integer::sum);
                                                 }
                                             }
