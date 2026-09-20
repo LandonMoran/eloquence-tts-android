@@ -1,0 +1,98 @@
+# The s rule: pinyin 's'.  Transcribed from apply_chi_s_rules at
+# 0x59894; the test-then-two-arm shape with the s phones from the
+# initial table.
+
+rule apply_chi_s_rules from chs.obj
+shape frame 448 argbase 8 params 2
+label L0 was _apply_chi_s_rules
+  load movl slotaddr -120 into r0
+  push imm 0
+  push slotaddr -120
+  call setjmp3 arity 2 depth 2
+  cmp testl reg r0 reg r0
+  load movl state 0 into r6
+  popreg r1
+  popreg r1
+  branch jne to L1
+  load movl slotaddr -120 into r0
+  push slotaddr -120
+  load movl slotaddr -56 into r0
+  push slotaddr -56
+  load movl slotaddr -32 into r0
+  push slotaddr -32
+  load movl slotaddr -44 into r0
+  push slotaddr -44
+  load movl slotaddr -212 into r0
+  push slotaddr -212
+  push state 0
+  call ventproc arity 6 depth 6
+  popn 6
+  cmp testl reg r0 reg r0
+  branch jne to L1
+  load movl param 2 into r7
+  push reg r7
+  load movl slotaddr -12 into r0
+  push slotaddr -12
+  push param 1
+  load movl slotaddr -20 into r0
+  push slotaddr -20
+  push state 0
+  call get_parm arity 5 depth 5
+  push state 0
+  call fence arity 1 depth 6
+  push imm 1
+  push state 0
+  call starttest arity 2 depth 8
+  push sym chs_s_test
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 11
+  cmp testl reg r0 reg r0
+  branch je to L2
+  load movl slotaddr -12 into r0
+  push slotaddr -12
+  load movl slotaddr -20 into r0
+  push slotaddr -20
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 4
+  push sym chs_s_phone2
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L1
+  load movl slotaddr -4 into r0
+  push slotaddr -4
+  push state 0
+  call backtrack_function arity 2 depth 2
+  popreg r1
+  popreg r1
+  jump to L1
+label L2 was the_other_arm
+  load movl slotaddr -12 into r0
+  push slotaddr -12
+  push state 0
+  call lpta_rpta_loadp arity 2 depth 2
+  push sym chs_s_phone1
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 6
+  cmp testl reg r0 reg r0
+  branch je to L1
+  load movl slotaddr -4 into r0
+  push slotaddr -4
+  push state 0
+  call backtrack_function arity 2 depth 2
+  popreg r1
+  popreg r1
+label L1 was at_0x83
+  push imm 94
+  push reg r6
+  call vretproc arity 2 depth 2
+  popreg r1
+  popreg r1
+  load movl imm 94 into r0
+  return reg r0
+end

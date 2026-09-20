@@ -10,6 +10,11 @@ at chs.obj chs_c_test chs_evv_data 20
 at chs.obj chs_phone_w chs_evv_data 23
 at chs.obj chs_phone_n chs_evv_data 34
 at chs.obj chs_phone_y chs_evv_data 37
+at chs.obj chs_s_test chs_evv_data 20
+at chs.obj chs_s_phone1 chs_evv_data 34
+at chs.obj chs_s_phone2 chs_evv_data 31
+at chs.obj chs_n_test chs_evv_data 34
+at chs.obj chs_n_phone chs_evv_data 40
 at chs.obj chs_phone_h chs_evv_data 39
 at chs.obj chs_c_phone1 chs_evv_data 58
 at chs.obj chs_c_phone2 chs_evv_data 60
