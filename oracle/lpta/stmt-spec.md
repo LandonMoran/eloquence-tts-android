@@ -486,3 +486,23 @@ UNKNOWN items (marked, not guessed):
 - the exact role of the 'inp' 256-byte class table (0xba2d0) and the 'phone'
   feature-name table (0xba860) at runtime (only their existence and entry
   linkage are verified)
+## 10. aarch64 build address map (2026-09-19)
+
+The x86_64-translated build (offsets above) and the aarch64 build share structure, but their addresses DIFFER. For the
+native aarch64 ELF `/tmp/art_check/aee/apple-eloquence-elf-1.2.3-linux-aarch64/lib/chs.so`:
+
+- section map (file offset == VMA, partition of loaded image): .m2e_text 0xef0..0x8b328; .m2e_text_const
+  0x8b790..0x8f66a; .m2e_data 0x98000..0x9c690.
+- vstmtbl: `vstmtbl` OBJECT symbol at **0x9a188** (.m2e_data) — 44 entries x 0x60, statement names decode
+   IDENTICAL to the spec's x86 table (char_count, inp, phone, morph, word, inton_phr, klatt, syllable,
+   Ms, then phone-feature names e.g. pgmin, GAP, c, r, G, V...). Machine matches openevv's dialect 1:1.
+- apply_chi_*_rules: 18 exported FUNCs (.m2e_text); lea'd table addresses cluster at **0x98ebc-0x98f04**
+   (.m2e_data) plus test-string refs at **0x8d6ae-0x8d808** (.m2e_text_const).
+- per-syllable table at **0x99040+** holds 4-byte pointers INto .m2e_text (**0x691b0+**), where the bytes are
+   arm64 code (`c0 03 5f d6` = ret) — compiled per-syllable handlers with baked `lea`'d data operands,
+   matching the x86 conclusion (interpreter compiled out; rule table bytes ride in .m2e_text_const/.m2e_data).
+- loader thunks at **0x5a004-...** (mov args; `b` into real impls at 0x75a70, 0x70734, 0x74588, 0x75710,
+   0x740e0, ...), const build-specific.
+
+To lift rules from the aarch64 build, translate the spec's methodology to the address map above (the extractor
+must derive table addresses per build from the lea/adrp pair pattern, NOT the x86 constants).
