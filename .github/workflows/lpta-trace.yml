@@ -62,6 +62,7 @@ jobs:
         id: bps
         run: |
           set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
           case "${{ inputs.dialect }}" in
             zh-cn) LIB=chs.so; WORK=work_zh_cn; D=0x60000; ENC=GB18030; SWEEP=hanzi-sweep.txt ;;
             zh-tw) LIB=cht.so; WORK=work_zh_tw; D=0x60001; ENC=BIG5;    SWEEP=hanzi-sweep.txt ;;
@@ -93,8 +94,7 @@ jobs:
           export DUMP_WORKDIR="$PWD/work_${{ inputs.dialect }}"
           export DUMP_ONESHOT=1
           export DUMP_WANT_PHONEME=1
-          export DUMP_NOSYNTH=1
-          unset DUMP_TRACE DUMP_PINYIN DUMP_GENPHON
+          unset DUMP_NOSYNTH DUMP_TRACE DUMP_PINYIN DUMP_GENPHON
           if [ -n "$ENCODING" ]; then
             iconv -f UTF-8 -t "$ENCODING" -c "$GITHUB_WORKSPACE/oracle/corpus/$SWEEPFILE" > /tmp/sweep.all 2>/dev/null || true
           else
