@@ -1,0 +1,85 @@
+# The rules of the chs module, transcribed from the ARM64 disassembly of
+# the Apple Eloquence Chinese engine (see oracle/lpta-remake.md).  The
+# module ships with no rules as text and no objects to lift them from -
+# the apply_chi_*_rules functions were compiled into the .so - so this
+# text is the whole source of the chinese rules, the same position
+# lang/jajp is in.  The shape mirrors the apply_ital_*_rules family the
+# same compiler emits for every language (see lang/fin/rules/it_phone.dr);
+# the data strings are the chs consts at the .so's offsets.
+
+rule apply_chi_h_rules from chs.obj
+shape frame 448 argbase 8 params 2
+label L0 was _apply_chi_h_rules
+  load movl slotaddr -120 into r0
+  push imm 0
+  push slotaddr -120
+  call setjmp3 arity 2 depth 2
+  cmp testl reg r0 reg r0
+  load movl state 0 into r6
+  popreg r1
+  popreg r1
+  branch jne to L1
+  load movl slotaddr -120 into r0
+  push slotaddr -120
+  load movl slotaddr -56 into r0
+  push slotaddr -56
+  load movl slotaddr -32 into r0
+  push slotaddr -32
+  load movl slotaddr -44 into r0
+  push slotaddr -44
+  load movl slotaddr -212 into r0
+  push slotaddr -212
+  push state 0
+  call ventproc arity 6 depth 6
+  popn 6
+  cmp testl reg r0 reg r0
+  branch jne to L1
+  load movl param 2 into r7
+  push reg r7
+  load movl slotaddr -12 into r0
+  push slotaddr -12
+  push param 1
+  load movl slotaddr -20 into r0
+  push slotaddr -20
+  push state 0
+  call get_parm arity 5 depth 5
+  push state 0
+  call fence arity 1 depth 6
+  load movl slotaddr -12 into r0
+  push slotaddr -12
+  load movl slotaddr -20 into r0
+  push slotaddr -20
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 9
+  push sym chs_phone_h
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 13
+  popn 13
+  cmp testl reg r0 reg r0
+  branch je to L2
+  load movl slotaddr -4 into r0
+  push slotaddr -4
+  push state 0
+  call backtrack_function arity 2 depth 2
+  popreg r1
+  popreg r1
+label L1 was at_0x83
+  push imm 94
+  push reg r6
+  call vretproc arity 2 depth 2
+  popreg r1
+  popreg r1
+  load movl imm 94 into r0
+  jump to L3
+label L2 was at_0x92
+  push reg r6
+  call succeed arity 1 depth 1
+  load movl slot -8 into r0
+  store movl reg r0 ind reg r7 4
+  popreg r1
+  load movl imm 0 into r0
+label L3 was at_0xa1
+  return reg r0
+end

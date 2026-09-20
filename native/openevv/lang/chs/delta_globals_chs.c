@@ -21,5 +21,5 @@ const delta_compound_decl chs_delta_compounds[] = {
 const int32_t chs_delta_compounds_n = 0;
 
 /* One machine of this language: the named fields plus the single
-   global cell above. */
-const int32_t chs_delta_state_bytes = 0x100;
+   global cell above.  The rules' cells end at 176 as lifted. */
+const int32_t chs_delta_state_bytes = 0xb0;
