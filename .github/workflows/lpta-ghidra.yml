@@ -52,6 +52,7 @@ jobs:
       - name: Decompile LPTA rule functions from ${{ inputs.lib }}
         run: |
           cd /opt/ghidra/ghidra_*
+          mkdir -p /tmp/proj
           ./support/analyzeHeadless /tmp/proj lpta \
             -import "$GITHUB_WORKSPACE/apple-eloquence-elf-1.2.3-linux-aarch64/lib/${{ inputs.lib }}" \
             -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
