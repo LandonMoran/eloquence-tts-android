@@ -183,3 +183,14 @@ Remaining: 32 more apply functions (same pattern; each = ventproc/fence ->
 tests -> ladder inserts), the -a-follow jump table (0x8d6ae, 16-bit pairs),
 the multi-char lex binding, settings/statements lift, then run the audio
 validation on the eci side.
+
+## Rules transcription status (2026-09-21 late)
+
+PIPELINE GREEN: lang/chs/rules/*.dr (text) + symbols + delta_consts_chs.c ->
+make rulecode LANGS=lang/chs -> bytecode + shim + headers -> decompile.py ->
+cNN C -> libevv-chs.a (176 objects). 8/16 rules live: h c w y z q j s (all
+consonants).  Remaining: n (bspush/testFldeq/10-case follow table 0x8d78c),
+a e i o u (run_filters + 3-armed tone-ladder inserts; a spans 0x5791c-0x57b90),
+u_umlaut, comma (4985-6922 in the decomp, biggest).  Data base 0x98eb4
+(arm64 slice), 92B in delta_consts_chs.c.  Full outline map + playbook in the
+skill (eloquence-engine-integration/lpta-rule-extraction.md).
