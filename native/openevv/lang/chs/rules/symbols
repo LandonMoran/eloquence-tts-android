@@ -1,12 +1,12 @@
 store chs_evv_data
 store chs_evv_bss
-at chs.obj chs_tone_ladder chs_evv_data 30
 at chs.obj chs_phone_h chs_evv_data 27
 at chs.obj chs_phone_n chs_evv_data 22
-at chs.obj chs_phone_c chs_evv_data 16
-at chs.obj chs_fence_buf chs_evv_bss 0
-at chs.obj chs_a_test1 chs_evv_data 4
-at chs.obj chs_a_test2 chs_evv_data 5
-at chs.obj chs_a_final2 chs_evv_data 31
-at chs.obj chs_a_final3 chs_evv_data 32
-at chs.obj chs_a_final4 chs_evv_data 33
+at chs.obj chs_c_test chs_evv_data 8
+at chs.obj chs_c_phone1 chs_evv_data 46
+at chs.obj chs_c_phone2 chs_evv_data 48
+at chs.obj chs_a_test1 chs_evv_data 3
+at chs.obj chs_a_test2 chs_evv_data 4
+at chs.obj chs_a_fin2 chs_evv_data 31
+at chs.obj chs_a_fin3 chs_evv_data 32
+at chs.obj chs_a_fin4 chs_evv_data 33

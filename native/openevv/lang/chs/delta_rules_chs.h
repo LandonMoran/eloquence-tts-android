@@ -54,11 +54,14 @@ enum {
     DELTA_ENTRY_ventproc = 1,
     DELTA_ENTRY_get_parm = 2,
     DELTA_ENTRY_fence = 3,
-    DELTA_ENTRY_lpta_rpta_loadp = 4,
-    DELTA_ENTRY_insert_2pt_s = 5,
-    DELTA_ENTRY_backtrack_function = 6,
-    DELTA_ENTRY_vretproc = 7,
-    DELTA_ENTRY_succeed = 8,
+    DELTA_ENTRY_starttest = 4,
+    DELTA_ENTRY_setscan_nof_r = 5,
+    DELTA_ENTRY_test_string_s = 6,
+    DELTA_ENTRY_insert_2pt_s = 7,
+    DELTA_ENTRY_backtrack_function = 8,
+    DELTA_ENTRY_vretproc = 9,
+    DELTA_ENTRY_lpta_rpta_loadp = 10,
+    DELTA_ENTRY_succeed = 11,
 };
 
 /* The largest frame any rule asks for, base and arguments

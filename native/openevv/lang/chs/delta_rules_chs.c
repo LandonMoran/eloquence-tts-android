@@ -16,24 +16,45 @@
 const uint8_t chs_delta_rule_code[] = {
     6,0,4,136,255,0,17,1,0,0,17,4,136,255,0,0,
     0,2,2,3,0,7,0,7,0,6,0,5,0,0,6,20,
-    1,20,1,2,1,246,0,6,0,4,136,255,0,17,4,136,
+    1,20,1,2,1,66,1,6,0,4,136,255,0,17,4,136,
     255,6,0,4,200,255,0,17,4,200,255,6,0,4,224,255,
     0,17,4,224,255,6,0,4,212,255,0,17,4,212,255,6,
     0,4,44,255,0,17,4,44,255,17,5,0,0,0,1,0,
-    6,6,19,6,3,0,7,0,7,0,2,1,246,0,6,0,
+    6,6,19,6,3,0,7,0,7,0,2,1,66,1,6,0,
     3,16,0,7,17,7,7,6,0,4,244,255,0,17,4,244,
     255,17,3,12,0,6,0,4,236,255,0,17,4,236,255,17,
     5,0,0,0,2,0,5,5,17,5,0,0,0,3,0,1,
-    6,6,0,4,244,255,0,17,4,244,255,6,0,4,236,255,
-    0,17,4,236,255,17,5,0,0,0,4,0,3,9,17,2,
-    0,0,17,1,1,0,17,1,2,0,17,5,0,0,0,5,
-    0,4,13,19,13,3,0,7,0,7,0,2,0,15,1,6,
-    0,4,252,255,0,17,4,252,255,17,5,0,0,0,6,0,
-    2,2,20,1,20,1,17,1,3,0,17,7,6,0,7,0,
-    2,2,20,1,20,1,6,0,1,3,0,0,1,46,1,17,
-    7,6,0,8,0,1,1,6,0,3,248,255,0,7,0,7,
-    0,8,7,7,4,0,20,1,6,0,1,0,0,0,10,7,
-    0,
+    6,17,1,1,0,17,5,0,0,0,4,0,2,8,17,1,
+    1,0,17,5,0,0,0,5,0,2,10,17,2,0,0,17,
+    1,1,0,17,5,0,0,0,6,0,3,13,3,0,7,0,
+    7,0,2,0,12,1,17,2,1,0,17,1,1,0,17,1,
+    2,0,17,5,0,0,0,7,0,4,17,3,0,7,0,7,
+    0,2,0,66,1,6,0,4,252,255,0,17,4,252,255,17,
+    5,0,0,0,8,0,2,2,20,1,20,1,17,2,2,0,
+    17,1,1,0,17,1,2,0,17,5,0,0,0,7,0,4,
+    15,3,0,7,0,7,0,2,0,66,1,6,0,4,252,255,
+    0,17,4,252,255,17,5,0,0,0,8,0,2,2,20,1,
+    20,1,17,1,3,0,17,7,6,0,9,0,2,2,20,1,
+    20,1,6,0,1,3,0,0,10,7,0,6,0,4,136,255,
+    0,17,1,0,0,17,4,136,255,0,0,0,2,2,3,0,
+    7,0,7,0,6,0,5,0,0,6,20,1,20,1,2,1,
+    246,0,6,0,4,136,255,0,17,4,136,255,6,0,4,200,
+    255,0,17,4,200,255,6,0,4,224,255,0,17,4,224,255,
+    6,0,4,212,255,0,17,4,212,255,6,0,4,44,255,0,
+    17,4,44,255,17,5,0,0,0,1,0,6,6,19,6,3,
+    0,7,0,7,0,2,1,246,0,6,0,3,16,0,7,17,
+    7,7,6,0,4,244,255,0,17,4,244,255,17,3,12,0,
+    6,0,4,236,255,0,17,4,236,255,17,5,0,0,0,2,
+    0,5,5,17,5,0,0,0,3,0,1,6,6,0,4,244,
+    255,0,17,4,244,255,6,0,4,236,255,0,17,4,236,255,
+    17,5,0,0,0,10,0,3,9,17,2,3,0,17,1,1,
+    0,17,1,2,0,17,5,0,0,0,7,0,4,13,19,13,
+    3,0,7,0,7,0,2,0,15,1,6,0,4,252,255,0,
+    17,4,252,255,17,5,0,0,0,8,0,2,2,20,1,20,
+    1,17,1,3,0,17,7,6,0,9,0,2,2,20,1,20,
+    1,6,0,1,3,0,0,1,46,1,17,7,6,0,11,0,
+    1,1,6,0,3,248,255,0,7,0,7,0,8,7,7,4,
+    0,20,1,6,0,1,0,0,0,10,7,0,
 };
 
 const int32_t chs_delta_rule_imm[] = {
@@ -49,10 +70,13 @@ const uint8_t chs_delta_rule_map[] = { 0 };
 extern void ventproc();
 extern void get_parm();
 extern void fence();
-extern void lpta_rpta_loadp();
+extern void starttest();
+extern void setscan_nof_r();
+extern void test_string_s();
 extern void insert_2pt_s();
 extern void backtrack_function();
 extern void vretproc();
+extern void lpta_rpta_loadp();
 extern void succeed();
 
 const delta_rule_fn chs_delta_rule_entry[] = {
@@ -60,10 +84,13 @@ const delta_rule_fn chs_delta_rule_entry[] = {
     (delta_rule_fn)ventproc,
     (delta_rule_fn)get_parm,
     (delta_rule_fn)fence,
-    (delta_rule_fn)lpta_rpta_loadp,
+    (delta_rule_fn)starttest,
+    (delta_rule_fn)setscan_nof_r,
+    (delta_rule_fn)test_string_s,
     (delta_rule_fn)insert_2pt_s,
     (delta_rule_fn)backtrack_function,
     (delta_rule_fn)vretproc,
+    (delta_rule_fn)lpta_rpta_loadp,
     (delta_rule_fn)succeed,
 };
 
@@ -83,10 +110,13 @@ const uint32_t chs_delta_rule_argmask[] = {
     0x0000003fu,
     0x00000007u,
     0x00000005u,
-    0x00000007u,
+    0x00000001u,
+    0x00000001u,
+    0x00000009u,
     0x00000009u,
     0x00000003u,
     0x00000001u,
+    0x00000007u,
     0x00000001u,
 };
 
@@ -96,10 +126,13 @@ const char *const chs_delta_rule_entry_name[] = {
     "ventproc",
     "get_parm",
     "fence",
-    "lpta_rpta_loadp",
+    "starttest",
+    "setscan_nof_r",
+    "test_string_s",
     "insert_2pt_s",
     "backtrack_function",
     "vretproc",
+    "lpta_rpta_loadp",
     "succeed",
 };
 
@@ -109,16 +142,20 @@ extern uint8_t chs_evv_data[];
 extern uint8_t chs_evv_bss[];
 
 const void *const chs_delta_rule_sym[] = {
+    chs_evv_data + 8,
+    chs_evv_data + 46,
+    chs_evv_data + 48,
     chs_evv_data + 27,
 };
 
-const int chs_delta_rule_sym_count = 1;
+const int chs_delta_rule_sym_count = 4;
 
 const delta_rule chs_delta_rules[] = {
-    { "apply_chi_h_rules", "chs.obj", 0, 305, 448, 8, 2 },
+    { "apply_chi_c_rules", "chs.obj", 0, 347, 448, 8, 2 },
+    { "apply_chi_h_rules", "chs.obj", 347, 305, 448, 8, 2 },
 };
 
-const int chs_delta_rule_count = 1;
+const int chs_delta_rule_count = 2;
 
 /* The landing place a rule plants for a backtrack is not
    a call the interpreter can make on its behalf. */
