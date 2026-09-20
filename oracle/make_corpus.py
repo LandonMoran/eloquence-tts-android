@@ -22,6 +22,21 @@ def hanzi_sweep():
     print("wrote", path)
 
 
+def cjk_sweep():
+    """Common CJK Unified (U+4E00-U+9FFF): the hanzi chsrom actually maps.
+    The full sweep starts at U+3400 (CJK Ext A), which the engine barely
+    resolves; the trace/dump sweeps for zh-cn/zh-tw must use this file."""
+    path = os.path.join(OUT, "hanzi-cjk-sweep.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        for cp in range(0x4E00, 0x9FFF + 1):
+            ch = chr(cp)
+            name = unicodedata.name(ch, "")
+            if not name.startswith("CJK UNIFIED IDEOGRAPH"):
+                continue
+            f.write(ch + "\n")
+    print("wrote", path)
+
+
 def samples():
     data = [
         ("zh-cn", ["你好，世界。",
@@ -49,4 +64,5 @@ def samples():
 
 if __name__ == "__main__":
     hanzi_sweep()
+    cjk_sweep()
     samples()

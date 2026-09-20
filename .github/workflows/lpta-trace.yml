@@ -64,8 +64,8 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           case "${{ inputs.dialect }}" in
-            zh-cn) LIB=chs.so; WORK=work_zh_cn; D=0x60000; ENC=GB18030; SWEEP=hanzi-sweep.txt ;;
-            zh-tw) LIB=cht.so; WORK=work_zh_tw; D=0x60001; ENC=BIG5;    SWEEP=hanzi-sweep.txt ;;
+            zh-cn) LIB=chs.so; WORK=work_zh_cn; D=0x60000; ENC=GB18030; SWEEP=hanzi-cjk-sweep.txt ;;
+            zh-tw) LIB=cht.so; WORK=work_zh_tw; D=0x60001; ENC=BIG5;    SWEEP=hanzi-cjk-sweep.txt ;;
             ko)    LIB=kor.so; WORK=work_ko;    D=0xA0000; ENC=;        SWEEP=kor-sweep.txt ;;
             ja)    LIB=jpn.so; WORK=work_ja;    D=0x80000; ENC=;        SWEEP=ja-sample.txt ;;
           esac
