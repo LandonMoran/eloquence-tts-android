@@ -580,7 +580,7 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.reset_title))
             .setMessage(getString(R.string.reset_msg))
-            .setPositiveButton(getString(R.string.reset_confirm), { _, _ -> doResetDefaults() }
+            .setPositiveButton(getString(R.string.reset_confirm)) { _, _ -> doResetDefaults() }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
@@ -855,10 +855,9 @@ class SettingsActivity : Activity() {
     }
 
     private fun refreshDspButton(btn: Button) {
-        val name = if (voiceConfig!!.dspMode == 1) "Enhanced (de-hiss)" else "Standard (original tone)"
         btn.text = getString(
             R.string.audio_quality_fmt,
-            if (mode == 1) getString(R.string.dsp_enhanced) else getString(R.string.dsp_standard)
+            if (voiceConfig!!.dspMode == 1) getString(R.string.dsp_enhanced) else getString(R.string.dsp_standard)
         )
     }
 
