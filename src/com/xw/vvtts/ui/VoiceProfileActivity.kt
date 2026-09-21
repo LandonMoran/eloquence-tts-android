@@ -2,7 +2,9 @@ package com.xw.vvtts.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -36,12 +38,19 @@ class VoiceProfileActivity : Activity() {
             val idx = i + 1
             val row = TextView(this)
             var label = VoiceProfile.PRESET_NAMES[i]
-            if (idx == curPreset) label = "● $label"
-            row.text = label
+            val isCur = idx == curPreset
+            row.text = if (isCur) "● $label" else label
             row.textSize = 20f
             row.setPadding(0, dp(16), 0, dp(16))
             row.isClickable = true
             row.isLongClickable = true
+            if (isCur) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    row.setStateDescription("selected")
+                } else {
+                    row.contentDescription = "$label, selected"
+                }
+            }
 
             // Tap: select and return
             row.setOnClickListener {
@@ -114,8 +123,11 @@ class VoiceProfileActivity : Activity() {
             vals[i]!!.text = cur[i].toString()
             vals[i]!!.textSize = 12f
             box.addView(vals[i])
+            vals[i]!!.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
 
             val bar = SeekBar(this)
+            bar.id = View.generateViewId()
+            label.setLabelFor(bar.id)
             bar.max = paramMax(param)
             bar.progress = cur[i]
             val fi = i

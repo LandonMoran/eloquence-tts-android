@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -67,14 +68,14 @@ class SettingsActivity : Activity() {
         root.setPadding(pad, pad, pad, pad)
 
         val title = TextView(this)
-        title.text = "Eloquence TTS"
+        title.text = getString(R.string.title_main)
         title.textSize = 22f
         root.addView(title)
 
         // Language (single button; label shows current selection)
         val langBtnLocal = Button(this)
         langBtn = langBtnLocal
-        langBtnLocal.contentDescription = getString(R.string.lang_header) // accessibility description
+
         langBtnLocal.setOnClickListener { showLanguageDialog() }
         root.addView(langBtnLocal)
         refreshLangButton(langBtnLocal)
@@ -91,7 +92,8 @@ class SettingsActivity : Activity() {
         root.addView(voiceBtnLocal)
         refreshVoiceButton(voiceBtnLocal)
 
-    // Preset voice picker (ETI: the 8 character voices). Live label so the
+        // Preset voice picker (ETI:the 8 character voices). Live label makes the
+        // "change the actual voice" control discoverable.
         // "change the actual voice" control is discoverable.
         val presetBtnLocal = Button(this)
         presetBtn = presetBtnLocal
@@ -114,7 +116,7 @@ class SettingsActivity : Activity() {
         langDetectBtn.layoutParams = ldLp
         langDetectBtn.setOnClickListener { showDetectionSettingsDialog() }
         root.addView(langDetectBtn)
-    // Punctuation: read marks aloud (ETI: eloquence_tts_punctuation_enable)
+        // Punctuation: read marks aloud (ETI: eloquence_tts_punctuation_enable)
         val punctBtnLocal = Button(this)
         punctBtn = punctBtnLocal
         punctBtnLocal.setOnClickListener { showPunctuationDialog() }
@@ -127,7 +129,7 @@ class SettingsActivity : Activity() {
 
         // User dictionary: word -> spoken replacement (add/list/import/export)
         val dictBtnLocal = Button(this)
-        dictBtnLocal.text = "User dictionary"
+        dictBtnLocal.text = getString(R.string.user_dict_button)
         dictBtnLocal.setOnClickListener { showDictMenuDialog() }
         val dlp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -163,9 +165,9 @@ class SettingsActivity : Activity() {
         dspBtnLocal.layoutParams = dspLp
         root.addView(dspBtnLocal)
         refreshDspButton(dspBtnLocal)
-    // Reset defaults (ETI parity): wipes voice/profile/language prefs
+        // Reset defaults (ETI parity): wipes voice/profile/language prefs
         val resetBtnLocal = Button(this)
-        resetBtnLocal.text = "Reset defaults"
+        resetBtnLocal.text = getString(R.string.reset_button)
         resetBtnLocal.setOnClickListener { confirmResetDefaults() }
         val rlp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -196,6 +198,8 @@ class SettingsActivity : Activity() {
         root.addView(tv)
 
         val bar = SeekBar(this)
+        bar.id = View.generateViewId()
+        tv.setLabelFor(bar.id)
         bar.max = max - min
         bar.progress = initial - min
         bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -393,7 +397,7 @@ class SettingsActivity : Activity() {
                 voiceConfig!!.setVoice(codes[which])
                 refreshVoiceButton(voiceBtn!!)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -406,30 +410,42 @@ class SettingsActivity : Activity() {
     private fun refreshPresetButton(btn: Button) {
         val p = voiceProfile?.preset ?: 1
         val name = VoiceProfile.PRESET_NAMES.getOrNull(p - 1) ?: "Reed"
-        btn.text = "Preset voice: " + name
+        btn.text = getString(R.string.preset_voice_fmt, name)
     }
 
     private fun showPunctuationDialog() {
         val cur = if (voiceConfig!!.punctEnabled) 1 else 0
         AlertDialog.Builder(this)
-            .setTitle("Punctuation")
-            .setSingleChoiceItems(arrayOf("Pauses only", "Speak marks aloud"), cur) { d, which ->
+            .setTitle(getString(R.string.punct_title))
+            .setSingleChoiceItems(
+                arrayOf(getString(R.string.punct_pauses_only), getString(R.string.punct_speak_marks)),
+                cur,
+            ) { d, which ->
                 voiceConfig!!.setPunctEnabled(which == 1)
                 d.dismiss()
                 punctBtn?.let { refreshPunctButton(it) }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun refreshPunctButton(btn: Button) {
         val on = voiceConfig!!.punctEnabled
-        btn.text = "Punctuation: " + (if (on) "speak marks" else "pauses only")
+        btn.text = getString(
+            R.string.punctuation_fmt,
+            if (on) getString(R.string.punct_speak_marks) else getString(R.string.punct_pauses_only)
+        )
     }
     private fun showDictMenuDialog() {
-        val items = arrayOf("Add word...", "Word list...", "Import file...", "Export file...", "Clear dictionary")
+        val items = arrayOf(
+            getString(R.string.dict_add_word),
+            getString(R.string.dict_word_list),
+            getString(R.string.dict_import_file),
+            getString(R.string.dict_export_file),
+            getString(R.string.dict_clear)
+        )
         AlertDialog.Builder(this)
-            .setTitle("User dictionary")
+            .setTitle(getString(R.string.dict_menu_title))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showDictAddDialog()
@@ -453,7 +469,7 @@ class SettingsActivity : Activity() {
                     }
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -463,50 +479,50 @@ class SettingsActivity : Activity() {
         val pad = dp(16)
         wrapper.setPadding(pad, pad, pad, pad)
         val wordInput = EditText(this)
-        wordInput.hint = "Word (written form)"
+        wordInput.hint = getString(R.string.dict_word_hint)
         val speakInput = EditText(this)
-        speakInput.hint = "How it should be spoken"
+        speakInput.hint = getString(R.string.dict_speak_hint)
         wrapper.addView(wordInput)
         wrapper.addView(speakInput)
         AlertDialog.Builder(this)
-            .setTitle("Add dictionary word")
+            .setTitle(getString(R.string.dict_add_title))
             .setView(wrapper)
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton(getString(R.string.dict_add)) { _, _ ->
                 val w = wordInput.text.toString().trim()
                 val s = speakInput.text.toString().trim()
                 if (w.isNotEmpty() && s.isNotEmpty()) {
                     voiceConfig!!.addDictEntry(w, s)
                     Toast.makeText(this, "Added: " + w, Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this, "Both fields are required", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.dict_both_required), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
     private fun showDictListDialog() {
         val entries = voiceConfig!!.dictEntries()
         if (entries.isEmpty()) {
-            Toast.makeText(this, "Dictionary is empty", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.dict_empty), Toast.LENGTH_SHORT).show()
             return
         }
         val labels = entries.map { it.first + " -> " + it.second }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("Dictionary (" + entries.size + ")")
+            .setTitle(getString(R.string.dict_list_title, entries.size))
             .setItems(labels) { _, which ->
                 AlertDialog.Builder(this)
-                    .setMessage("Delete '" + entries[which].first + "'?")
-                    .setPositiveButton("Delete") { _, _ ->
+                    .setMessage(getString(R.string.dict_delete_msg, entries[which].first))
+                    .setPositiveButton(getString(R.string.dict_delete)) { _, _ ->
                         voiceConfig!!.removeDictEntry(entries[which].first)
                         showDictListDialog()
                     }
-                    .setNegativeButton("Cancel", null)
+                    .setNegativeButton(getString(R.string.cancel), null)
                     .show()
             }
-            .setPositiveButton("Done", null)
-            .setNegativeButton("Clear all") { _, _ ->
+            .setPositiveButton(getString(R.string.dict_done), null)
+            .setNegativeButton(getString(R.string.dict_clear_all)) { _, _ ->
                 voiceConfig!!.clearDict()
-                Toast.makeText(this, "Dictionary cleared", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.dict_cleared), Toast.LENGTH_SHORT).show()
             }
             .show()
     }
@@ -546,7 +562,7 @@ class SettingsActivity : Activity() {
             voiceConfig!!.addDictEntry(w, sp)
             added++
         }
-        Toast.makeText(this, "Imported: " + added + " words", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.dict_imported, added), Toast.LENGTH_SHORT).show()
     }
 
     private fun exportDictToUri(uri: android.net.Uri) {
@@ -558,14 +574,14 @@ class SettingsActivity : Activity() {
         }
         out.write(sb.toString().toByteArray(Charsets.UTF_8))
         out.close()
-        Toast.makeText(this, "Dictionary exported", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.dict_exported), Toast.LENGTH_SHORT).show()
     }
     private fun confirmResetDefaults() {
         AlertDialog.Builder(this)
-            .setTitle("Reset defaults")
-            .setMessage("Reset voice, speed, pitch, volume, language detection, dictionary and punctuation to defaults?")
-            .setPositiveButton("Reset") { _, _ -> doResetDefaults() }
-            .setNegativeButton("Cancel", null)
+            .setTitle(getString(R.string.reset_title))
+            .setMessage(getString(R.string.reset_msg))
+            .setPositiveButton(getString(R.string.reset_confirm), { _, _ -> doResetDefaults() }
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -586,7 +602,7 @@ class SettingsActivity : Activity() {
         rateVal?.text = getString(R.string.rate_fmt, voiceConfig!!.rate)
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
-        Toast.makeText(this, "Defaults restored", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -605,7 +621,7 @@ class SettingsActivity : Activity() {
 
     private fun showLanguageDialog() {
         val items = arrayOf(
-            "🔄 Auto detect",
+            getString(R.string.lang_auto_detect),
             "English (US)",
             "English (UK)",
             "German",
@@ -650,7 +666,7 @@ class SettingsActivity : Activity() {
                 saveLanguageSettings()
                 refreshLangButton(langBtn!!)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -674,7 +690,7 @@ class SettingsActivity : Activity() {
                     4 -> showFrenchDialectDialog()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -725,7 +741,7 @@ class SettingsActivity : Activity() {
                 saveLanguageSettings()
                 d.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -757,7 +773,7 @@ class SettingsActivity : Activity() {
                 LanguageDetector.setEnabledLanguages(newEnabled)
                 saveLanguageSettings()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -774,13 +790,13 @@ class SettingsActivity : Activity() {
                 saveLanguageSettings()
                 d.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     /** Spanish accent */
         private fun showSpanishDialectDialog() {
-            val items = arrayOf("Spanish (Spain) es-ES)", "Spanish (US) es-US)", "Spanish (Mexico) es-MX)")
+        val items = arrayOf("Spain (es-ES)", "United States (es-US)", "Mexico (es-MX)")
             val cur = LanguageDetector.getSpanishDialect()
             val checked = when (cur) {
                 LanguageDetector.DIALECT_ES_US -> 1
@@ -799,13 +815,13 @@ class SettingsActivity : Activity() {
                     saveLanguageSettings()
                     d.dismiss()
                 }
-                .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
                 .show()
         }
 
     /** French accent */
         private fun showFrenchDialectDialog() {
-            val items = arrayOf("French (France) fr-FR)", "French (Canada] fr-CA)")
+        val items = arrayOf("France (fr-FR)", "Canada (fr-CA)")
             val cur = LanguageDetector.getFrenchDialect()
             val checked = if (cur == LanguageDetector.DIALECT_FR_CA) 1 else 0
             AlertDialog.Builder(this)
@@ -816,28 +832,34 @@ class SettingsActivity : Activity() {
                 saveLanguageSettings()
                 d.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     /** Audio quality: standard (original tone) or enhanced (de-hiss + limiter) */
     private fun showDspDialog() {
-        val items = arrayOf("Standard (original tone)", "Enhanced (de-hiss)")
+        val items = arrayOf(
+            getString(R.string.dsp_standard),
+            getString(R.string.dsp_enhanced)
+        )
         val cur = voiceConfig!!.dspMode
         AlertDialog.Builder(this)
-            .setTitle("Audio quality mode")
+            .setTitle(getString(R.string.dsp_title))
             .setSingleChoiceItems(items, cur) { d, which ->
                 voiceConfig!!.setDspMode(which)
                 dspBtn!!.let { refreshDspButton(it) }
                 d.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun refreshDspButton(btn: Button) {
         val name = if (voiceConfig!!.dspMode == 1) "Enhanced (de-hiss)" else "Standard (original tone)"
-        btn.text = "Audio quality: " + name
+        btn.text = getString(
+            R.string.audio_quality_fmt,
+            if (mode == 1) getString(R.string.dsp_enhanced) else getString(R.string.dsp_standard)
+        )
     }
 
     // SharedPreferences persistence

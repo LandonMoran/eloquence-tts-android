@@ -18,6 +18,43 @@
     <string name="lang_auto_detect">Auto detect</string>
     <string name="cancel">Cancel</string>
 
+    <!-- ETI control set (r6 accessibility pass) -->
+    <string name="preset_voice_fmt">Preset voice: %1$s</string>
+    <string name="punctuation_fmt">Punctuation: %1$s</string>
+    <string name="punct_title">Punctuation</string>
+    <string name="punct_pauses_only">Pauses only</string>
+    <string name="punct_speak_marks">Speak marks</string>
+    <string name="user_dict_button">User dictionary</string>
+    <string name="dict_menu_title">User dictionary</string>
+    <string name="dict_add_word">Add word...</string>
+    <string name="dict_word_list">Word list...</string>
+    <string name="dict_import_file">Import file...</string>
+    <string name="dict_export_file">Export file...</string>
+    <string name="dict_clear">Clear dictionary</string>
+    <string name="dict_cleared">Dictionary cleared</string>
+    <string name="dict_add_title">Add dictionary word</string>
+    <string name="dict_word_hint">Word (written form)</string>
+    <string name="dict_speak_hint">How it should be spoken</string>
+    <string name="dict_add">Add</string>
+    <string name="dict_both_required">Both fields are required</string>
+    <string name="dict_empty">Dictionary is empty</string>
+    <string name="dict_list_title">Dictionary (%1$d)</string>
+    <string name="dict_delete_msg">Delete %1$s?</string>
+    <string name="dict_delete">Delete</string>
+    <string name="dict_done">Done</string>
+    <string name="dict_clear_all">Clear all</string>
+    <string name="dict_imported">Imported: %1$d words</string>
+    <string name="dict_exported">Dictionary exported</string>
+    <string name="reset_button">Reset defaults</string>
+    <string name="reset_title">Reset defaults</string>
+    <string name="reset_msg">Reset voice, speed, pitch, volume, language detection, dictionary and punctuation to defaults?</string>
+    <string name="reset_confirm">Reset</string>
+    <string name="reset_done">Defaults restored</string>
+    <string name="audio_quality_fmt">Audio quality: %1$s</string>
+    <string name="dsp_title">Audio quality mode</string>
+    <string name="dsp_standard">Standard (original tone)</string>
+    <string name="dsp_enhanced">Enhanced (de-hiss)</string>
+
     <!-- Voice names -->
     <string name="voice_reed">Reed</string>
     <string name="voice_shelley">Shelley</string>
