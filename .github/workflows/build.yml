@@ -89,6 +89,8 @@ jobs:
 
       - name: Compile and run oracle smoke
         run: |
-          cc -O2 -I native/openevv/include -I jni -o /tmp/chs_smoke \
-            oracle/chs_smoke.c jni/chs_oracle_synth.c native/openevv/build/libevv-enus-chs.a -lm
+          cc -O2 -I native/openevv/include -I native/openevv/src -I jni \
+            -o /tmp/chs_smoke \
+            oracle/chs_smoke.c jni/chs_oracle_synth.c jni/eci_compat.c \
+            native/openevv/build/libevv-enus-chs.a -lm -lpthread
           /tmp/chs_smoke

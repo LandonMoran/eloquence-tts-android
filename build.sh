@@ -84,8 +84,8 @@ mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/assets
 
 # 复制所有 dex（multidex）
 cp out_dex/classes*.dex tmp_apk/
-# 复制 native 语言库（双 ABI：64 位 + 32 位设备）
-for abi in arm64-v8a armeabi-v7a; do
+# 复制 native 语言库（多 ABI：64 位 + 32 位设备 + 模拟器测试）
+for abi in arm64-v8a armeabi-v7a x86_64; do
   if [ -d "native-libs/$abi" ]; then
     cp "native-libs/$abi"/*.so "tmp_apk/lib/$abi/"
   fi
