@@ -89,6 +89,7 @@ class VoiceProfileActivity : Activity() {
             val rb = RadioButton(this)
             // ids 1=male, 2=female - avoid id=0 (NO_ID crash)
             rb.text = genders[g]
+            rb.id = g + 1
             genderGroup.addView(rb)
         }
         genderGroup.check(curGender + 1) // curGender 0/1 → id 1/2

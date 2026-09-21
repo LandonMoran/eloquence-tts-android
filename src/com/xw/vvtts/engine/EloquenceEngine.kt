@@ -231,6 +231,49 @@ class EloquenceEngine(context: Context) {
         }
     }
 
+    /** Preprocess text before synthesis: user dictionary + punctuation mode. */
+    private fun preprocess(text: String, dialect: Int): String {
+        val cfg = VoiceConfig(appContext)
+        var t = applyDict(text, cfg.dictEntries())
+        if (cfg.punctEnabled && dialect != DIALECT_ZH_CN) t = expandPunct(t)
+        return t
+    }
+
+    private fun applyDict(text: String, entries: List<Pair<String, String>>): String {
+        var t = text
+        for ((w, r) in entries) {
+            if (w.isEmpty()) continue
+            val re = Regex("(?i)\\b" + Regex.escape(w) + "\\b")
+            t = re.replace(t, r)
+        }
+        return t
+    }
+
+    private val punctMap: Map<Char, String> = mapOf(
+        '.' to " period ", ',' to " comma ", '!' to " exclamation mark ",
+        '?' to " question mark ", ';' to " semicolon ", ':' to " colon ",
+        '"' to " quote ", '\'' to " apostrophe ",
+        '(' to " open parenthesis ", ')' to " close parenthesis ",
+        '/' to " slash ", '*' to " asterisk ",
+    )
+
+    private fun expandPunct(text: String): String {
+        val sb = StringBuilder(text.length + 24)
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            if (c == '.' && i > 0 && i + 1 < text.length &&
+                text[i - 1].isDigit() && text[i + 1].isDigit()) {
+                sb.append(c)  // decimal point: keep "3.14" intact
+            } else {
+                val name = punctMap[c]
+                if (name != null) sb.append(name) else sb.append(c)
+            }
+            i++
+        }
+        return sb.toString()
+    }
+
     fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
         // 旧广荣通路已废弃，转发到 synthesizeCore（苹果引擎）
         return synthesizeCore(text, dialect, volume, 1, 50)
@@ -378,7 +421,7 @@ class EloquenceEngine(context: Context) {
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(text))
+                    .encode(CharBuffer.wrap(preprocess(text, dialect)))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {

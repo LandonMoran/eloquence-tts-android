@@ -12,6 +12,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -34,7 +35,11 @@ class SettingsActivity : Activity() {
     private var dspBtn: Button? = null
     private var langBtn: Button? = null
     private var voiceBtn: Button? = null
-
+    private var presetBtn: Button? = null
+    private var punctBtn: Button? = null
+    private val REQ_PROFILE = 701
+    private val REQ_DICT_OPEN = 702
+    private val REQ_DICT_CREATE = 703
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
@@ -86,17 +91,19 @@ class SettingsActivity : Activity() {
         root.addView(voiceBtnLocal)
         refreshVoiceButton(voiceBtnLocal)
 
-        // Voice profile entry (tap to open)
-        val voiceProfileBtn = Button(this)
-        voiceProfileBtn.text = getString(R.string.voice_profile)
-        val vpLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        vpLp.setMargins(0, dp(12), 0, 0)
-        voiceProfileBtn.layoutParams = vpLp
-        voiceProfileBtn.setOnClickListener {
-            startActivity(Intent(this, VoiceProfileActivity::class.java))
+    // Preset voice picker (ETI: the 8 character voices). Live label so the
+        // "change the actual voice" control is discoverable.
+        val presetBtnLocal = Button(this)
+        presetBtn = presetBtnLocal
+        presetBtnLocal.setOnClickListener {
+            startActivityForResult(Intent(this, VoiceProfileActivity::class.java), REQ_PROFILE)
         }
-        root.addView(voiceProfileBtn)
+        val pvLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        pvLp.setMargins(0, dp(4), 0, 0)
+        presetBtnLocal.layoutParams = pvLp
+        root.addView(presetBtnLocal)
+        refreshPresetButton(presetBtnLocal)
 
         // Language-detection settings
         val langDetectBtn = Button(this)
@@ -107,7 +114,26 @@ class SettingsActivity : Activity() {
         langDetectBtn.layoutParams = ldLp
         langDetectBtn.setOnClickListener { showDetectionSettingsDialog() }
         root.addView(langDetectBtn)
+    // Punctuation: read marks aloud (ETI: eloquence_tts_punctuation_enable)
+        val punctBtnLocal = Button(this)
+        punctBtn = punctBtnLocal
+        punctBtnLocal.setOnClickListener { showPunctuationDialog() }
+        val puLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        puLp.setMargins(0, dp(4), 0, 0)
+        punctBtnLocal.layoutParams = puLp
+        root.addView(punctBtnLocal)
+        refreshPunctButton(punctBtnLocal)
 
+        // User dictionary: word -> spoken replacement (add/list/import/export)
+        val dictBtnLocal = Button(this)
+        dictBtnLocal.text = "User dictionary"
+        dictBtnLocal.setOnClickListener { showDictMenuDialog() }
+        val dlp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dlp.setMargins(0, dp(4), 0, 0)
+        dictBtnLocal.layoutParams = dlp
+        root.addView(dictBtnLocal)
         // Rate
         rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,  300) { v ->
             voiceConfig!!.setRate(v)
@@ -137,7 +163,15 @@ class SettingsActivity : Activity() {
         dspBtnLocal.layoutParams = dspLp
         root.addView(dspBtnLocal)
         refreshDspButton(dspBtnLocal)
-        val testBtn = Button(this)
+    // Reset defaults (ETI parity): wipes voice/profile/language prefs
+        val resetBtnLocal = Button(this)
+        resetBtnLocal.text = "Reset defaults"
+        resetBtnLocal.setOnClickListener { confirmResetDefaults() }
+        val rlp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        rlp.setMargins(0, dp(4), 0, 0)
+        resetBtnLocal.layoutParams = rlp
+        root.addView(resetBtnLocal)        val testBtn = Button(this)
         testBtn.text = getString(R.string.test)
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -364,6 +398,207 @@ class SettingsActivity : Activity() {
     private fun refreshVoiceButton(btn: Button) {
         val lang = VoiceConfig.findLang(voiceConfig!!.voice)
         btn.text = "Voice: " + lang.name
+    }
+
+    /** Preset voice button: shows the active character voice name. */
+    private fun refreshPresetButton(btn: Button) {
+        val p = voiceProfile?.preset ?: 1
+        val name = VoiceProfile.PRESET_NAMES.getOrNull(p - 1) ?: "Reed"
+        btn.text = "Preset voice: " + name
+    }
+
+    private fun showPunctuationDialog() {
+        val cur = if (voiceConfig!!.punctEnabled) 1 else 0
+        AlertDialog.Builder(this)
+            .setTitle("Punctuation")
+            .setSingleChoiceItems(arrayOf("Pauses only", "Speak marks aloud"), cur) { d, which ->
+                voiceConfig!!.setPunctEnabled(which == 1)
+                d.dismiss()
+                punctBtn?.let { refreshPunctButton(it) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun refreshPunctButton(btn: Button) {
+        val on = voiceConfig!!.punctEnabled
+        btn.text = "Punctuation: " + (if (on) "speak marks" else "pauses only")
+    }
+    private fun showDictMenuDialog() {
+        val items = arrayOf("Add word...", "Word list...", "Import file...", "Export file...", "Clear dictionary")
+        AlertDialog.Builder(this)
+            .setTitle("User dictionary")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showDictAddDialog()
+                    1 -> showDictListDialog()
+                    2 -> {
+                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        i.addCategory(Intent.CATEGORY_OPENABLE)
+                        i.type = "*/*"
+                        startActivityForResult(i, REQ_DICT_OPEN)
+                    }
+                    3 -> {
+                        val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        i.addCategory(Intent.CATEGORY_OPENABLE)
+                        i.type = "text/plain"
+                        i.putExtra(Intent.EXTRA_TITLE, "eloquence_dictionary.txt")
+                        startActivityForResult(i, REQ_DICT_CREATE)
+                    }
+                    else -> {
+                        voiceConfig!!.clearDict()
+                        Toast.makeText(this, "Dictionary cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showDictAddDialog() {
+        val wrapper = LinearLayout(this)
+        wrapper.orientation = LinearLayout.VERTICAL
+        val pad = dp(16)
+        wrapper.setPadding(pad, pad, pad, pad)
+        val wordInput = EditText(this)
+        wordInput.hint = "Word (written form)"
+        val speakInput = EditText(this)
+        speakInput.hint = "How it should be spoken"
+        wrapper.addView(wordInput)
+        wrapper.addView(speakInput)
+        AlertDialog.Builder(this)
+            .setTitle("Add dictionary word")
+            .setView(wrapper)
+            .setPositiveButton("Add") { _, _ ->
+                val w = wordInput.text.toString().trim()
+                val s = speakInput.text.toString().trim()
+                if (w.isNotEmpty() && s.isNotEmpty()) {
+                    voiceConfig!!.addDictEntry(w, s)
+                    Toast.makeText(this, "Added: " + w, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Both fields are required", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    private fun showDictListDialog() {
+        val entries = voiceConfig!!.dictEntries()
+        if (entries.isEmpty()) {
+            Toast.makeText(this, "Dictionary is empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = entries.map { it.first + " -> " + it.second }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Dictionary (" + entries.size + ")")
+            .setItems(labels) { _, which ->
+                AlertDialog.Builder(this)
+                    .setMessage("Delete '" + entries[which].first + "'?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        voiceConfig!!.removeDictEntry(entries[which].first)
+                        showDictListDialog()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setPositiveButton("Done", null)
+            .setNegativeButton("Clear all") { _, _ ->
+                voiceConfig!!.clearDict()
+                Toast.makeText(this, "Dictionary cleared", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    /** Read a SAF file with BOM sniffing (UTF-8 / UTF-16LE / UTF-16BE, like the ETI importer). */
+    private fun readTextFromUri(uri: android.net.Uri): String {
+        val inp = contentResolver.openInputStream(uri) ?: return ""
+        val raw = inp.readBytes()
+        inp.close()
+        return when {
+            raw.size >= 3 && raw[0] == 0xEF.toByte() && raw[1] == 0xBB.toByte() && raw[2] == 0xBF.toByte() ->
+                String(raw, 3, raw.size - 3, Charsets.UTF_8)
+            raw.size >= 2 && raw[0] == 0xFF.toByte() && raw[1] == 0xFE.toByte() ->
+                String(raw, 2, raw.size - 2, Charsets.UTF_16LE)
+            raw.size >= 2 && raw[0] == 0xFE.toByte() && raw[1] == 0xFF.toByte() ->
+                String(raw, 2, raw.size - 2, Charsets.UTF_16BE)
+            else -> String(raw, Charsets.UTF_8)
+        }
+    }
+
+    private fun importDictFromUri(uri: android.net.Uri) {
+        var added = 0
+        for (line in readTextFromUri(uri).split("\n")) {
+            val s = line.trim()
+            if (s.isEmpty() || s.startsWith("#")) continue
+            val sep = when {
+                s.contains('|') -> '|'
+                s.contains('\t') -> '\t'
+                else -> ','
+            }
+            val idx = s.indexOf(sep)
+            if (idx <= 0 || idx >= s.length - 1) continue
+            val w = s.substring(0, idx).trim()
+            val sp = s.substring(idx + 1).trim()
+            if (w.isEmpty() || sp.isEmpty()) continue
+            if (w.equals("word", ignoreCase = true) && sp.equals("replacement", ignoreCase = true)) continue
+            voiceConfig!!.addDictEntry(w, sp)
+            added++
+        }
+        Toast.makeText(this, "Imported: " + added + " words", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun exportDictToUri(uri: android.net.Uri) {
+        val out = contentResolver.openOutputStream(uri) ?: return
+        val sb = StringBuilder()
+        sb.append('\uFEFF')
+        for ((w, s) in voiceConfig!!.dictEntries()) {
+            sb.append(w).append('|').append(s).append('\n')
+        }
+        out.write(sb.toString().toByteArray(Charsets.UTF_8))
+        out.close()
+        Toast.makeText(this, "Dictionary exported", Toast.LENGTH_SHORT).show()
+    }
+    private fun confirmResetDefaults() {
+        AlertDialog.Builder(this)
+            .setTitle("Reset defaults")
+            .setMessage("Reset voice, speed, pitch, volume, language detection, dictionary and punctuation to defaults?")
+            .setPositiveButton("Reset") { _, _ -> doResetDefaults() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun doResetDefaults() {
+        for (name in arrayOf("vvtts_prefs", "vvtts_voice_profile", "vvtts_lang_settings")) {
+            getSharedPreferences(name, MODE_PRIVATE).edit().clear().commit()
+        }
+        voiceConfig = VoiceConfig(this)
+        voiceProfile = VoiceProfile(this)
+        engine!!.setVoiceProfile(voiceProfile)
+        engine!!.applyVoiceProfile(EloquenceEngine.DIALECT_ZH_CN, voiceProfile)
+        restoreLanguageSettings()
+        langBtn?.let { refreshLangButton(it) }
+        voiceBtn?.let { refreshVoiceButton(it) }
+        presetBtn?.let { refreshPresetButton(it) }
+        punctBtn?.let { refreshPunctButton(it) }
+        dspBtn?.let { refreshDspButton(it) }
+        rateVal?.text = getString(R.string.rate_fmt, voiceConfig!!.rate)
+        pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
+        volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
+        Toast.makeText(this, "Defaults restored", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        when (requestCode) {
+            REQ_PROFILE -> {
+                presetBtn?.let { refreshPresetButton(it) }
+                engine!!.setVoiceProfile(voiceProfile)
+                engine!!.applyVoiceProfile(EloquenceEngine.DIALECT_ZH_CN, voiceProfile)
+            }
+            REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)
+            REQ_DICT_CREATE -> if (data?.data != null) exportDictToUri(data.data!!)
+        }
     }
 
     private fun showLanguageDialog() {

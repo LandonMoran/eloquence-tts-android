@@ -40,6 +40,50 @@ class VoiceConfig(context: Context) {
     fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).commit() }
     fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).commit() }
 
+    fun setPunctEnabled(b: Boolean) { prefs.edit().putBoolean(KEY_PUNCT, b).commit() }
+    val punctEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PUNCT, false)
+
+    /** Dictionary: newline-separated "word|spoken" lines in creation order. */
+    fun dictEntries(): List<Pair<String, String>> {
+        val raw = prefs.getString(KEY_DICT, "") ?: ""
+        val out = ArrayList<Pair<String, String>>()
+        for (line in raw.split("\n")) {
+            val idx = line.indexOf('|')
+            if (idx > 0 && idx < line.length - 1) {
+                out.add(Pair(line.substring(0, idx).trim(), line.substring(idx + 1).trim()))
+            }
+        }
+        return out
+    }
+
+    fun addDictEntry(word: String, spoken: String) {
+        val w = word.trim()
+        val s = spoken.trim()
+        if (w.isEmpty() || s.isEmpty()) return
+        val cur = prefs.getString(KEY_DICT, "") ?: ""
+        val kept = ArrayList<String>()
+        for (l in cur.split("\n")) {
+            if (l.isBlank()) continue
+            if (l.substringBefore('|').equals(w, ignoreCase = true)) continue
+            kept.add(l)
+        }
+        kept.add(w + "|" + s)
+        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).commit()
+    }
+
+    fun removeDictEntry(word: String) {
+        val cur = prefs.getString(KEY_DICT, "") ?: ""
+        val kept = ArrayList<String>()
+        for (l in cur.split("\n")) {
+            if (l.isBlank()) continue
+            if (l.substringBefore('|').equals(word, ignoreCase = true)) continue
+            kept.add(l)
+        }
+        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).commit()
+    }
+
+    fun clearDict() { prefs.edit().remove(KEY_DICT).commit() }
     companion object {
         private const val PREFS = "vvtts_prefs"
         const val KEY_VOICE = "voice"
@@ -48,6 +92,8 @@ class VoiceConfig(context: Context) {
         const val KEY_VOLUME = "volume"
         const val KEY_DSP_MODE = "dsp_mode"
         const val KEY_AUTO_DETECT = "auto_detect"
+        const val KEY_PUNCT = "speak_punctuation"
+        const val KEY_DICT = "user_dict"
 
         // eciDialect values: measured from each language module's registered constant
         // (lang/*/eci_ini_*.c *_eci_library_lang); one-to-one with build_native.sh LANGS
