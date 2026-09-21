@@ -28,8 +28,9 @@ on:
         options:
           - pcm
           - conv
+          - pcmwav
         default: pcm
-        description: "pcm = audio gate (synth, DUMP_WANT_PHONEME on); conv = SPR conversion gate (manual mode + pinyins/genphon, no synth)"
+        description: "pcm = audio gate (synth, DUMP_WANT_PHONEME on); conv = SPR conversion gate (manual mode + pinyins/genphon, no synth); pcmwav = full PCM capture (DUMP_PCM + DUMP_SYNTHPARAMS)"
 
 permissions:
   contents: read
