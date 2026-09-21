@@ -15,11 +15,11 @@
 
 #include "delta_rules_fin.h"
 
-uint8_t itit_evv_glob_bss_4[6] = {
+uint8_t fin_evv_glob_bss_4[6] = {
     0,0,0,0,0,0,
 };
 
-uint8_t itit_evv_glob_data_3[545] = {
+uint8_t fin_evv_glob_data_3[545] = {
     0,1,0,0,0,1,2,3,4,5,6,7,8,9,1,0,
     1,12,0,0,1,19,19,0,1,27,10,0,10,27,0,0,
     10,29,18,16,30,0,0,0,10,29,27,100,101,107,108,109,
@@ -57,7 +57,7 @@ uint8_t itit_evv_glob_data_3[545] = {
     99,
 };
 
-uint8_t itit_evv_ia_gcat_data_3[810] = {
+uint8_t fin_evv_ia_gcat_data_3[810] = {
     5,27,0,0,31,18,30,0,30,23,0,0,30,27,0,0,
     30,23,23,32,30,24,27,0,30,23,23,30,30,23,23,28,
     3,30,24,27,3,28,23,0,3,28,27,0,3,28,23,23,
@@ -111,7 +111,7 @@ uint8_t itit_evv_ia_gcat_data_3[810] = {
     29,21,30,0,8,30,0,0,8,31,
 };
 
-uint8_t itit_evv_ia_morph_data_3[984] = {
+uint8_t fin_evv_ia_morph_data_3[984] = {
     30,23,23,0,5,32,23,23,3,30,23,23,3,28,23,23,
     18,28,23,23,10,31,23,23,5,26,28,23,23,0,0,0,
     5,26,28,10,4,0,0,0,5,32,17,0,5,33,9,0,
@@ -176,7 +176,7 @@ uint8_t itit_evv_ia_morph_data_3[984] = {
     17,27,23,25,30,21,3,32,
 };
 
-uint8_t itit_evv_ia_roots_data_3[251] = {
+uint8_t fin_evv_ia_roots_data_3[251] = {
     30,18,18,30,17,30,21,27,30,0,0,0,5,30,4,28,
     6,32,21,27,3,15,30,16,25,32,18,28,5,30,4,28,
     6,32,21,27,3,15,30,16,25,32,18,27,3,28,4,21,
@@ -195,7 +195,7 @@ uint8_t itit_evv_ia_roots_data_3[251] = {
     26,28,21,0,30,2,0,0,26,28,1,
 };
 
-uint8_t itit_evv_ia_text_data_3[3061] = {
+uint8_t fin_evv_ia_text_data_3[3061] = {
     1,24,26,3,12,4,19,4,11,3,72,2,24,24,2,72,
     13,3,0,0,72,3,13,1,24,15,0,0,12,2,21,26,
     3,15,24,1,13,3,0,0,72,4,13,1,24,15,0,0,
@@ -390,7 +390,7 @@ uint8_t itit_evv_ia_text_data_3[3061] = {
     25,12,3,1,21,
 };
 
-uint8_t itit_evv_ia_words_data_3[336] = {
+uint8_t fin_evv_ia_words_data_3[336] = {
     1,28,1,27,1,29,5,30,2,0,0,0,1,23,31,9,
     1,31,17,0,1,31,5,28,1,30,13,27,4,0,0,0,
     1,30,8,28,21,0,0,0,1,31,21,32,10,28,18,4,
@@ -414,17 +414,17 @@ uint8_t itit_evv_ia_words_data_3[336] = {
     26,30,14,0,26,27,18,3,33,9,0,0,26,33,21,3,
 };
 
-uint8_t itit_evv_id_strss_data_3[15] = {
+uint8_t fin_evv_id_strss_data_3[15] = {
     1,11,3,26,3,21,4,0,27,3,4,19,3,21,4,
 };
 
-uint8_t itit_evv_is_val_data_3[46] = {
+uint8_t fin_evv_is_val_data_3[46] = {
     129,247,0,0,129,216,0,0,129,217,0,0,129,243,0,0,
     18,31,0,0,129,218,0,0,129,219,0,0,130,30,0,0,
     130,32,0,0,130,33,0,0,130,34,0,0,130,35,
 };
 
-uint8_t itit_evv_it_gcat_data_3[390] = {
+uint8_t fin_evv_it_gcat_data_3[390] = {
     13,2,19,19,13,1,19,19,21,2,19,19,25,5,19,19,
     23,5,2,25,26,0,0,0,23,5,2,19,19,0,0,0,
     20,1,3,0,22,2,24,12,16,108,0,0,26,1,19,0,
@@ -452,20 +452,20 @@ uint8_t itit_evv_it_gcat_data_3[390] = {
     25,3,0,0,3,4,
 };
 
-uint8_t itit_evv_it_inton_data_3[50] = {
+uint8_t fin_evv_it_inton_data_3[50] = {
     25,26,1,26,13,4,27,0,23,5,1,19,14,3,19,2,
     12,16,0,0,12,16,3,0,12,4,25,1,23,5,1,21,
     13,4,0,0,13,4,27,2,0,0,0,3,0,0,0,1,
     0,2,
 };
 
-uint8_t itit_evv_it_morph_data_3[39] = {
+uint8_t fin_evv_it_morph_data_3[39] = {
     14,1,0,0,25,26,1,0,27,1,0,0,26,2,0,0,
     19,2,0,0,15,19,3,2,19,0,0,0,15,19,3,0,
     3,26,0,0,3,1,4,
 };
 
-uint8_t itit_evv_it_norm_data_3[94] = {
+uint8_t fin_evv_it_norm_data_3[94] = {
     159,0,0,0,19,19,0,0,40,40,0,0,23,5,2,0,
     5,2,0,0,10,7,0,0,46,47,0,0,12,4,0,0,
     33,4,0,0,42,2,0,0,46,5,0,0,33,9,0,0,
@@ -474,7 +474,7 @@ uint8_t itit_evv_it_norm_data_3[94] = {
     3,4,21,0,3,1,24,13,0,3,0,4,0,5,
 };
 
-uint8_t itit_evv_it_numbr_data_3[750] = {
+uint8_t fin_evv_it_numbr_data_3[750] = {
     19,3,24,2,20,2,21,4,72,0,0,0,16,5,21,1,
     16,5,21,0,21,4,3,0,13,24,1,3,199,13,3,0,
     53,54,0,0,72,2,72,0,199,72,19,3,24,1,0,0,
@@ -524,7 +524,7 @@ uint8_t itit_evv_it_numbr_data_3[750] = {
     26,26,2,0,13,2,19,19,1,72,25,2,24,1,
 };
 
-uint8_t itit_evv_it_phone_data_3[134] = {
+uint8_t fin_evv_it_phone_data_3[134] = {
     1,1,0,0,4,14,0,0,5,5,0,0,8,8,0,0,
     6,6,0,0,24,5,0,0,13,27,0,0,6,23,27,0,
     23,23,0,0,17,17,0,0,18,18,0,0,2,2,0,0,
@@ -536,14 +536,14 @@ uint8_t itit_evv_it_phone_data_3[134] = {
     21,25,0,0,27,24,
 };
 
-uint8_t itit_evv_it_phrs_data_3[58] = {
+uint8_t fin_evv_it_phrs_data_3[58] = {
     20,4,19,26,25,3,15,21,4,24,0,0,25,5,1,0,
     27,4,25,26,24,4,0,0,16,4,21,4,24,2,0,0,
     4,22,22,5,24,2,0,0,22,5,24,2,0,0,0,1,
     0,2,0,3,0,4,0,6,0,7,
 };
 
-uint8_t itit_evv_it_prfx_data_3[178] = {
+uint8_t fin_evv_it_prfx_data_3[178] = {
     14,3,0,0,24,12,0,0,5,26,4,0,1,24,13,3,
     4,0,0,0,3,24,12,5,20,0,0,0,4,21,26,24,
     3,25,0,0,20,3,0,0,13,4,0,0,26,24,4,0,
@@ -558,46 +558,46 @@ uint8_t itit_evv_it_prfx_data_3[178] = {
     22,25,
 };
 
-uint8_t itit_evv_it_siphn_data_3[6] = {
+uint8_t fin_evv_it_siphn_data_3[6] = {
     3,9,0,0,4,10,
 };
 
-uint8_t itit_evv_it_spr_bss_5[1] = {
+uint8_t fin_evv_it_spr_bss_5[1] = {
     0,
 };
 
-uint8_t itit_evv_it_spr_data_4[2] = {
+uint8_t fin_evv_it_spr_data_4[2] = {
     110,0,
 };
 
-uint8_t itit_evv_it_spr_data_6[2] = {
+uint8_t fin_evv_it_spr_data_6[2] = {
     84,0,
 };
 
-uint8_t itit_evv_it_spr_data_7[2] = {
+uint8_t fin_evv_it_spr_data_7[2] = {
     74,0,
 };
 
-uint8_t itit_evv_it_spr_data_8[2] = {
+uint8_t fin_evv_it_spr_data_8[2] = {
     67,0,
 };
 
-uint8_t itit_evv_it_spr_data_9[2] = {
+uint8_t fin_evv_it_spr_data_9[2] = {
     68,0,
 };
 
-uint8_t itit_evv_it_strss_data_3[51] = {
+uint8_t fin_evv_it_strss_data_3[51] = {
     4,21,4,24,12,3,24,26,21,3,0,0,13,5,0,0,
     21,4,24,12,24,11,2,0,20,1,0,0,21,4,0,0,
     1,24,15,0,24,26,2,0,24,22,0,0,24,13,0,0,
     21,1,27,
 };
 
-uint8_t itit_evv_it_syll_data_3[2] = {
+uint8_t fin_evv_it_syll_data_3[2] = {
     10,2,
 };
 
-uint8_t itit_evv_u_intfac_data_3[122] = {
+uint8_t fin_evv_u_intfac_data_3[122] = {
     48,4,3,12,2,0,0,0,44,5,2,25,26,4,72,98,
     72,5,21,72,26,2,25,26,65,0,0,0,7,21,24,3,
     12,4,0,0,40,5,12,3,1,0,0,0,33,16,3,12,
@@ -608,35 +608,35 @@ uint8_t itit_evv_u_intfac_data_3[122] = {
     130,186,130,187,130,188,130,183,130,184,
 };
 
-uint8_t itit_evv_u_vars_data_3[22] = {
+uint8_t fin_evv_u_vars_data_3[22] = {
     128,199,0,0,128,200,0,0,129,75,129,76,0,1,2,3,
     4,5,6,7,8,9,
 };
 
-uint8_t itit_evv_ut_anno_data_3[48] = {
+uint8_t fin_evv_ut_anno_data_3[48] = {
     129,153,0,0,130,115,0,0,28,22,20,0,130,108,129,157,
     25,22,24,0,22,14,0,0,25,22,0,0,25,24,0,0,
     3,21,22,0,22,22,0,0,0,5,130,112,0,5,130,114,
 };
 
-uint8_t itit_evv_ut_gcat_bss_5[1] = {
+uint8_t fin_evv_ut_gcat_bss_5[1] = {
     0,
 };
 
-uint8_t itit_evv_ut_gcat_data_10[3] = {
+uint8_t fin_evv_ut_gcat_data_10[3] = {
     32,32,0,
 };
 
-uint8_t itit_evv_ut_gcat_data_4[2] = {
+uint8_t fin_evv_ut_gcat_data_4[2] = {
     32,0,
 };
 
-uint8_t itit_evv_ut_inton_data_3[29] = {
+uint8_t fin_evv_ut_inton_data_3[29] = {
     129,61,0,0,96,64,0,0,73,64,0,0,168,64,0,0,
     172,64,0,0,1,2,3,4,5,6,7,8,9,
 };
 
-uint8_t itit_evv_ut_norm_data_3[89] = {
+uint8_t fin_evv_ut_norm_data_3[89] = {
     88,88,68,0,70,71,0,0,65,65,65,0,65,65,166,174,
     173,0,0,0,199,76,54,72,169,170,83,82,94,95,192,85,
     78,75,86,89,93,194,203,0,72,72,84,0,65,72,0,0,
@@ -645,129 +645,129 @@ uint8_t itit_evv_ut_norm_data_3[89] = {
     106,116,126,140,48,49,50,51,150,
 };
 
-uint8_t itit_evv_ut_numbr_data_3[54] = {
+uint8_t fin_evv_ut_numbr_data_3[54] = {
     12,20,0,0,12,13,0,0,29,12,0,0,29,19,0,0,
     3,29,0,0,199,54,0,0,199,55,0,0,199,56,0,0,
     199,57,0,0,199,58,0,0,199,59,0,0,199,60,0,0,
     199,61,0,0,199,62,
 };
 
-uint8_t itit_evv_ut_spr_bss_6[1] = {
+uint8_t fin_evv_ut_spr_bss_6[1] = {
     0,
 };
 
-uint8_t itit_evv_ut_spr_data_10[5] = {
+uint8_t fin_evv_ut_spr_data_10[5] = {
     96,48,48,32,0,
 };
 
-uint8_t itit_evv_ut_spr_data_16[2] = {
+uint8_t fin_evv_ut_spr_data_16[2] = {
     41,0,
 };
 
-uint8_t itit_evv_ut_spr_data_17[2] = {
+uint8_t fin_evv_ut_spr_data_17[2] = {
     44,0,
 };
 
-uint8_t itit_evv_ut_spr_data_18[2] = {
+uint8_t fin_evv_ut_spr_data_18[2] = {
     40,0,
 };
 
-uint8_t itit_evv_ut_spr_data_20[2] = {
+uint8_t fin_evv_ut_spr_data_20[2] = {
     46,0,
 };
 
-uint8_t itit_evv_ut_spr_data_22[3] = {
+uint8_t fin_evv_ut_spr_data_22[3] = {
     44,116,0,
 };
 
-uint8_t itit_evv_ut_spr_data_24[2] = {
+uint8_t fin_evv_ut_spr_data_24[2] = {
     99,0,
 };
 
-uint8_t itit_evv_ut_spr_data_29[3] = {
+uint8_t fin_evv_ut_spr_data_29[3] = {
     44,98,0,
 };
 
-uint8_t itit_evv_ut_spr_data_3[38] = {
+uint8_t fin_evv_ut_spr_data_3[38] = {
     74,0,0,0,0,3,0,6,0,3,0,6,0,7,0,0,
     0,6,0,0,0,1,0,2,0,6,0,0,0,0,0,2,
     128,193,128,190,0,1,
 };
 
-uint8_t itit_evv_ut_spr_data_30[3] = {
+uint8_t fin_evv_ut_spr_data_30[3] = {
     40,112,0,
 };
 
-uint8_t itit_evv_ut_spr_data_33[2] = {
+uint8_t fin_evv_ut_spr_data_33[2] = {
     93,0,
 };
 
-uint8_t itit_evv_ut_spr_data_34[3] = {
+uint8_t fin_evv_ut_spr_data_34[3] = {
     96,91,0,
 };
 
-uint8_t itit_evv_ut_spr_data_37[10] = {
+uint8_t fin_evv_ut_spr_data_37[10] = {
     40,48,44,48,41,32,37,32,37,0,
 };
 
-uint8_t itit_evv_ut_spr_data_38[2] = {
+uint8_t fin_evv_ut_spr_data_38[2] = {
     125,0,
 };
 
-uint8_t itit_evv_ut_spr_data_39[3] = {
+uint8_t fin_evv_ut_spr_data_39[3] = {
     41,32,0,
 };
 
-uint8_t itit_evv_ut_spr_data_40[4] = {
+uint8_t fin_evv_ut_spr_data_40[4] = {
     35,40,112,0,
 };
 
-uint8_t itit_evv_ut_spr_data_41[2] = {
+uint8_t fin_evv_ut_spr_data_41[2] = {
     36,0,
 };
 
-uint8_t itit_evv_ut_spr_data_42[2] = {
+uint8_t fin_evv_ut_spr_data_42[2] = {
     123,0,
 };
 
-uint8_t itit_evv_ut_spr_data_45[2] = {
+uint8_t fin_evv_ut_spr_data_45[2] = {
     62,0,
 };
 
-uint8_t itit_evv_ut_spr_data_46[3] = {
+uint8_t fin_evv_ut_spr_data_46[3] = {
     93,32,0,
 };
 
-uint8_t itit_evv_ut_spr_data_47[3] = {
+uint8_t fin_evv_ut_spr_data_47[3] = {
     32,91,0,
 };
 
-uint8_t itit_evv_ut_spr_data_48[2] = {
+uint8_t fin_evv_ut_spr_data_48[2] = {
     60,0,
 };
 
-uint8_t itit_evv_ut_spr_data_5[2] = {
+uint8_t fin_evv_ut_spr_data_5[2] = {
     32,0,
 };
 
-uint8_t itit_evv_ut_spr_data_50[3] = {
+uint8_t fin_evv_ut_spr_data_50[3] = {
     32,37,0,
 };
 
-uint8_t itit_evv_ut_spr_data_51[3] = {
+uint8_t fin_evv_ut_spr_data_51[3] = {
     101,32,0,
 };
 
-uint8_t itit_evv_ut_spr_data_9[2] = {
+uint8_t fin_evv_ut_spr_data_9[2] = {
     96,0,
 };
 
-uint8_t itit_evv_ut_struc_data_3[27] = {
+uint8_t fin_evv_ut_struc_data_3[27] = {
     0,1,0,0,0,2,0,8,0,9,0,0,2,3,4,6,
     7,8,9,0,2,3,4,6,7,8,9,
 };
 
-uint8_t itit_evv_ut_util_data_3[2] = {
+uint8_t fin_evv_ut_util_data_3[2] = {
     76,80,
 };
 
@@ -780,69 +780,69 @@ uint8_t itit_evv_ut_util_data_3[2] = {
    appended by tools/module/dict.py is counted without this
    table being touched. */
 const delta_store fin_delta_const_store[] = {
-    { itit_evv_glob_bss_4, sizeof itit_evv_glob_bss_4 },
-    { itit_evv_glob_data_3, sizeof itit_evv_glob_data_3 },
-    { itit_evv_ia_gcat_data_3, sizeof itit_evv_ia_gcat_data_3 },
-    { itit_evv_ia_morph_data_3, sizeof itit_evv_ia_morph_data_3 },
-    { itit_evv_ia_roots_data_3, sizeof itit_evv_ia_roots_data_3 },
-    { itit_evv_ia_text_data_3, sizeof itit_evv_ia_text_data_3 },
-    { itit_evv_ia_words_data_3, sizeof itit_evv_ia_words_data_3 },
-    { itit_evv_id_strss_data_3, sizeof itit_evv_id_strss_data_3 },
-    { itit_evv_is_val_data_3, sizeof itit_evv_is_val_data_3 },
-    { itit_evv_it_gcat_data_3, sizeof itit_evv_it_gcat_data_3 },
-    { itit_evv_it_inton_data_3, sizeof itit_evv_it_inton_data_3 },
-    { itit_evv_it_morph_data_3, sizeof itit_evv_it_morph_data_3 },
-    { itit_evv_it_norm_data_3, sizeof itit_evv_it_norm_data_3 },
-    { itit_evv_it_numbr_data_3, sizeof itit_evv_it_numbr_data_3 },
-    { itit_evv_it_phone_data_3, sizeof itit_evv_it_phone_data_3 },
-    { itit_evv_it_phrs_data_3, sizeof itit_evv_it_phrs_data_3 },
-    { itit_evv_it_prfx_data_3, sizeof itit_evv_it_prfx_data_3 },
-    { itit_evv_it_siphn_data_3, sizeof itit_evv_it_siphn_data_3 },
-    { itit_evv_it_spr_bss_5, sizeof itit_evv_it_spr_bss_5 },
-    { itit_evv_it_spr_data_4, sizeof itit_evv_it_spr_data_4 },
-    { itit_evv_it_spr_data_6, sizeof itit_evv_it_spr_data_6 },
-    { itit_evv_it_spr_data_7, sizeof itit_evv_it_spr_data_7 },
-    { itit_evv_it_spr_data_8, sizeof itit_evv_it_spr_data_8 },
-    { itit_evv_it_spr_data_9, sizeof itit_evv_it_spr_data_9 },
-    { itit_evv_it_strss_data_3, sizeof itit_evv_it_strss_data_3 },
-    { itit_evv_it_syll_data_3, sizeof itit_evv_it_syll_data_3 },
-    { itit_evv_u_intfac_data_3, sizeof itit_evv_u_intfac_data_3 },
-    { itit_evv_u_vars_data_3, sizeof itit_evv_u_vars_data_3 },
-    { itit_evv_ut_anno_data_3, sizeof itit_evv_ut_anno_data_3 },
-    { itit_evv_ut_gcat_bss_5, sizeof itit_evv_ut_gcat_bss_5 },
-    { itit_evv_ut_gcat_data_10, sizeof itit_evv_ut_gcat_data_10 },
-    { itit_evv_ut_gcat_data_4, sizeof itit_evv_ut_gcat_data_4 },
-    { itit_evv_ut_inton_data_3, sizeof itit_evv_ut_inton_data_3 },
-    { itit_evv_ut_norm_data_3, sizeof itit_evv_ut_norm_data_3 },
-    { itit_evv_ut_numbr_data_3, sizeof itit_evv_ut_numbr_data_3 },
-    { itit_evv_ut_spr_bss_6, sizeof itit_evv_ut_spr_bss_6 },
-    { itit_evv_ut_spr_data_10, sizeof itit_evv_ut_spr_data_10 },
-    { itit_evv_ut_spr_data_16, sizeof itit_evv_ut_spr_data_16 },
-    { itit_evv_ut_spr_data_17, sizeof itit_evv_ut_spr_data_17 },
-    { itit_evv_ut_spr_data_18, sizeof itit_evv_ut_spr_data_18 },
-    { itit_evv_ut_spr_data_20, sizeof itit_evv_ut_spr_data_20 },
-    { itit_evv_ut_spr_data_22, sizeof itit_evv_ut_spr_data_22 },
-    { itit_evv_ut_spr_data_24, sizeof itit_evv_ut_spr_data_24 },
-    { itit_evv_ut_spr_data_29, sizeof itit_evv_ut_spr_data_29 },
-    { itit_evv_ut_spr_data_3, sizeof itit_evv_ut_spr_data_3 },
-    { itit_evv_ut_spr_data_30, sizeof itit_evv_ut_spr_data_30 },
-    { itit_evv_ut_spr_data_33, sizeof itit_evv_ut_spr_data_33 },
-    { itit_evv_ut_spr_data_34, sizeof itit_evv_ut_spr_data_34 },
-    { itit_evv_ut_spr_data_37, sizeof itit_evv_ut_spr_data_37 },
-    { itit_evv_ut_spr_data_38, sizeof itit_evv_ut_spr_data_38 },
-    { itit_evv_ut_spr_data_39, sizeof itit_evv_ut_spr_data_39 },
-    { itit_evv_ut_spr_data_40, sizeof itit_evv_ut_spr_data_40 },
-    { itit_evv_ut_spr_data_41, sizeof itit_evv_ut_spr_data_41 },
-    { itit_evv_ut_spr_data_42, sizeof itit_evv_ut_spr_data_42 },
-    { itit_evv_ut_spr_data_45, sizeof itit_evv_ut_spr_data_45 },
-    { itit_evv_ut_spr_data_46, sizeof itit_evv_ut_spr_data_46 },
-    { itit_evv_ut_spr_data_47, sizeof itit_evv_ut_spr_data_47 },
-    { itit_evv_ut_spr_data_48, sizeof itit_evv_ut_spr_data_48 },
-    { itit_evv_ut_spr_data_5, sizeof itit_evv_ut_spr_data_5 },
-    { itit_evv_ut_spr_data_50, sizeof itit_evv_ut_spr_data_50 },
-    { itit_evv_ut_spr_data_51, sizeof itit_evv_ut_spr_data_51 },
-    { itit_evv_ut_spr_data_9, sizeof itit_evv_ut_spr_data_9 },
-    { itit_evv_ut_struc_data_3, sizeof itit_evv_ut_struc_data_3 },
-    { itit_evv_ut_util_data_3, sizeof itit_evv_ut_util_data_3 },
+    { fin_evv_glob_bss_4, sizeof fin_evv_glob_bss_4 },
+    { fin_evv_glob_data_3, sizeof fin_evv_glob_data_3 },
+    { fin_evv_ia_gcat_data_3, sizeof fin_evv_ia_gcat_data_3 },
+    { fin_evv_ia_morph_data_3, sizeof fin_evv_ia_morph_data_3 },
+    { fin_evv_ia_roots_data_3, sizeof fin_evv_ia_roots_data_3 },
+    { fin_evv_ia_text_data_3, sizeof fin_evv_ia_text_data_3 },
+    { fin_evv_ia_words_data_3, sizeof fin_evv_ia_words_data_3 },
+    { fin_evv_id_strss_data_3, sizeof fin_evv_id_strss_data_3 },
+    { fin_evv_is_val_data_3, sizeof fin_evv_is_val_data_3 },
+    { fin_evv_it_gcat_data_3, sizeof fin_evv_it_gcat_data_3 },
+    { fin_evv_it_inton_data_3, sizeof fin_evv_it_inton_data_3 },
+    { fin_evv_it_morph_data_3, sizeof fin_evv_it_morph_data_3 },
+    { fin_evv_it_norm_data_3, sizeof fin_evv_it_norm_data_3 },
+    { fin_evv_it_numbr_data_3, sizeof fin_evv_it_numbr_data_3 },
+    { fin_evv_it_phone_data_3, sizeof fin_evv_it_phone_data_3 },
+    { fin_evv_it_phrs_data_3, sizeof fin_evv_it_phrs_data_3 },
+    { fin_evv_it_prfx_data_3, sizeof fin_evv_it_prfx_data_3 },
+    { fin_evv_it_siphn_data_3, sizeof fin_evv_it_siphn_data_3 },
+    { fin_evv_it_spr_bss_5, sizeof fin_evv_it_spr_bss_5 },
+    { fin_evv_it_spr_data_4, sizeof fin_evv_it_spr_data_4 },
+    { fin_evv_it_spr_data_6, sizeof fin_evv_it_spr_data_6 },
+    { fin_evv_it_spr_data_7, sizeof fin_evv_it_spr_data_7 },
+    { fin_evv_it_spr_data_8, sizeof fin_evv_it_spr_data_8 },
+    { fin_evv_it_spr_data_9, sizeof fin_evv_it_spr_data_9 },
+    { fin_evv_it_strss_data_3, sizeof fin_evv_it_strss_data_3 },
+    { fin_evv_it_syll_data_3, sizeof fin_evv_it_syll_data_3 },
+    { fin_evv_u_intfac_data_3, sizeof fin_evv_u_intfac_data_3 },
+    { fin_evv_u_vars_data_3, sizeof fin_evv_u_vars_data_3 },
+    { fin_evv_ut_anno_data_3, sizeof fin_evv_ut_anno_data_3 },
+    { fin_evv_ut_gcat_bss_5, sizeof fin_evv_ut_gcat_bss_5 },
+    { fin_evv_ut_gcat_data_10, sizeof fin_evv_ut_gcat_data_10 },
+    { fin_evv_ut_gcat_data_4, sizeof fin_evv_ut_gcat_data_4 },
+    { fin_evv_ut_inton_data_3, sizeof fin_evv_ut_inton_data_3 },
+    { fin_evv_ut_norm_data_3, sizeof fin_evv_ut_norm_data_3 },
+    { fin_evv_ut_numbr_data_3, sizeof fin_evv_ut_numbr_data_3 },
+    { fin_evv_ut_spr_bss_6, sizeof fin_evv_ut_spr_bss_6 },
+    { fin_evv_ut_spr_data_10, sizeof fin_evv_ut_spr_data_10 },
+    { fin_evv_ut_spr_data_16, sizeof fin_evv_ut_spr_data_16 },
+    { fin_evv_ut_spr_data_17, sizeof fin_evv_ut_spr_data_17 },
+    { fin_evv_ut_spr_data_18, sizeof fin_evv_ut_spr_data_18 },
+    { fin_evv_ut_spr_data_20, sizeof fin_evv_ut_spr_data_20 },
+    { fin_evv_ut_spr_data_22, sizeof fin_evv_ut_spr_data_22 },
+    { fin_evv_ut_spr_data_24, sizeof fin_evv_ut_spr_data_24 },
+    { fin_evv_ut_spr_data_29, sizeof fin_evv_ut_spr_data_29 },
+    { fin_evv_ut_spr_data_3, sizeof fin_evv_ut_spr_data_3 },
+    { fin_evv_ut_spr_data_30, sizeof fin_evv_ut_spr_data_30 },
+    { fin_evv_ut_spr_data_33, sizeof fin_evv_ut_spr_data_33 },
+    { fin_evv_ut_spr_data_34, sizeof fin_evv_ut_spr_data_34 },
+    { fin_evv_ut_spr_data_37, sizeof fin_evv_ut_spr_data_37 },
+    { fin_evv_ut_spr_data_38, sizeof fin_evv_ut_spr_data_38 },
+    { fin_evv_ut_spr_data_39, sizeof fin_evv_ut_spr_data_39 },
+    { fin_evv_ut_spr_data_40, sizeof fin_evv_ut_spr_data_40 },
+    { fin_evv_ut_spr_data_41, sizeof fin_evv_ut_spr_data_41 },
+    { fin_evv_ut_spr_data_42, sizeof fin_evv_ut_spr_data_42 },
+    { fin_evv_ut_spr_data_45, sizeof fin_evv_ut_spr_data_45 },
+    { fin_evv_ut_spr_data_46, sizeof fin_evv_ut_spr_data_46 },
+    { fin_evv_ut_spr_data_47, sizeof fin_evv_ut_spr_data_47 },
+    { fin_evv_ut_spr_data_48, sizeof fin_evv_ut_spr_data_48 },
+    { fin_evv_ut_spr_data_5, sizeof fin_evv_ut_spr_data_5 },
+    { fin_evv_ut_spr_data_50, sizeof fin_evv_ut_spr_data_50 },
+    { fin_evv_ut_spr_data_51, sizeof fin_evv_ut_spr_data_51 },
+    { fin_evv_ut_spr_data_9, sizeof fin_evv_ut_spr_data_9 },
+    { fin_evv_ut_struc_data_3, sizeof fin_evv_ut_struc_data_3 },
+    { fin_evv_ut_util_data_3, sizeof fin_evv_ut_util_data_3 },
     { 0, 0 },
 };
