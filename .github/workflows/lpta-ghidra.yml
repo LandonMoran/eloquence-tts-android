@@ -58,6 +58,7 @@ jobs:
 
       - name: Decompile LPTA rule functions from ${{ inputs.lib }}
         run: |
+          ls "$GITHUB_WORKSPACE/oracle/ghidra/" | head -30
           find /opt/ghidra -path '*Decompiler*' -name 'decompile*' -o -path '*Decompiler/os*' -maxdepth 9 | head -20
           cd /opt/ghidra/ghidra_*
           mkdir -p /tmp/proj
