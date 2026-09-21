@@ -142,13 +142,59 @@ def main():
     out.append("    return 0;")
     out.append("}")
     out.append("")
+    out.append("/* Exported for the JNI bridge: raw-GB18030 lookup.  Rows with")
+    out.append("   audio only; keys are the GB18030 bytes of the hanzi -- 2-byte")
+    out.append("   GBK pairs (uint32 as-is, < 0x10000) or 4-byte GB18030")
+    out.append("   extensions (packed, >= 0x81000000) -- so the two ranges never")
+    out.append("   collide and one sorted array serves both.  Row slots hold the")
+    out.append("   index into chs_oracle[]; *len is the PCM byte length. */")
+    gbk_idx = []
+    for i, (cp_, pcm, phb, gph, pxs) in enumerate(rows):
+        if pcm <= 0:
+            continue
+        b = chr(cp_).encode("gb18030")
+        if len(b) == 2:
+            k = (b[0] << 8) | b[1]
+        elif len(b) == 4:
+            k = (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]
+        else:
+            continue
+        gbk_idx.append((k, i))
+    gbk_idx.sort()
+    if gbk_idx:
+        out.append("#define CHS_ORACLE_GBK_ENTRIES (sizeof chs_oracle_gbk_keys / sizeof chs_oracle_gbk_keys[0])")
+        out.append("")
+        out.append("static const uint32_t chs_oracle_gbk_keys[] = {")
+        out.append("    " + ", ".join("0x%x" % k for k, _ in gbk_idx) + ",")
+        out.append("};")
+        out.append("")
+        out.append("static const uint16_t chs_oracle_gbk_rows[] = {")
+        out.append("    " + ", ".join(str(i) for _, i in gbk_idx) + ",")
+        out.append("};")
+        out.append("")
+        out.append("int chs_oracle_pcm_for_gbk(uint32_t gbk, const uint8_t **data, uint32_t *len) {")
+        out.append("    size_t lo = 0, hi = CHS_ORACLE_GBK_ENTRIES;")
+        out.append("    while (lo < hi) {")
+        out.append("        size_t mid = lo + (hi - lo) / 2;")
+        out.append("        if (chs_oracle_gbk_keys[mid] < gbk) lo = mid + 1;")
+        out.append("        else hi = mid;")
+        out.append("    }")
+        out.append("    if (lo < CHS_ORACLE_GBK_ENTRIES && chs_oracle_gbk_keys[lo] == gbk) {")
+        out.append("        const chs_oracle_row *r = &chs_oracle[chs_oracle_gbk_rows[lo]];")
+        out.append("        *data = chs_oracle_genphon_data + r->gpoff;")
+        out.append("        *len = r->gplen;")
+        out.append("        return 1;")
+        out.append("    }")
+        out.append("    return 0;")
+        out.append("}")
+        out.append("")
 
     with open(DST, "w", encoding="ascii") as fh:
         fh.write("\n".join(out) + "\n")
 
     n_audio = sum(1 for p in pcms if int(p) > 0)
-    print("fitter: %d rows -> %s (audio: %d, phbuf bytes: %d, genphon bytes: %d)"
-          % (len(rows), DST, n_audio, sum(map(int, phlen)), sum(map(int, gplen))))
+    print("fitter: %d rows -> %s (audio: %d, gbk-index: %d, phbuf bytes: %d, genphon bytes: %d)"
+          % (len(rows), DST, n_audio, len(gbk_idx), sum(map(int, phlen)), sum(map(int, gplen))))
     return  0
 
 
