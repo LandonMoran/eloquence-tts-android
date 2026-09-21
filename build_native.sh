@@ -69,7 +69,7 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     LANGS="$LANGS" \
     RULES=c \
     CFLAGS=-fPIC \
-    OBJDIR="build/obj-c/$(ABI)" \
+    OBJDIR="build/obj-c/$ABI" \
     "build/libevv${SUF}.a"
 LIBEVV="$(ls native/openevv/build/libevv*.a 2>/dev/null | head -1 )"
 if [ -z "$LIBEVV" ]; then
