@@ -13,6 +13,26 @@
 static const unsigned char actent_store[1] = { 0 };
 static const unsigned char actent_all[1] = { 0 };
 
+/* The standard logical file names every language's machine carries.  The
+   last one doubles as the dictionary file name, as in the enus module. */
+static const char *const lfnames[] = {
+    "pgmin",
+    "pgmout",
+    "cmdin",
+    "cmdout",
+    "prompt",
+    "prmout",
+    "wordsin",
+    "cmdfile",
+    "sprout",
+    "consprout",
+    "execfile",
+    "errorout",
+    "eciChs.ddl",
+};
+
+static const char dictfile[] = "eciChs.ddl";
+
 void chs_set_dict_new(delta_state *d)
 {
     if (d != 0)
@@ -50,6 +70,20 @@ void chs_link_new(delta_state *d)
     d->fence_marks = EVV_REF(malloc(11));
     d->fence_marks_base = d->fence_marks;
     if (d->fence_marks == 0) { delta_delete(d); return; }
+
+    d->nstmts = 10;
+    d->lang_a = 1;
+    d->lang_b = 2;
+    d->lfnames = EVV_REF(delta_low_copy(lfnames, sizeof lfnames));
+    d->nlfnames = 13;
+    d->nsets = 0;
+    d->dictfile = EVV_REF(delta_low_copy(dictfile, sizeof dictfile));
+    d->nactions = 0;
+
+    d->sets = EVV_REF(malloc(1));
+    if (EVV_AT(uint8_t *, d->sets) == 0) { delta_delete(d); return; }
+    d->act_table = EVV_REF(malloc(1));
+    if (EVV_AT(uint8_t *, d->act_table) == 0) { delta_delete(d); return; }
 }
 
 void chs_link_delete(delta_state *d)

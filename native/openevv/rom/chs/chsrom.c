@@ -66,13 +66,43 @@ static void     chs_errorMessage(EvvRom *r, char *o)
 static int32_t chs_addParam(EvvRom *r, const char *t, int32_t n)
 { (void)r; (void)t; (void)n; return 0; }
 
+/* A pass-through romanizer: text in, text out, since the stub language
+   has no rules yet to turn it into phonemes.  Buffer the latest stretch
+   and hand it back unchanged on processSentence. */
+static int32_t chs_addText(EvvRom *r, const char *text, int32_t len,
+                           int32_t flag)
+{
+    struct ChsRom *rom = (struct ChsRom *)r;
+    (void)flag;
+    if (len <= 0)
+        return 0;
+    if ((unsigned)len > sizeof rom->in_buf)
+        len = (int32_t)sizeof rom->in_buf;
+    memcpy(rom->in_buf, text, (size_t)len);
+    rom->in_buf_len = (unsigned)len;
+    return len;
+}
+
+static int32_t chs_processSentence(EvvRom *r, char **out, int32_t annotated)
+{
+    struct ChsRom *rom = (struct ChsRom *)r;
+    (void)annotated;
+    if (rom->in_buf_len == 0) {
+        *out = 0;
+        return 0;
+    }
+    *out = rom->in_buf;
+    rom->in_buf_len = 0;
+    return 2;
+}
+
 /* No user dictionary in this rom. */
 #define NODICT 0
 static const EvvRomOps chs_ops = {
     .release         = chs_release,
-    .addText         = (void *)0,
+    .addText         = chs_addText,
     .insertIndex     = chs_insertIndex,
-    .processSentence = (void *)0,
+    .processSentence = chs_processSentence,
     .stop            = chs_stop,
     .resume          = chs_resume,
     .UCS2ToMBCS      = (void *)0,
@@ -270,7 +300,7 @@ static EvvRom *chs_make(const char *unused)
     return &rom->base;
 }
 
-static void __attribute__((constructor)) chs_register(void)
+void __attribute__((constructor)) chs_register(void)
 {
     evv_rom_provide(6, 0, chs_make);
 }

@@ -1,14 +1,17 @@
-/* The engine's settings for the Chinese machine, hand-stubbed until
-   the Apple module's ini is lifted byte for byte (the reader's
-   arithmetic depends on the exact separators). */
-
+/* The engine's settings for the Chinese machine.  Two sections: the
+   language-independent keys (from the original settings file, kept whole
+   because the reader's arithmetic depends on the exact separators), and a
+   language section named for this library's own number, 6.0, with the
+   voice catalogue from the enus one (a generic IBM voice-profile table that
+   the engine only copies parameter bytes out of).  The section name is what
+   drives the EngineList sizing: without a numeric section the list holds no
+   languages and every engine is turned away. */
 #include <stdint.h>
-
 #include "eci_synththread.h"
 
-const char chs_eciIni[2] = { 0xff, 0x00 };
+const char chs_eciIni[359] = {91,76,97,110,103,117,97,103,101,73,110,100,101,112,101,110,100,101,110,116,93,0,68,101,115,99,95,70,105,108,116,101,114,48,61,73,66,77,32,83,83,77,76,32,70,105,108,116,101,114,0,80,97,116,104,95,70,105,108,116,101,114,48,61,101,99,105,115,115,109,108,46,100,108,108,0,80,97,116,104,95,67,97,116,51,49,61,101,99,105,99,116,116,115,46,100,108,108,0,76,111,103,80,97,116,104,61,92,114,101,108,101,97,115,101,0,76,111,103,76,101,118,101,108,61,52,0,10,10,91,54,46,48,93,0,80,97,116,104,61,101,99,105,67,104,115,46,115,121,110,0,67,111,110,99,97,116,101,110,97,116,105,118,101,61,54,46,48,0,67,97,108,108,98,97,99,107,70,108,97,103,61,48,120,48,48,48,48,48,48,51,102,0,86,101,114,115,105,111,110,61,54,46,48,0,86,111,105,99,101,49,61,48,32,53,48,32,54,53,32,51,48,32,48,32,48,32,53,48,32,57,50,0,86,111,105,99,101,50,61,49,32,53,48,32,56,49,32,51,48,32,48,32,53,48,32,53,48,32,49,48,48,0,86,111,105,99,101,51,61,49,32,50,50,32,57,51,32,51,53,32,48,32,48,32,53,48,32,57,48,0,86,111,105,99,101,52,61,48,32,56,54,32,53,54,32,52,55,32,48,32,48,32,53,48,32,57,51,0,86,111,105,99,101,53,61,48,32,53,48,32,54,57,32,51,52,32,48,32,48,32,55,48,32,57,50,0,86,111,105,99,101,54,61,49,32,53,54,32,56,57,32,51,53,32,48,32,52,48,32,55,48,32,57,53,0,86,111,105,99,101,55,61,49,32,52,53,32,54,56,32,51,48,32,51,32,52,48,32,53,48,32,57,48,0,86,111,105,99,101,56,61,48,32,51,48,32,54,49,32,52,52,32,49,56,32,50,48,32,53,48,32,57,48,0,255};
 
-const int32_t chs_eciIniSize = 2;
+const int32_t chs_eciIniSize=359;
 
-const int32_t chs_eci_library_lang = 0x90000;
+const int32_t chs_eci_library_lang=0x60000;
 const char chs_eci_library_name[] = "Static Engine CHS";
