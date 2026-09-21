@@ -68,12 +68,726 @@ label L0 was _apply_chi_i_rules
   call insert_2pt_s arity 4 depth 30
   cmp testl reg r0 reg r0
   branch je to L4
-label L2 was_the_retry_scan
-  push imm 0
+label L2 was_the_follow_dispatch
+  load movl slotaddr 104 into r0
+  push slotaddr 104
   push state 0
-  call vback arity 2 depth 20
+  call backtrack_function arity 2 depth 2
+  alu decl none reg r0
+  cmp cmpl imm 47 reg r0
   popreg r1
   popreg r1
+  branch ja to L1
+  switch reg r0 to Lf1 Lf2 Lf3 Lf4 Lf5 Lf6 Lf7 Lf8 Lf9 Lf10 Lf11 Lf12 Lf13 Lf14 Lf15 Lf16 Lf17 Lf18 Lf19 Lf20 Lf21 Lf22 Lf23 Lf24 Lf25 Lf26 Lf27 Lf28 Lf29 Lf30 Lf31 Lf32 Lf33 Lf34 Lf35 Lf36 Lf37 Lf38 Lf39 Lf40 Lf41 Lf42 Lf43 Lf44 Lf45 Lf46 Lf47 Lf48
+label Lf18 was follow_18_at_0x583a0
+  push imm 20
+  push state 0
+  call starttest arity 2 depth 8
+  push state 0
+  call followed_by_er arity 1 depth 36
+  cmp testl reg r0 reg r0
+  branch jne to Lx5879c
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_a_fin6
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to Lx5879c
+  jump to L4
+label Lf2 was follow_2_at_0x583d4
+  push imm 2
+  push slotaddr 200
+  push state 0
+  call savescptr arity 3 depth 16
+label Lf3 was follow_3_at_0x583e4
+  push imm 2
+  push imm 3
+  push state 0
+  call chstream arity 3 depth 3
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push imm 4
+  push imm 5
+  push imm 2
+  push state 0
+  call testFldeq arity 4 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push imm 2
+  push imm 4
+  push imm 2
+  push state 0
+  call testFldeq arity 4 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push imm 4
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push imm 5
+  push state 0
+  call bspush_ca_scan_boa arity 2 depth 20
+  push imm 1
+  push imm 11
+  push imm 2
+  push state 0
+  call testFldeq arity 4 depth 22
+  jump to Lx58a10
+label Lf4 was follow_4_at_0x58490
+  push imm 4
+  push sym chs_a_ladder
+  push state 0
+  call test_synch arity 3 depth 24
+  cmp testl reg r0 reg r0
+  branch jne to L2
+label Lf5 was follow_5_at_0x584a4
+  push state 0
+  call bspop_boa arity 1 depth 1
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to L2
+label Lf6 was follow_6_at_0x584b4
+  load movl slotaddr 200 into r0
+  push slotaddr 200
+  push state 0
+  call lpta_loadp_setscan_r arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  store movb imm 1 slot 136
+  load movl slotaddr 224 into r0
+  push slotaddr 224
+  push state 0
+  call test_ptr arity 2 depth 2
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push imm 7
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_f1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+label Lf7 was follow_7_at_0x584f8
+  push imm 9
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_f2
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+label Lf9 was follow_9_at_0x5850c
+  push sym chs_a_t1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+label Lf8 was follow_8_at_0x58520
+  store movb imm 1 slot 136
+  load movl slotaddr 224 into r0
+  push slotaddr 224
+  push state 0
+  call setscan_nof_r arity 2 depth 10
+  cmp testl reg r0 reg r0
+  branch jne to Lf10
+  push sym chs_i_f1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lf10 was follow_10_at_0x58544
+  push imm 12
+  push state 0
+  call starttest arity 2 depth 8
+  store movb imm 1 slot 136
+  load movl slotaddr 224 into r0
+  push slotaddr 224
+  push state 0
+  call setscan_nof_r arity 2 depth 10
+  cmp testl reg r0 reg r0
+  branch jne to Lf12
+  push sym chs_i_f2
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch je to Lf13
+label Lf12 was follow_12_at_0x58570
+  push imm 11
+  push state 0
+  call starttest arity 2 depth 8
+  store movb imm 1 slot 136
+  load movl slotaddr 224 into r0
+  push slotaddr 224
+  push state 0
+  call setscan_nof_r arity 2 depth 10
+  cmp testl reg r0 reg r0
+  branch jne to L4
+  push sym chs_a_t1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L4
+label Lf14 was follow_14_at_0x5859c
+  #  OF47(0x585a4) is arg-prep for OF71: x1 overwritten by OF71 stub (sp+0xe8), x2=x21=sp+0xd8 -> lpta_rpta_loadp(216,232)
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_o_ins1
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to L4
+label Lf13 was follow_13_at_0x585b8
+  #  OF47(0x585bc)+OF71: lpta_rpta_loadp(216,232) as in Lf14
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_a_fin8
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to L4
+label Lf17 was follow_17_at_0x585e0
+  push imm 19
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_f3
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to Lf18
+label Lf19 was follow_19_at_0x585f4
+  push sym chs_i_f4
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to Lf18
+label Lf23 was follow_23_at_0x58610
+  push imm 25
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_f9
+  push imm 2
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to Lf24
+label Lf25 was follow_25_at_0x58624
+  push imm 26
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_f10
+  push imm 2
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to Lf24
+label Lf26 was follow_26_at_0x58644
+  push sym chs_n_ins1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to Lf24
+label Lf34 was follow_34_at_0x5866c
+  push imm 1
+  push imm 7
+  push state 0
+  call npush_fld arity 3 depth 3
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push imm 4
+  push state 0
+  call npush_i arity 2 depth 2
+  push state 0
+  call if_testeq arity 1 depth 1
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to Lf35
+label Lf41 was follow_41_at_0x58694
+  push state 0
+  call bspop_boa arity 1 depth 1
+  # TODO Lf41: OF46 @0x5a2b4 (mov w2,#4; mov w1,#1; mov x3,x1; no engine-op branch in ofmap.txt) unmapped
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_phone_y
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to L2
+  jump to L4
+label Lf1 was follow_1_at_0x586c4
+  # TODO Lf1: disasm branches into main-arm 0x58370 (starttest imm16 re-check); no .dr label exists there -- transcribed as re-dispatch
+  jump to L2
+label Lf16 was follow_16_at_0x586cc
+  push imm 22
+  push state 0
+  call starttest arity 2 depth 8
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_loadp_setscan_l arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch je to Lx5874c
+label Lx586e4 was mid_16_at_0x586e4
+  push imm 29
+  push state 0
+  call starttest arity 2 depth 8
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  push state 0
+  call lpta_loadp_setscan_l arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch je to Lx587d4
+label Lf29 was follow_29_at_0x586fc
+  push imm 37
+  push state 0
+  call starttest arity 2 depth 8
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_loadp_setscan_l arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch jne to Lx5888c
+  push sym chs_o_t1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to Lx5888c
+  # TODO Lf29: OF35 @0x5a1fc (mov w1,#1; mov w2,#4; mov w3,#2; no engine-op branch in ofmap.txt) unmapped
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push imm 38
+  push state 0
+  call starttest arity 2 depth 8
+  push state 0
+  call followed_by_er arity 1 depth 36
+  cmp testl reg r0 reg r0
+  branch je to Lx58a68
+  jump to Lf38
+label Lx5874c was mid_29_at_0x5874c
+  push imm 23
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_i_f8
+  push imm 2
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+label Lf24 was follow_24_at_0x58768
+  push imm 27
+  push state 0
+  call starttest arity 2 depth 8
+  push state 0
+  call followed_by_er arity 1 depth 36
+  cmp testl reg r0 reg r0
+  branch jne to Lx587bc
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_a_fin6
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to Lx587bc
+  jump to L4
+label Lf20 was follow_20_at_0x58798
+label Lx5879c was mid_20_at_0x5879c
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_f6
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lf22 was follow_22_at_0x587b0
+  jump to Lx586e4
+label Lf27 was follow_27_at_0x587b8
+label Lx587bc was mid_27_at_0x587bc
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_f7
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lf30 was follow_30_at_0x587d0
+label Lx587d4 was mid_30_at_0x587d4
+  push imm 30
+  push slotaddr 200
+  push state 0
+  call savescptr arity 3 depth 16
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  # TODO Lf30: OF35 @0x5a1fc (mov w1,#1; mov w2,#4; mov w3,#2; no engine-op branch in ofmap.txt) unmapped
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+label Lf31 was follow_31_at_0x58800
+  push imm 31
+  push sym chs_a_ladder
+  push state 0
+  call test_synch arity 3 depth 24
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  load movl slotaddr 200 into r0
+  push slotaddr 200
+  push state 0
+  call lpta_loadp_setscan_r arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push sym chs_o_t1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+label Lf32 was follow_32_at_0x58838
+  push imm 32
+  push slotaddr 216
+  push state 0
+  call savescptr arity 3 depth 16
+  push imm 33
+  push state 0
+  call starttest arity 2 depth 8
+  store movb imm 1 slot 136
+  # TODO Lf32: OF63 @0x5a39c (str x9,[x19,#0x70]; str xzr,[x19,#0x80]; mov w1,#7; no engine-op branch in ofmap.txt) unmapped; x9=[sp,#0xf0]
+  cmp testl reg r0 reg r0
+  branch jne to Lx5886c
+  push imm 7
+  push state 0
+  call setscan_r arity 2 depth 16
+  cmp testl reg r0 reg r0
+  branch je to Lx58a20
+label Lx5886c was mid_32_at_0x5886c
+label Lf33 was follow_33_at_0x58870
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_f12
+  push imm 2
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+label Lf37 was follow_37_at_0x58888
+label Lx5888c was mid_37_at_0x5888c
+  push imm 40
+  push state 0
+  call starttest arity 2 depth 8
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  push state 0
+  call lpta_loadp_setscan_r arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch je to Lx588f8
+label Lx588a4 was mid_37_at_0x588a4
+  push imm 43
+  push state 0
+  call starttest arity 2 depth 8
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  push state 0
+  call lpta_loadp_setscan_r arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch jne to Lx588cc
+  push sym chs_u_t3
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch je to Lx5891c
+label Lx588cc was mid_37_at_0x588cc
+  push imm 48
+  push state 0
+  call starttest arity 2 depth 8
+  push state 0
+  call followed_by_er arity 1 depth 36
+  cmp testl reg r0 reg r0
+  branch jne to Lx589f4
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_o_t2
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to Lx589f4
+  jump to L4
+label Lx588f8 was mid_37_at_0x588f8
+  push imm 41
+  push state 0
+  call bspush_ca_scan_boa arity 2 depth 20
+label Lx58900 was mid_37_at_0x58900
+  push imm 42
+  push sym chs_a_ladder
+  push state 0
+  call test_synch arity 3 depth 24
+  jump to Lx58a10
+label Lx5891c was mid_37_at_0x5891c
+  push imm 44
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push sym chs_n_t1
+  push imm 1
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  jump to Lx58958
+label Lf40 was follow_40_at_0x5893c
+  jump to Lx588a4
+label Lf42 was follow_42_at_0x58944
+  jump to Lx58900
+label Lf43 was follow_43_at_0x5894c
+  jump to Lx588cc
+label Lf44 was follow_44_at_0x58954
+label Lx58958 was mid_44_at_0x58958
+  push imm 44
+  push slotaddr 184
+  push state 0
+  call savescptr arity 3 depth 16
+  push imm 45
+  push state 0
+  call starttest arity 2 depth 8
+  push state 0
+  call followed_by_er arity 1 depth 36
+  cmp testl reg r0 reg r0
+  branch jne to Lx589d8
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_t1
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to Lx589d8
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  push state 0
+  call lpta_loadp_setscan_r arity 2 depth 4
+  cmp testl reg r0 reg r0
+  branch jne to Lx589c8
+  push sym chs_o_t3
+  push imm 2
+  push state 0
+  call test_string_s arity 3 depth 23
+  cmp testl reg r0 reg r0
+  branch jne to Lx589c8
+  load movl slotaddr 184 into r0
+  push slotaddr 184
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_n_ins1
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+label Lf46 was follow_46_at_0x589c8
+label Lx589c8 was mid_46_at_0x589c8
+  load movl slotaddr 192 into r0
+  store movl reg r0 slotaddr 224
+  jump to L4
+label Lf45 was follow_45_at_0x589d4
+label Lx589d8 was mid_45_at_0x589d8
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_t1
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lf48 was follow_48_at_0x589f0
+label Lx589f4 was mid_48_at_0x589f4
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_o_t2
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lx58a10 was backtrack_dispatch_tail_at_0x58a10
+  jump to L2
+label Lx58a20 was mid_48_at_0x58a20
+  push imm 34
+  push state 0
+  call bspush_ca_scan arity 2 depth 20
+  push imm 1
+  push imm 7
+  push state 0
+  call npush_fld arity 3 depth 3
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  push imm 3
+  push state 0
+  call npush_i arity 2 depth 2
+  push state 0
+  call if_testeq arity 1 depth 1
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+label Lf35 was follow_35_at_0x58a44
+  push state 0
+  call advance_tok arity 1 depth 22
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_f11
+  push imm 2
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lx58a68 was mid_35_at_0x58a68
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_a_fin6
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch je to L4
+label Lf38 was follow_38_at_0x58a84
+  load movl slotaddr 216 into r0
+  push slotaddr 216
+  load movl slotaddr 232 into r0
+  push slotaddr 232
+  push state 0
+  call lpta_rpta_loadp arity 3 depth 2
+  push sym chs_i_f5
+  push imm 1
+  push imm 2
+  push state 0
+  call insert_2pt_s arity 4 depth 8
+  cmp testl reg r0 reg r0
+  branch jne to Lx58a10
+label Lf11 was follow_11_succeed
+label Lf15 was follow_15_succeed
+label Lf21 was follow_21_succeed
+label Lf28 was follow_28_succeed
+label Lf36 was follow_36_succeed
+label Lf39 was follow_39_succeed
+label Lf47 was follow_47_succeed
+  jump to L4
 label L1 was_at_done
   push imm 94
   push reg r6

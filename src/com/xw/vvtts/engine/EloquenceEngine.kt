@@ -155,7 +155,7 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_FI_FI = 0x90000    // [9.0] fin
         const val DIALECT_KO_KR = 0xA0000    // [10.0] kor
         // 本构建实际链接的语言模块（与 build_native.sh LANGS 一致）。
-        // 未列出的方言（zh/pt/fi/ko/zh-TW）引擎里没有模块，native 侧会拒绝，
+        // 未列出的方言（zh/zh-TW/ko）引擎里没有模块，native 侧会拒绝，
         // 这里先拦截以免依赖 native 拒绝对话。
         val SHIPPED_DIALECTS: Set<Long> = setOf(
             0x10000L, 0x10001L,             // enus, engb
@@ -163,8 +163,11 @@ class EloquenceEngine(context: Context) {
             0x30000L, 0x30001L,             // frfr, frca
             0x40000L,                       // dede
             0x50000L,                       // itit
+            0x70000L,                       // ptb
             0x80000L,                       // jajp
+            0x90000L,                       // fin
             0x110000L,                      // plpl
+            0x60000L,                       // chs
         )
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
         // 引擎真实输出采样率：eci.ini 的 en 库固定 11025Hz，运行时不可改
