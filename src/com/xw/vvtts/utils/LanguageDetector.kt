@@ -48,9 +48,9 @@ class LanguageDetector {
 
         // 所有支持的语言代码（用于设置多选）
         // Only languages actually linked in this build (see build_native.sh LANGS)。
-        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi")
+        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh")
         val ALL_LANG_NAMES = arrayOf(
-            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish",
+            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish", "Chinese",
         )
 
         // 设置项
@@ -58,10 +58,10 @@ class LanguageDetector {
         @Volatile private var englishDialect = DIALECT_EN_US
         @Volatile private var spanishDialect = DIALECT_ES_ES
         @Volatile private var frenchDialect = DIALECT_FR_FR
-        // Detection whitelist: by default only English + Japanese
-        // (zh is not linked in this build; ja-JP is the only shipped CJK dialect)。
+        // Detection whitelist: by default English + Japanese + Chinese
+        // (zh-CN is linked in this build via the oracle synth path)。
         // Languages outside the whitelist fall back to the default language when detected。
-        @Volatile private var enabledLanguages: Set<String> = HashSet(listOf("en", "ja"))
+        @Volatile private var enabledLanguages: Set<String> = HashSet(listOf("en", "ja", "zh"))
         // 默认语言：DEFAULT_UNSPECIFIED(不指定) 或 具体 dialect。
         // 仅在"语言检测开启"时生效：数字和检测不出的文本用它；不指定则跟随上一段。
         @Volatile private var defaultLanguage = DEFAULT_UNSPECIFIED

@@ -56,7 +56,7 @@ class VvTtsService : TextToSpeechService() {
         // linked in this build are listed.
 
         return arrayOf(
-            "en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi"
+            "en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh"
         )
     }
 
@@ -72,6 +72,7 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("pl")) return "pl-PL"
         if (lang.startsWith("pt")) return if ("BR" == c) "pt-BR" else "pt-PT"
         if (lang.startsWith("fi")) return "fi-FI"
+        if (lang.startsWith("zh")) return "zh-CN"
         return "en-US"
     }
 
@@ -104,6 +105,8 @@ class VvTtsService : TextToSpeechService() {
                     Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
                 voices.add(Voice("fi-FI", Locale("fi", "FI"),
                     Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
+                voices.add(Voice("zh-CN", Locale.SIMPLIFIED_CHINESE,
+                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
                 // Only advertise dialects actually linked in this build (build_native.sh LANGS)。
                 return voices
     }
@@ -114,6 +117,7 @@ class VvTtsService : TextToSpeechService() {
         val supported = lang.startsWith("en") || lang.startsWith("de")
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
                 || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
+                || lang.startsWith("zh")
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
@@ -130,6 +134,29 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         var text: String? = request.text
+
+        // The system TTS language picker passes the chosen voice in request.voiceName.
+
+        // A zh selection is honored per-utterance (and reverted in finally): zh was
+        // never advertised, so the picker could not offer it — that is why changing
+        // the language always fell back to English。
+        val savedDefault = LanguageDetector.getDefaultLanguage()
+        val savedLangs = LanguageDetector.getEnabledLanguages()
+        val savedFixed = LanguageDetector.getFixedDialect()
+        val voiceName = request.voiceName
+        if (voiceName != null && voiceName.lowercase().startsWith("zh")) {
+
+            LanguageDetector.setDefaultLanguage(EloquenceEngine.DIALECT_ZH_CN)
+
+
+            LanguageDetector.setEnabledLanguages(LanguageDetector.getEnabledLanguages() + "zh")
+
+
+            LanguageDetector.setFixedDialect(EloquenceEngine.DIALECT_ZH_CN)
+
+
+        }
+
         try {
             if (text == null || text.isEmpty()) {
                 callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
@@ -203,6 +230,10 @@ class VvTtsService : TextToSpeechService() {
         } catch (e: Throwable) {
             Log.e(TAG, "onSynthesizeText failed", e)
         } finally {
+            // Revert the per-utterance override (preserve app-pref state)。
+            LanguageDetector.setDefaultLanguage(savedDefault)
+            LanguageDetector.setEnabledLanguages(savedLangs)
+            LanguageDetector.setFixedDialect(savedFixed)
             try {
                 callback.done()
             } catch (ignore: Throwable) {
