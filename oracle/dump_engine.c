@@ -380,7 +380,7 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (pid == 0) {
-                alarm(10);
+                alarm(60);
                 run_text(eci, line);
                 fflush(stdout);
                 _exit(0);
