@@ -2,7 +2,9 @@
 <resources>
     <!-- API 31+ (Android 12+): DeviceDefault = Material You (dynamic color) with
          the app surface kept light. Same style name as the base fallback. -->
-    <style name="Theme.Vvtts" parent="android:Theme.DeviceDefault.DayNight.NoActionBar">
+    <style name="Theme.Vvtts" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:colorPrimary">@color/m3_primary</item>
         <item name="android:colorPrimaryDark">@color/m3_primary_pressed</item>
         <item name="android:colorAccent">@color/m3_primary</item>
