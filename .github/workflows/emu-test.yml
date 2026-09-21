@@ -37,7 +37,7 @@ jobs:
             return 1
           }
           export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
-          sdk --licenses > /dev/null || true
+          yes | sdk --licenses > /dev/null || true
           sdk "platform-tools" "platforms;android-34" "build-tools;35.0.0" "ndk;26.3.11579264"
           sdk "emulator" "system-images;android-34;google_apis;x86_64"
           ls "$SDK/emulator/emulator" "$SDK/system-images/android-34/google_apis/x86_64"
