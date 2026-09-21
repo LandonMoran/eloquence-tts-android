@@ -105,6 +105,13 @@ def main():
                 except (IndexError, ValueError):
                     pass
             m["pcm"] = max(m.get("pcm", 0), pcm)
+            # pcmwav rows carry the raw audio as a third field: 'pcm\t<count>\t<hex>'
+            if not m.get("pcmhex"):
+                for r in rec.get("pcm", []):
+                    parts = r.split(b"\t")
+                    if len(parts) >= 3 and parts[2]:
+                        m["pcmhex"] = parts[2].decode("ascii")
+                        break
             for key in ("genphon", "phbuf"):
                 v = hex_of(rec, key)
                 if v and not m.get(key):
@@ -118,7 +125,9 @@ def main():
     with open(out, "w", encoding="utf-8") as fh:
         for hanzi in sorted(merged):
             m = merged[hanzi]
-            fh.write(f"{hanzi}\t{m.get('pcm', 0)}\t{m.get('phbuf', '')}\t{m.get('genphon', '')}\t{m.get('phidx', '')}\n")
+            # the genphon column carries the raw PCM hex when captured (pcmwav)
+            payload = m.get("pcmhex") or m.get("genphon", "")
+            fh.write(f"{hanzi}\t{m.get('pcm', 0)}\t{m.get('phbuf', '')}\t{payload}\t{m.get('phidx', '')}\n")
 
     n_gph = sum(1 for m in merged.values() if m.get("genphon"))
     n_pcm = sum(1 for m in merged.values() if m.get("pcm", 0) > 0)
