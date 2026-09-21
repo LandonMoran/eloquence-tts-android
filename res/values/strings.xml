@@ -70,4 +70,78 @@
     <string name="synth_ok">Spoken</string>
     <string name="synth_failed">Synthesis failed</string>
     <string name="saved">Saved</string>
+
+    <!-- M3 section headers -->
+    <string name="sec_voice">Voice</string>
+    <string name="sec_speech">Speech</string>
+    <string name="sec_reading">Reading</string>
+    <string name="sec_langdetect">Language detection</string>
+    <string name="sec_quality">Audio quality</string>
+    <string name="sec_dictionary">Dictionary</string>
+    <string name="sec_maintenance">Maintenance</string>
+    <string name="sec_about">About</string>
+
+    <!-- Row labels -->
+    <string name="voice_fmt">Voice: %1$s</string>
+    <string name="lang_fmt">Language: %1$s</string>
+    <string name="lang_detect_button">Language detection settings</string>
+
+    <!-- Language detection dialogs -->
+    <string name="lang_detect_title">Language detection settings</string>
+    <string name="lang_default_item">Default language</string>
+    <string name="lang_detect_langs_item">Detect languages</string>
+    <string name="lang_accent_en_item">English accent</string>
+    <string name="lang_accent_es_item">Spanish accent</string>
+    <string name="lang_accent_fr_item">French accent</string>
+    <string name="lang_dlg_default_title">Default language</string>
+    <string name="lang_dlg_detect_title">Detect languages</string>
+    <string name="lang_unspecified">Unspecified</string>
+    <string name="lang_english">English</string>
+    <string name="lang_german">German</string>
+    <string name="lang_french">French</string>
+    <string name="lang_spanish">Spanish</string>
+    <string name="lang_italian">Italian</string>
+    <string name="lang_japanese">Japanese</string>
+    <string name="lang_polish">Polish</string>
+    <string name="lang_portuguese">Portuguese</string>
+    <string name="lang_finnish">Finnish</string>
+    <string name="lang_chinese">Chinese</string>
+    <string name="ok">OK</string>
+
+    <!-- Dialect names -->
+    <string name="dialect_en_us">English (US)</string>
+    <string name="dialect_en_gb">English (UK)</string>
+    <string name="dialect_de_de">German</string>
+    <string name="dialect_fr_fr">French (France)</string>
+    <string name="dialect_fr_ca">French (Canada)</string>
+    <string name="dialect_es_es">Spanish (Spain)</string>
+    <string name="dialect_es_us">Spanish (US)</string>
+    <string name="dialect_es_mx">Spanish (Mexico)</string>
+    <string name="dialect_it_it">Italian</string>
+    <string name="dialect_ja_jp">Japanese</string>
+    <string name="dialect_pl_pl">Polish</string>
+    <string name="dialect_pt_br">Portuguese (Brazil)</string>
+    <string name="dialect_fi_fi">Finnish</string>
+    <string name="dialect_zh_cn">Chinese (Mandarin)</string>
+
+    <!-- Accent names -->
+    <string name="accent_en_us">American English (en-US)</string>
+    <string name="accent_en_gb">British English (en-GB)</string>
+    <string name="accent_es_es">Spain (es-ES)</string>
+    <string name="accent_es_us">United States (es-US)</string>
+    <string name="accent_es_mx">Mexico (es-MX)</string>
+    <string name="accent_fr_fr">France (fr-FR)</string>
+    <string name="accent_fr_ca">Canada (fr-CA)</string>
+
+    <!-- Toasts / misc -->
+    <string name="dict_added_fmt">Added: %1$s</string>
+    <string name="preview_in_english">Language not included in this build; previewing in English</string>
+    <string name="spoken_en">Spoken (English)</string>
+    <string name="voice_dlg_title">Voice</string>
+    <string name="language_dlg_title">Language</string>
+
+    <!-- About -->
+    <string name="about_title">About Eloquence TTS</string>
+    <string name="about_row">About Eloquence TTS</string>
+    <string name="about_body_fmt">Eloquence TTS version %1$s.\nA port of the IBM Eloquence speech engine with ETI-compatible controls and a Material 3 interface.</string>
 </resources>

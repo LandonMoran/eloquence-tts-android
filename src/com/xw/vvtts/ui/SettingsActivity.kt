@@ -69,120 +69,85 @@ class SettingsActivity : Activity() {
 
         val title = TextView(this)
         title.text = getString(R.string.title_main)
-        title.textSize = 22f
+        title.textSize = 24f
+        title.setTextColor(getColor(R.color.m3_on_surface))
+        val tlLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        tlLp.setMargins(dp(4), dp(4), 0, dp(8))
+        title.layoutParams = tlLp
         root.addView(title)
 
-        // Language (single button; label shows current selection)
-        val langBtnLocal = Button(this)
-        langBtn = langBtnLocal
-
-        langBtnLocal.setOnClickListener { showLanguageDialog() }
-        root.addView(langBtnLocal)
-        refreshLangButton(langBtnLocal)
-
-        // Voice (spoken dialect: used by the test player, and as the fallback
-        // dialect when the system TTS caller sends no voice name)
-        val voiceBtnLocal = Button(this)
-        voiceBtn = voiceBtnLocal
-        val vvLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        vvLp.setMargins(0, dp(4), 0, 0)
-        voiceBtnLocal.layoutParams = vvLp
-        voiceBtnLocal.setOnClickListener { showVoiceDialog() }
-        root.addView(voiceBtnLocal)
-        refreshVoiceButton(voiceBtnLocal)
-
-        // Preset voice picker (ETI:the 8 character voices). Live label makes the
-        // "change the actual voice" control discoverable.
-        // "change the actual voice" control is discoverable.
-        val presetBtnLocal = Button(this)
+        // ---- Voice (ETI order: preset voice first, then dialect + language) ----
+        addSectionHeader(root, R.string.sec_voice)
+        val presetBtnLocal = addRow(this, root)
         presetBtn = presetBtnLocal
         presetBtnLocal.setOnClickListener {
             startActivityForResult(Intent(this, VoiceProfileActivity::class.java), REQ_PROFILE)
         }
-        val pvLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        pvLp.setMargins(0, dp(4), 0, 0)
-        presetBtnLocal.layoutParams = pvLp
-        root.addView(presetBtnLocal)
         refreshPresetButton(presetBtnLocal)
 
-        // Language-detection settings
-        val langDetectBtn = Button(this)
-        langDetectBtn.text = "Language detection settings"
-        val ldLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        ldLp.setMargins(0, dp(4), 0, 0)
-        langDetectBtn.layoutParams = ldLp
-        langDetectBtn.setOnClickListener { showDetectionSettingsDialog() }
-        root.addView(langDetectBtn)
-        // Punctuation: read marks aloud (ETI: eloquence_tts_punctuation_enable)
-        val punctBtnLocal = Button(this)
-        punctBtn = punctBtnLocal
-        punctBtnLocal.setOnClickListener { showPunctuationDialog() }
-        val puLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        puLp.setMargins(0, dp(4), 0, 0)
-        punctBtnLocal.layoutParams = puLp
-        root.addView(punctBtnLocal)
-        refreshPunctButton(punctBtnLocal)
+        val voiceBtnLocal = addRow(this, root)
+        voiceBtn = voiceBtnLocal
+        voiceBtnLocal.setOnClickListener { showVoiceDialog() }
+        refreshVoiceButton(voiceBtnLocal)
 
-        // User dictionary: word -> spoken replacement (add/list/import/export)
-        val dictBtnLocal = Button(this)
-        dictBtnLocal.text = getString(R.string.user_dict_button)
-        dictBtnLocal.setOnClickListener { showDictMenuDialog() }
-        val dlp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        dlp.setMargins(0, dp(4), 0, 0)
-        dictBtnLocal.layoutParams = dlp
-        root.addView(dictBtnLocal)
-        // Rate
-        rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,  300) { v ->
+        val langBtnLocal = addRow(this, root)
+        langBtn = langBtnLocal
+        langBtnLocal.setOnClickListener { showLanguageDialog() }
+        refreshLangButton(langBtnLocal)
+
+        // ---- Speech (sliders) ----
+        addSectionHeader(root, R.string.sec_speech)
+        rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1, 300) { v ->
             voiceConfig!!.setRate(v)
             rateVal!!.text = getString(R.string.rate_fmt, v)
         }
-
-        // Pitch
-        pitchVal = addSeekBar(root, getString(R.string.pitch), voiceConfig!!.pitch, 0,  100) { v ->
+        pitchVal = addSeekBar(root, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100) { v ->
             voiceConfig!!.setPitch(v)
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
-
-        // Volume
-        volumeVal = addSeekBar(root, getString(R.string.volume), voiceConfig!!.volume, 0,  100) { v ->
+        volumeVal = addSeekBar(root, getString(R.string.volume), voiceConfig!!.volume, 0, 100) { v ->
             voiceConfig!!.setVolume(v)
-                        volumeVal!!.text = getString(R.string.volume_fmt, v)
+            volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
 
+        // ---- Reading ----
+        addSectionHeader(root, R.string.sec_reading)
+        val punctBtnLocal = addRow(this, root)
+        punctBtn = punctBtnLocal
+        punctBtnLocal.setOnClickListener { showPunctuationDialog() }
+        refreshPunctButton(punctBtnLocal)
 
-        // Audio quality mode: 0=standard (raw tone), 1=enhanced (de-hiss + limiter); default standard
-        val dspBtnLocal = Button(this)
+        // ---- Language detection ----
+        addSectionHeader(root, R.string.sec_langdetect)
+        val langDetectBtn = addRow(this, root)
+        langDetectBtn.text = getString(R.string.lang_detect_button)
+        langDetectBtn.setOnClickListener { showDetectionSettingsDialog() }
+
+        // ---- Audio quality ----
+        addSectionHeader(root, R.string.sec_quality)
+        val dspBtnLocal = addRow(this, root)
         dspBtn = dspBtnLocal
         dspBtnLocal.setOnClickListener { showDspDialog() }
-        val dspLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        dspLp.setMargins(0, dp(4), 0, 0)
-        dspBtnLocal.layoutParams = dspLp
-        root.addView(dspBtnLocal)
         refreshDspButton(dspBtnLocal)
-        // Reset defaults (ETI parity): wipes voice/profile/language prefs
-        val resetBtnLocal = Button(this)
+
+        // ---- Dictionary ----
+        addSectionHeader(root, R.string.sec_dictionary)
+        val dictBtnLocal = addRow(this, root)
+        dictBtnLocal.text = getString(R.string.user_dict_button)
+        dictBtnLocal.setOnClickListener { showDictMenuDialog() }
+
+        // ---- Maintenance ----
+        addSectionHeader(root, R.string.sec_maintenance)
+        val resetBtnLocal = addRow(this, root)
         resetBtnLocal.text = getString(R.string.reset_button)
         resetBtnLocal.setOnClickListener { confirmResetDefaults() }
-        val rlp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        rlp.setMargins(0, dp(4), 0, 0)
-        resetBtnLocal.layoutParams = rlp
-        root.addView(resetBtnLocal)
+        val aboutBtnLocal = addRow(this, root)
+        aboutBtnLocal.text = getString(R.string.about_row)
+        aboutBtnLocal.setOnClickListener { showAboutDialog() }
 
-        val testBtn = Button(this)
-        testBtn.text = getString(R.string.test)
-        val lp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        lp.setMargins(0, dp(20), 0, 0)
-        testBtn.layoutParams = lp
+        val testBtn = addFilledButton(root, R.string.test, dp(16))
         testBtn.setOnClickListener { testSpeech() }
-        root.addView(testBtn)
 
         val scroll = ScrollView(this)
         scroll.addView(root)
@@ -190,12 +155,22 @@ class SettingsActivity : Activity() {
     }
 
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, cb: (Int) -> Unit): TextView {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = getDrawable(R.drawable.bg_slider)
+        card.setPadding(dp(16), dp(12), dp(16), dp(8))
+        val cLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        cLp.setMargins(0, 0, 0, dp(8))
+        card.layoutParams = cLp
+        root.addView(card)
+
         val tv = TextView(this)
         // label is already a resource string; just append %d%%
         tv.text = "$label: $initial%"
         tv.textSize = 14f
-        tv.setPadding(0, dp(12), 0, dp(4))
-        root.addView(tv)
+        tv.setTextColor(getColor(R.color.m3_on_surface_variant))
+        card.addView(tv)
 
         val bar = SeekBar(this)
         bar.id = View.generateViewId()
@@ -210,13 +185,13 @@ class SettingsActivity : Activity() {
             override fun onStartTrackingTouch(b: SeekBar) {}
             override fun onStopTrackingTouch(b: SeekBar) {}
         })
-        root.addView(bar)
+        card.addView(bar)
         return tv
     }
 
     private fun testSpeech() {
         if (engine == null || !engine!!.isInitialized()) {
-            Toast.makeText(this, "Engine not initialized", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.engine_not_ready), Toast.LENGTH_SHORT).show()
             return
         }
         val preset = voiceProfile?.preset ?: 1
@@ -237,15 +212,15 @@ class SettingsActivity : Activity() {
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
-            Toast.makeText(this, "Language not included in this build; previewing in English", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.preview_in_english), Toast.LENGTH_LONG).show()
             val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
                 voiceConfig!!.pitch, voiceConfig!!.rate)
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, engine!!.getCoreSampleRate())
-                Toast.makeText(this, "Spoken (English)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.spoken_en), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Synthesis failed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -254,9 +229,9 @@ class SettingsActivity : Activity() {
             voiceConfig!!.pitch, voiceConfig!!.rate)
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, engine!!.getCoreSampleRate())
-            Toast.makeText(this, "Spoken", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.synth_ok), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Synthesis failed", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -358,7 +333,7 @@ class SettingsActivity : Activity() {
 
     private fun refreshLangButton(btn: Button) {
         if (LanguageDetector.isDetectionEnabled()) {
-            btn.text = "Auto detect"
+            btn.text = getString(R.string.lang_auto)
         } else {
             val d = LanguageDetector.getFixedDialect()
             btn.text = dialectName(d)
@@ -366,21 +341,21 @@ class SettingsActivity : Activity() {
     }
 
     private fun dialectName(dialect: Int): String {
-        if (dialect == LanguageDetector.DIALECT_EN_US) return "English (US)"
-        if (dialect == LanguageDetector.DIALECT_EN_GB) return "English (UK)"
-        if (dialect == LanguageDetector.DIALECT_DE_DE) return "German"
-        if (dialect == LanguageDetector.DIALECT_FR_FR) return "French (France)"
-        if (dialect == LanguageDetector.DIALECT_FR_CA) return "French (Canada)"
-        if (dialect == LanguageDetector.DIALECT_ES_ES) return "Spanish (Spain)"
-        if (dialect == LanguageDetector.DIALECT_ES_US) return "Spanish (US)"
-        if (dialect == LanguageDetector.DIALECT_ES_MX) return "Spanish (Mexico)"
-        if (dialect == LanguageDetector.DIALECT_IT_IT) return "Italian"
-        if (dialect == LanguageDetector.DIALECT_JA_JP) return "Japanese"
-        if (dialect == LanguageDetector.DIALECT_PL_PL) return "Polish"
-        if (dialect == LanguageDetector.DIALECT_PT_BR) return "Portuguese (Brazil)"
-        if (dialect == LanguageDetector.DIALECT_FI_FI) return "Finnish"
-        if (dialect == LanguageDetector.DIALECT_ZH_CN) return "Chinese (Mandarin)"
-        return "English (US)"
+        if (dialect == LanguageDetector.DIALECT_EN_US) return getString(R.string.dialect_en_us)
+        if (dialect == LanguageDetector.DIALECT_EN_GB) return getString(R.string.dialect_en_gb)
+        if (dialect == LanguageDetector.DIALECT_DE_DE) return getString(R.string.dialect_de_de)
+        if (dialect == LanguageDetector.DIALECT_FR_FR) return getString(R.string.dialect_fr_fr)
+        if (dialect == LanguageDetector.DIALECT_FR_CA) return getString(R.string.dialect_fr_ca)
+        if (dialect == LanguageDetector.DIALECT_ES_ES) return getString(R.string.dialect_es_es)
+        if (dialect == LanguageDetector.DIALECT_ES_US) return getString(R.string.dialect_es_us)
+        if (dialect == LanguageDetector.DIALECT_ES_MX) return getString(R.string.dialect_es_mx)
+        if (dialect == LanguageDetector.DIALECT_IT_IT) return getString(R.string.dialect_it_it)
+        if (dialect == LanguageDetector.DIALECT_JA_JP) return getString(R.string.dialect_ja_jp)
+        if (dialect == LanguageDetector.DIALECT_PL_PL) return getString(R.string.dialect_pl_pl)
+        if (dialect == LanguageDetector.DIALECT_PT_BR) return getString(R.string.dialect_pt_br)
+        if (dialect == LanguageDetector.DIALECT_FI_FI) return getString(R.string.dialect_fi_fi)
+        if (dialect == LanguageDetector.DIALECT_ZH_CN) return getString(R.string.dialect_zh_cn)
+        return getString(R.string.dialect_en_us)
     }
 
     /** Voice picker: single choice over dialects actually included in this build */
@@ -392,7 +367,7 @@ class SettingsActivity : Activity() {
         var checked = codes.indexOfFirst { it.equals(cur, ignoreCase = true) }
         if (checked < 0) checked = 0
         AlertDialog.Builder(this)
-            .setTitle("Voice")
+            .setTitle(getString(R.string.voice_dlg_title))
             .setSingleChoiceItems(labels, checked) { _, which ->
                 voiceConfig!!.setVoice(codes[which])
                 refreshVoiceButton(voiceBtn!!)
@@ -403,7 +378,7 @@ class SettingsActivity : Activity() {
 
     private fun refreshVoiceButton(btn: Button) {
         val lang = VoiceConfig.findLang(voiceConfig!!.voice)
-        btn.text = "Voice: " + lang.name
+        btn.text = getString(R.string.voice_fmt, lang.name)
     }
 
     /** Preset voice button: shows the active character voice name. */
@@ -465,7 +440,7 @@ class SettingsActivity : Activity() {
                     }
                     else -> {
                         voiceConfig!!.clearDict()
-                        Toast.makeText(this, "Dictionary cleared", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.dict_cleared), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -492,7 +467,7 @@ class SettingsActivity : Activity() {
                 val s = speakInput.text.toString().trim()
                 if (w.isNotEmpty() && s.isNotEmpty()) {
                     voiceConfig!!.addDictEntry(w, s)
-                    Toast.makeText(this, "Added: " + w, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.dict_added_fmt, w), Toast.LENGTH_SHORT).show()
                 } else {
                 Toast.makeText(this, getString(R.string.dict_both_required), Toast.LENGTH_SHORT).show()
                 }
@@ -655,7 +630,7 @@ class SettingsActivity : Activity() {
             LanguageDetector.DIALECT_ZH_CN,
         )
         AlertDialog.Builder(this)
-            .setTitle("Language")
+            .setTitle(getString(R.string.language_dlg_title))
             .setItems(items) { _, which ->
                 if (which == 0) {
                     LanguageDetector.setDetectionEnabled(true)
@@ -673,14 +648,14 @@ class SettingsActivity : Activity() {
     /** Language-detection settings dialog */
     private fun showDetectionSettingsDialog() {
         val items = arrayOf(
-            "Default language",
-            "Detect languages",
-            "English accent",
-            "Spanish accent",
-            "French accent",
+            getString(R.string.lang_default_item),
+            getString(R.string.lang_detect_langs_item),
+            getString(R.string.lang_accent_en_item),
+            getString(R.string.lang_accent_es_item),
+            getString(R.string.lang_accent_fr_item),
         )
         AlertDialog.Builder(this)
-            .setTitle("Language detection settings")
+            .setTitle(getString(R.string.lang_detect_title))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showDefaultLanguageDialog()
@@ -698,17 +673,17 @@ class SettingsActivity : Activity() {
      * language family can be picked here; accents (US/UK, Spain/Mexico, etc.) are set by the accent dialogs. */
     private fun showDefaultLanguageDialog() {
         val items = arrayOf(
-            "Unspecified",
-            "English",
-            "German",
-            "French",
-            "Spanish",
-            "Italian",
-            "Japanese",
-            "Polish",
-            "Portuguese",
-            "Finnish",
-            "Chinese",
+            getString(R.string.lang_unspecified),
+            getString(R.string.lang_english),
+            getString(R.string.lang_german),
+            getString(R.string.lang_french),
+            getString(R.string.lang_spanish),
+            getString(R.string.lang_italian),
+            getString(R.string.lang_japanese),
+            getString(R.string.lang_polish),
+            getString(R.string.lang_portuguese),
+            getString(R.string.lang_finnish),
+            getString(R.string.lang_chinese),
         )
         // values[i] is the dialect for items[i] (English/French/Spanish use the current accent)
         val values = intArrayOf(
@@ -735,7 +710,7 @@ class SettingsActivity : Activity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Default language")
+            .setTitle(getString(R.string.lang_dlg_default_title))
             .setSingleChoiceItems(items, checked) { d, which ->
                 LanguageDetector.setDefaultLanguage(values[which])
                 saveLanguageSettings()
@@ -758,11 +733,11 @@ class SettingsActivity : Activity() {
         // Mirror checkbox state into a temp array as the user toggles
         val finalChecked = checked.clone()
         AlertDialog.Builder(this)
-            .setTitle("Detect languages")
+            .setTitle(getString(R.string.lang_dlg_detect_title))
             .setMultiChoiceItems(names, checked) { _, which, isChecked ->
                 finalChecked[which] = isChecked
             }
-            .setPositiveButton("OK") { _, _ ->
+            .setPositiveButton(getString(R.string.ok)) { _, _ ->
                 val newEnabled = HashSet<String>()
                 for (i in finalChecked.indices) {
                     if (finalChecked[i]) {
@@ -779,11 +754,11 @@ class SettingsActivity : Activity() {
 
     /** English accent */
     private fun showEnglishAccentDialog() {
-        val items = arrayOf("American English (en-US)", "British English (en-GB)")
+        val items = arrayOf(getString(R.string.accent_en_us), getString(R.string.accent_en_gb))
         val cur = LanguageDetector.getEnglishDialect()
         val checked = if (cur == LanguageDetector.DIALECT_EN_GB) 1 else 0
         AlertDialog.Builder(this)
-            .setTitle("English accent")
+            .setTitle(getString(R.string.lang_accent_en_item))
             .setSingleChoiceItems(items, checked) { d, which ->
                 LanguageDetector.setEnglishDialect(
                     if (which == 1) LanguageDetector.DIALECT_EN_GB else LanguageDetector.DIALECT_EN_US)
@@ -796,7 +771,7 @@ class SettingsActivity : Activity() {
 
     /** Spanish accent */
         private fun showSpanishDialectDialog() {
-        val items = arrayOf("Spain (es-ES)", "United States (es-US)", "Mexico (es-MX)")
+        val items = arrayOf(getString(R.string.accent_es_es), getString(R.string.accent_es_us), getString(R.string.accent_es_mx))
             val cur = LanguageDetector.getSpanishDialect()
             val checked = when (cur) {
                 LanguageDetector.DIALECT_ES_US -> 1
@@ -804,7 +779,7 @@ class SettingsActivity : Activity() {
                 else -> 0
             }
             AlertDialog.Builder(this)
-                .setTitle("Spanish accent")
+                .setTitle(getString(R.string.lang_accent_es_item))
                 .setSingleChoiceItems(items, checked) { d, which ->
                     LanguageDetector.setSpanishDialect(
                         when (which) {
@@ -821,11 +796,11 @@ class SettingsActivity : Activity() {
 
     /** French accent */
         private fun showFrenchDialectDialog() {
-        val items = arrayOf("France (fr-FR)", "Canada (fr-CA)")
+        val items = arrayOf(getString(R.string.accent_fr_fr), getString(R.string.accent_fr_ca))
             val cur = LanguageDetector.getFrenchDialect()
             val checked = if (cur == LanguageDetector.DIALECT_FR_CA) 1 else 0
             AlertDialog.Builder(this)
-                .setTitle("French accent")
+                .setTitle(getString(R.string.lang_accent_fr_item))
             .setSingleChoiceItems(items, checked) { d, which ->
                 LanguageDetector.setFrenchDialect(
                     if (which == 1) LanguageDetector.DIALECT_FR_CA else LanguageDetector.DIALECT_FR_FR)
@@ -900,6 +875,71 @@ class SettingsActivity : Activity() {
         LanguageDetector.setEnabledLanguages(enabled)
     }
 
+
+    /** M3 section header (small caps, primary color) */
+    private fun addSectionHeader(root: LinearLayout, labelRes: Int) {
+        val tv = TextView(this)
+        tv.text = getString(labelRes)
+        tv.setAllCaps(true)
+        tv.textSize = 12f
+        tv.setLetterSpacing(0.08f)
+        tv.setTextColor(getColor(R.color.m3_primary))
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(dp(8), dp(20), 0, dp(8))
+        tv.layoutParams = lp
+        root.addView(tv)
+    }
+
+    /** M3 list row: rounded surface, 48dp+ touch target. */
+    private fun addRow(owner: Activity, root: LinearLayout): Button {
+        val btn = Button(owner)
+        btn.background = owner.getDrawable(R.drawable.bg_row)
+        btn.setTextColor(owner.getColor(R.color.m3_on_surface))
+        btn.textSize = 16f
+        btn.minHeight = dp(48)
+        btn.gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START
+        btn.setPadding(dp(16), 0, dp(16), 0)
+        btn.stateListAnimator = null
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, 0, 0, dp(8))
+        btn.layoutParams = lp
+        root.addView(btn)
+        return btn
+    }
+
+    /** M3 filled button (primary surface, 52dp target). */
+    private fun addFilledButton(root: LinearLayout, labelRes: Int, topMargin: Int): Button {
+        val btn = Button(this)
+        btn.text = getString(labelRes)
+        btn.background = getDrawable(R.drawable.bg_btn)
+        btn.setTextColor(getColor(R.color.m3_on_primary))
+        btn.textSize = 16f
+        btn.minHeight = dp(52)
+        btn.gravity = android.view.Gravity.CENTER
+        btn.stateListAnimator = null
+        val lp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, topMargin, 0, dp(8))
+        btn.layoutParams = lp
+        root.addView(btn)
+        return btn
+    }
+
+    /** About dialog (ETI parity: version + credits). */
+    private fun showAboutDialog() {
+        var version = "?"
+        try {
+            version = packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (ignore: Exception) {
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.about_title))
+            .setMessage(getString(R.string.about_body_fmt, version))
+            .setPositiveButton(getString(R.string.ok), null)
+            .show()
+    }
     companion object {
         private const val PREFS_NAME = "vvtts_lang_settings"
     }

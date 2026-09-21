@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+ (Android 12+): DeviceDefault = Material You (dynamic color) with
+         the app surface kept light. Same style name as the base fallback. -->
+    <style name="Theme.Vvtts" parent="android:Theme.DeviceDefault.DayNight.NoActionBar">
+        <item name="android:colorPrimary">@color/m3_primary</item>
+        <item name="android:colorPrimaryDark">@color/m3_primary_pressed</item>
+        <item name="android:colorAccent">@color/m3_primary</item>
+        <item name="android:colorControlActivated">@color/m3_primary</item>
+        <item name="android:windowBackground">@color/m3_surface</item>
+        <item name="android:statusBarColor">@color/m3_surface</item>
+        <item name="android:navigationBarColor">@color/m3_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorError">@color/m3_error</item>
+    </style>
+</resources>

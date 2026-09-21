@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 28-30 fallback: Material (M1) platform theme recolored to the M3 palette.
+         On API 31+ values-v31/themes.xml overrides this with DeviceDefault (Material You). -->
+    <style name="Theme.Vvtts" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- M3 tonal roles mapped onto the platform theme -->
+        <item name="android:colorPrimary">@color/m3_primary</item>
+        <item name="android:colorPrimaryDark">@color/m3_primary_pressed</item>
+        <item name="android:colorAccent">@color/m3_primary</item>
+        <item name="android:colorControlActivated">@color/m3_primary</item>
+        <item name="android:colorControlHighlight">@color/m3_primary_container</item>
+        <item name="android:colorButtonNormal">@color/m3_primary</item>
+        <item name="android:colorEdgeEffect">@color/m3_primary</item>
+        <item name="android:windowBackground">@color/m3_surface</item>
+        <item name="android:statusBarColor">@color/m3_surface</item>
+        <item name="android:navigationBarColor">@color/m3_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorError">@color/m3_error</item>
+    </style>
+</resources>

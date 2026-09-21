@@ -10,7 +10,7 @@
     <application
         android:label="Eloquence TTS"
         android:extractNativeLibs="true"
-        android:theme="@android:style/Theme.Material.Light.DarkActionBar">
+        android:theme="@style/Theme.Vvtts">
 
         <service
             android:name=".services.VvTtsService"
@@ -40,7 +40,7 @@
         <activity android:name=".ui.VoiceProfileActivity"
             android:label="@string/voice_profile"
             android:exported="false"
-            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+            android:theme="@style/Theme.Vvtts" />
 
         <activity android:name=".ui.GetSampleText" android:exported="true">
             <intent-filter>
