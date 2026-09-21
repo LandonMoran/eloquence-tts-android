@@ -347,7 +347,7 @@ class SettingsActivity : Activity() {
     private fun showVoiceDialog() {
         val voices = VoiceConfig.LANGS.filter { it.eciDialect != 0L }
         val codes = voices.map { it.code }.toTypedArray()
-        val labels = voices.map { it.label }.toTypedArray()
+        val labels = voices.map { it.name }.toTypedArray()
         val cur = voiceConfig!!.voice
         var checked = codes.indexOfFirst { it.equals(cur, ignoreCase = true) }
         if (checked < 0) checked = 0
@@ -363,7 +363,7 @@ class SettingsActivity : Activity() {
 
     private fun refreshVoiceButton(btn: Button) {
         val lang = VoiceConfig.findLang(voiceConfig!!.voice)
-        btn.text = "Voice: " + lang.label
+        btn.text = "Voice: " + lang.name
     }
 
     private fun showLanguageDialog() {
