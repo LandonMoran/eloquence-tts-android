@@ -97,19 +97,19 @@ class SettingsActivity : Activity() {
 
         // Rate
         rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,  300) { v ->
-            voiceConfig!!.rate = v
+            voiceConfig!!.setRate(v)
             rateVal!!.text = getString(R.string.rate_fmt, v)
         }
 
         // Pitch
         pitchVal = addSeekBar(root, getString(R.string.pitch), voiceConfig!!.pitch, 0,  100) { v ->
-            voiceConfig!!.pitch = v
+            voiceConfig!!.setPitch(v)
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
 
         // Volume
         volumeVal = addSeekBar(root, getString(R.string.volume), voiceConfig!!.volume, 0,  100) { v ->
-            voiceConfig!!.volume = v
+            voiceConfig!!.setVolume(v)
                         volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
 
@@ -517,7 +517,7 @@ class SettingsActivity : Activity() {
                             1 -> LanguageDetector.DIALECT_ES_US
                             2 -> LanguageDetector.DIALECT_ES_MX
                             else -> LanguageDetector.DIALECT_ES_ES
-                        }))
+                        })
                     saveLanguageSettings()
                     d.dismiss()
                 }

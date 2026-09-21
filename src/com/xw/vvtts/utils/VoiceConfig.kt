@@ -91,7 +91,7 @@ class VoiceConfig(context: Context) {
 
         fun findLang(code: String?): Lang {
             if (code == null) return LANGS[0]// en-US
-            for ( (l in LANGS) if (l.code == code) return l
+            for (l in LANGS) if (l.code == code) return l
             return LANGS[0] // en-US
         }
     }
