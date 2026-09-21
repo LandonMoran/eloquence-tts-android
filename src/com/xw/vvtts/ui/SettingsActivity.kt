@@ -96,19 +96,19 @@ class SettingsActivity : Activity() {
         root.addView(langDetectBtn)
 
         // Rate
-        rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,String  300) { v ->
+        rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,  300) { v ->
             rateVal!!.setRate(v)
             rateVal!!.text = getString(R.string.rate_fmt, v)
         }
 
         // Pitch
-        pitchVal = addSeekBar(root, getString(R.string.pitch], voiceConfig!!.pitch, 0,,  100) { v ->
+        pitchVal = addSeekBar(root, getString(R.string.pitch), voiceConfig!!.pitch, 0,  100) { v ->
             pitchVal!!.setPitch(v)
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
 
         // Volume
-        volumeVal = addSeekBar(root, getString(R.string.volume], voiceConfig!!.volume,,  0,,  100) { v ->
+        volumeVal = addSeekBar(root, getString(R.string.volume), voiceConfig!!.volume, 0,  100) { v ->
             volumeVal!!.setVolume(v)
             volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
@@ -184,7 +184,7 @@ class SettingsActivity : Activity() {
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
-            Toast.makeText(this, "Language not included in this build; previewing in English", Toast.LENGTH_LONG].show()
+            Toast.makeText(this, "Language not included in this build; previewing in English", Toast.LENGTH_LONG).show()
             val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
                 voiceConfig!!.pitch, voiceConfig!!.rate)
@@ -513,7 +513,7 @@ class SettingsActivity : Activity() {
                 .setTitle("Spanish accent")
                 .setSingleChoiceItems(items, checked) { d, which ->
                     LanguageDetector.setSpanishDialect(
-                        when ((which) {
+                        when (which) {
                             1 -> LanguageDetector.DIALECT_ES_US
                             2 -> LanguageDetector.DIALECT_ES_MX
                             else -> LanguageDetector.DIALECT_ES_ES
