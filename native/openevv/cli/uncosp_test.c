@@ -11,6 +11,10 @@
 #include <time.h>
 #include "eci.h"
 
+extern int et_insertIndex(void *h, long index);
+extern int et_addText(void *h, const char *text);
+extern int et_synthesize(void *h);
+
 #define SAMPLES 8192
 static short chunk[SAMPLES];
 static long total = 0;
@@ -36,16 +40,19 @@ static void wait_done(ECIHand h) {
 }
 
 static int try_word(const char *w) {
-    total = 0; peak = 0;
-    ECIHand h = eciNewEx(0x10000);
+    total = 0; peak =  0;
+    long lang =  0x10000;
+    const char *le = getenv("EVV_LANG");
+    if (le && *le) lang = strtol(le, NULL, 0);
+    ECIHand h = eciNewEx(lang);
     if (!h) { fprintf(stderr, "FAIL %s: eciNewEx\n", w); return 1; }
     eciRegisterCallback(h, cb, NULL);
     eciSetOutputBuffer(h, SAMPLES, chunk);
     eciSetParam(h, eciSampleRate, 1);
     eciClearInput(h);
-    eciInsertIndex(h, 4242);
-    eciAddText(h, w);
-    eciSynthesize(h);
+    et_insertIndex(h, 4242);
+    et_addText(h, w);
+    et_synthesize(h);
     wait_done(h);
     int ok = (total > 0) && (peak > 0);
     if (!ok) fprintf(stderr, "FAIL %s: no pcm (samples=%ld peak=%d)\n", w, total, peak);
