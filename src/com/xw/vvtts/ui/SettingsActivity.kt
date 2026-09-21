@@ -171,7 +171,9 @@ class SettingsActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         rlp.setMargins(0, dp(4), 0, 0)
         resetBtnLocal.layoutParams = rlp
-        root.addView(resetBtnLocal)        val testBtn = Button(this)
+        root.addView(resetBtnLocal)
+
+        val testBtn = Button(this)
         testBtn.text = getString(R.string.test)
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
