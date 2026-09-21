@@ -91,12 +91,15 @@ static int32_t chs_processSentence(EvvRom *r, char **out, int32_t annotated)
         *out = 0;
         return 0;
     }
-    *out = rom->in_buf;
+    /* GB text in, pinyin phone string out: the dict walk and syllable
+       speller above do the romanizing.  Answer 2 hands the converted
+       text back to the engine for processing by the apply_chi rules. */
+    chs_mbcs2Rom(r, rom->in_buf, out);
     rom->in_buf_len = 0;
     return 2;
-}
+    }
 
-/* No user dictionary in this rom. */
+    /* No user dictionary in this rom. */
 #define NODICT 0
 static const EvvRomOps chs_ops = {
     .release         = chs_release,
