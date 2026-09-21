@@ -153,10 +153,12 @@ jobs:
               NPROC=$(nproc); [ "$NPROC" -gt 2 ] && NPROC=2
               TL=$(wc -l < "$pc"); PER=$(( (TL + $NPROC - 1) / $NPROC )); split -l "$PER" -d -a2 "$pc" /tmp/hzp_
               for c in /tmp/hzp_[0-9][0-9]; do
-                ( while IFS= read -r line; do
-                    timeout -k 5 20 /tmp/dump_engine "$D" <<< "$line" >> "$c.tsv" 2>/dev/null || { rc=$?; printf 'hang\t%s\t%d\n' "$line" "$rc" >> "$c.tsv"; }
+                ( printf 'probe\tstart\t%s\tlines\t%s\n' "$(head -c4 "$c" | xxd -p)" "$(wc -l < "$c")" >> "$c.tsv"
+                  while IFS= read -r line; do
+                    timeout -k 5 60 /tmp/dump_engine "$D" <<< "$line" >> "$c.tsv" 2>/dev/null || { rc=$?; printf 'hang\t%s\t%d\n' "$line" "$rc" >> "$c.tsv"; }
                     printf 'nl\t%s\n' "$line" >> "$c.tsv"
-                  done < "$c" ) &
+                  done < "$c"
+                  printf 'probe\tend\t%s\n' "$(tail -c4 "$c" | xxd -p)" >> "$c.tsv" ) &
               done
               wait
               for c in /tmp/hzp_[0-9][0-9]; do cat "$c.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/output.tsv"
