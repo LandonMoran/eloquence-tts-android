@@ -97,20 +97,20 @@ class SettingsActivity : Activity() {
 
         // Rate
         rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,  300) { v ->
-            rateVal!!.setRate(v)
+            voiceConfig!!.rate = v
             rateVal!!.text = getString(R.string.rate_fmt, v)
         }
 
         // Pitch
         pitchVal = addSeekBar(root, getString(R.string.pitch), voiceConfig!!.pitch, 0,  100) { v ->
-            pitchVal!!.setPitch(v)
+            voiceConfig!!.pitch = v
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
 
         // Volume
         volumeVal = addSeekBar(root, getString(R.string.volume), voiceConfig!!.volume, 0,  100) { v ->
-            volumeVal!!.setVolume(v)
-            volumeVal!!.text = getString(R.string.volume_fmt, v)
+            voiceConfig!!.volume = v
+                        volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
 
 
@@ -502,7 +502,7 @@ class SettingsActivity : Activity() {
 
     /** Spanish accent */
         private fun showSpanishDialectDialog() {
-            val items = arrayOf("Spanish (Spain) es-ES)", "Spanish (US) es-US)", "Spanish (Mexico] es-MX)")
+            val items = arrayOf("Spanish (Spain) es-ES)", "Spanish (US) es-US)", "Spanish (Mexico) es-MX)")
             val cur = LanguageDetector.getSpanishDialect()
             val checked = when (cur) {
                 LanguageDetector.DIALECT_ES_US -> 1
@@ -529,7 +529,7 @@ class SettingsActivity : Activity() {
         private fun showFrenchDialectDialog() {
             val items = arrayOf("French (France) fr-FR)", "French (Canada] fr-CA)")
             val cur = LanguageDetector.getFrenchDialect()
-            val checked = = if (cur == LanguageDetector.DIALECT_FR_CA) 1 else 0
+            val checked = if (cur == LanguageDetector.DIALECT_FR_CA) 1 else 0
             AlertDialog.Builder(this)
                 .setTitle("French accent")
             .setSingleChoiceItems(items, checked) { d, which ->

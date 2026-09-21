@@ -171,12 +171,12 @@ class LanguageDetector {
             // Lingua only disambiguates Latin scripts; CJK (zh/ja/ko) use Unicode
             // rules and never go through Lingua。
             val allLatin = ArrayList<Language>()
-            allLatin.add(Language.ENGLISH>
-            allLatin.add(Language.GERMAN>
-            allLatin.add(Language.FRENCH>
-            allLatin.add(Language.SPANISH>
-            allLatin.add(Language.ITALIAN>
-            allLatin.add(Language.POLISH>
+            allLatin.add(Language.ENGLISH)
+            allLatin.add(Language.GERMAN)
+            allLatin.add(Language.FRENCH)
+            allLatin.add(Language.SPANISH)
+            allLatin.add(Language.ITALIAN)
+            allLatin.add(Language.POLISH)
 
             val en = enabledLanguages
             if (en == null) return allLatin // 理论上不会发生，防御
