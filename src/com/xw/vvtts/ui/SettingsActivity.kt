@@ -33,6 +33,7 @@ class SettingsActivity : Activity() {
     private var volumeVal: TextView? = null
     private var dspBtn: Button? = null
     private var langBtn: Button? = null
+    private var voiceBtn: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +73,18 @@ class SettingsActivity : Activity() {
         langBtnLocal.setOnClickListener { showLanguageDialog() }
         root.addView(langBtnLocal)
         refreshLangButton(langBtnLocal)
+
+        // Voice (spoken dialect: used by the test player, and as the fallback
+        // dialect when the system TTS caller sends no voice name)
+        val voiceBtnLocal = Button(this)
+        voiceBtn = voiceBtnLocal
+        val vvLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        vvLp.setMargins(0, dp(4), 0, 0)
+        voiceBtnLocal.layoutParams = vvLp
+        voiceBtnLocal.setOnClickListener { showVoiceDialog() }
+        root.addView(voiceBtnLocal)
+        refreshVoiceButton(voiceBtnLocal)
 
         // Voice profile entry (tap to open)
         val voiceProfileBtn = Button(this)
@@ -179,8 +192,8 @@ class SettingsActivity : Activity() {
             text = sampleTextFor(lang.code)
             dialect = bcpToDialect(lang.code)
         }
-        // If this build lacks the language module (e.g. zh-CN), synthesis is
-                // impossible: fall back to English and say so.Hard rule: never feed
+        // If this build lacks the language module (e.g. zh-TW), synthesis is
+                // impossible: fall back to English and say so. Hard rule: never feed
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
@@ -210,7 +223,7 @@ class SettingsActivity : Activity() {
     /** Per-language sample texts */
     private fun sampleTextFor(code: String): String {
         if (code == null) return "Hello, this is a speech test."
-        if (code.startsWith("zh")) return "Hello, this is a speech synthesis test."
+        if (code.startsWith("zh")) return "\u4f60\u597d\u3002"
         if (code.startsWith("en")) return "Hello, this is a speech synthesis test."
         if (code.startsWith("de")) return "Hallo, das ist ein Sprachsynthesetest."
         if (code.startsWith("fr")) return "Bonjour, ceci est un test de synthèse vocale."
@@ -326,7 +339,31 @@ class SettingsActivity : Activity() {
         if (dialect == LanguageDetector.DIALECT_PL_PL) return "Polish"
         if (dialect == LanguageDetector.DIALECT_PT_BR) return "Portuguese (Brazil)"
         if (dialect == LanguageDetector.DIALECT_FI_FI) return "Finnish"
+        if (dialect == LanguageDetector.DIALECT_ZH_CN) return "Chinese (Mandarin)"
         return "English (US)"
+    }
+
+    /** Voice picker: single choice over dialects actually included in this build */
+    private fun showVoiceDialog() {
+        val voices = VoiceConfig.LANGS.filter { it.eciDialect != 0L }
+        val codes = voices.map { it.code }.toTypedArray()
+        val labels = voices.map { it.label }.toTypedArray()
+        val cur = voiceConfig!!.voice
+        var checked = codes.indexOfFirst { it.equals(cur, ignoreCase = true) }
+        if (checked < 0) checked = 0
+        AlertDialog.Builder(this)
+            .setTitle("Voice")
+            .setSingleChoiceItems(labels, checked) { _, which ->
+                voiceConfig!!.setVoice(codes[which])
+                refreshVoiceButton(voiceBtn!!)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun refreshVoiceButton(btn: Button) {
+        val lang = VoiceConfig.findLang(voiceConfig!!.voice)
+        btn.text = "Voice: " + lang.label
     }
 
     private fun showLanguageDialog() {
@@ -345,6 +382,7 @@ class SettingsActivity : Activity() {
             "Polish",
             "Portuguese (Brazil)",
             "Finnish",
+            "Chinese (Mandarin)",
         )
         val dialects = intArrayOf(
             -1, // auto
@@ -361,6 +399,7 @@ class SettingsActivity : Activity() {
             LanguageDetector.DIALECT_PL_PL,
             LanguageDetector.DIALECT_PT_BR,
             LanguageDetector.DIALECT_FI_FI,
+            LanguageDetector.DIALECT_ZH_CN,
         )
         AlertDialog.Builder(this)
             .setTitle("Language")
@@ -416,6 +455,7 @@ class SettingsActivity : Activity() {
             "Polish",
             "Portuguese",
             "Finnish",
+            "Chinese",
         )
         // values[i] is the dialect for items[i] (English/French/Spanish use the current accent)
         val values = intArrayOf(
@@ -429,6 +469,7 @@ class SettingsActivity : Activity() {
             LanguageDetector.DIALECT_PL_PL,
             LanguageDetector.DIALECT_PT_BR,
             LanguageDetector.DIALECT_FI_FI,
+            LanguageDetector.DIALECT_ZH_CN,
         )
 
         val cur = LanguageDetector.getDefaultLanguage()

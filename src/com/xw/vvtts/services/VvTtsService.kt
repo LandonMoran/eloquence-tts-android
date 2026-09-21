@@ -144,7 +144,10 @@ class VvTtsService : TextToSpeechService() {
         val savedLangs = LanguageDetector.getEnabledLanguages()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
-        if (voiceName != null && voiceName.lowercase().startsWith("zh")) {
+        val appVoice = voiceConfig?.voice
+        val zhRequested = (voiceName != null && voiceName.lowercase().startsWith("zh"))
+            || (voiceName.isNullOrBlank() && appVoice != null && appVoice.lowercase().startsWith("zh"))
+        if (zhRequested) {
 
             LanguageDetector.setDefaultLanguage(EloquenceEngine.DIALECT_ZH_CN)
 
