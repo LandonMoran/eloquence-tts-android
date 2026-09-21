@@ -121,10 +121,48 @@ static void ph_reply(ECIHand h, int size) {
  * spoken phoneme) arrive as ECIMouthData -- ASCIIZ phoneme name + mouth
  * params.  Also collect waveform-buffer fills (msg 0) to count PCM. */
 static long g_pcm_samples;
+static short g_pcm_chunk[4096];          /* the registered output buffer */
+static unsigned char *g_pcm_hex = NULL;  /* DUMP_PCM: raw PCM as hex       */
+static size_t g_pcm_hex_len = 0, g_pcm_hex_cap = 0;
+
+static void pcm_hex_reset(void) { g_pcm_hex_len = 0; }
+
+static void pcm_hex_append(size_t n) {
+    /* Append the first n samples of the filled output buffer as hex. */
+    size_t need = g_pcm_hex_len + n * 2 + 1;
+    if (g_pcm_hex == NULL || need > g_pcm_hex_cap) {
+        size_t cap = need + 65536;
+        g_pcm_hex = realloc(g_pcm_hex, cap);
+        if (!g_pcm_hex) { g_pcm_hex_len = 0; g_pcm_hex_cap = 0; return; }
+        g_pcm_hex_cap = cap;
+    }
+    unsigned char *p = (unsigned char *)g_pcm_chunk;
+    char *o = (char *)g_pcm_hex + g_pcm_hex_len;
+    size_t i;
+    for (i = 0; i < n * 2; i++) sprintf(o + i * 2, "%02x", p[i]);
+    g_pcm_hex_len += n * 2;
+}
+
+static void pcm_row(void) {
+    if (getenv("DUMP_PCM") && g_pcm_hex_len > 0) {
+        printf("pcm\t%ld\t%.*s\n", g_pcm_samples, (int)g_pcm_hex_len, g_pcm_hex);
+        pcm_hex_reset();
+    } else {
+        printf("pcm\t%ld\n", g_pcm_samples);
+    }
+}
+
 static int cb(ECIHand h, int msg, long lParam, void *pData) {
     (void)h;
     if (msg == MSG_WAVEFORM) {
-        if (lParam > 0) g_pcm_samples += lParam;
+        if (lParam > 0) {
+            g_pcm_samples += lParam;
+            if (getenv("DUMP_PCM")) {
+                size_t n = (size_t)lParam;
+                if (n > 4096) n = 4096;
+                pcm_hex_append(n);
+            }
+        }
         return 1;
     }
     if (msg == MSG_PHONEME_INDEX_REPLY && pData) {
@@ -269,7 +307,6 @@ int main(int argc, char **argv) {
         SetParam(eci, PARAM_INPUTTYPE,  1); /* text input (per IBM SDK eci.h) */
     }
     if (getenv("DUMP_WANT_PHONEME")) SetParam(eci, PARAM_WANT_PHONEME, 1);
-    short chunk[4096];
     RegisterCallback(eci, cb, NULL);
     /* The conversion gate (eciGeneratePhonemes/eciGeneratePinyins) tells
      * the engine to switch its output to null for the internal pass it
@@ -278,7 +315,7 @@ int main(int argc, char **argv) {
      * "setOutputToNull failed").  So the output buffer is registered for
      * the pcm gate only. */
     if (!getenv("DUMP_PINYIN") && !getenv("DUMP_GENPHON"))
-        SetOutputBuffer(eci, 4096, chunk);
+        SetOutputBuffer(eci, 4096, g_pcm_chunk);
 
     if (getenv("DUMP_ONESHOT")) {
         /* probe2-verbatim feed: whole stdin, single AddText/Synthesize/Synchronize. */
@@ -317,7 +354,7 @@ int main(int argc, char **argv) {
             so_r  = Synchronize ? Synchronize(eci) : -1;
         }
         if (getenv("DUMP_TRACE")) fprintf(stderr, "oneshot add=%d synth=%d sync=%d len=%zu\n", add_r, sy_r, so_r, n);
-        printf("pcm\t%ld\n", g_pcm_samples);
+        pcm_row();
         return 0;
     }
     if (getenv("DUMP_FORKSERVER")) {

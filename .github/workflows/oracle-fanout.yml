@@ -91,6 +91,10 @@ jobs:
             fi
             export DUMP_GENPHON=1
             export DUMP_NOSYNTH=1
+          elif [ "${{ inputs.mode }}" = "pcmwav" ]; then
+            unset DUMP_PINYIN DUMP_GENPHON DUMP_NOSYNTH
+            export DUMP_PCM=1
+            export DUMP_SYNTHPARAMS=1
           else
             unset DUMP_PINYIN DUMP_GENPHON DUMP_NOSYNTH
           fi
@@ -145,7 +149,7 @@ jobs:
                 7) pc=/tmp/hz_06;;
                 8) pc=/tmp/hz_07;;
               esac
-              NPROC=$(nproc); [ "$NPROC" -gt 8 ] && NPROC=8
+              NPROC=$(nproc); [ "$NPROC" -gt 2 ] && NPROC=2
               TL=$(wc -l < "$pc"); PER=$(( (TL + $NPROC - 1) / $NPROC )); split -l "$PER" -d -a2 "$pc" /tmp/hzp_
               for c in /tmp/hzp_[0-9][0-9]; do
                 ( while IFS= read -r line; do
