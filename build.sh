@@ -80,12 +80,16 @@ fi
 
 # 3. 组装 APK
 rm -rf tmp_apk vvtts_base.apk vvtts_unsigned.apk vvtts_aligned.apk vvtts_signed.apk
-mkdir -p "tmp_apk/lib/$ABI" tmp_apk/assets
+mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/assets
 
 # 复制所有 dex（multidex）
 cp out_dex/classes*.dex tmp_apk/
-# 复制 native 语言库
-cp "native-libs/$ABI"/*.so "tmp_apk/lib/$ABI/"
+# 复制 native 语言库（双 ABI：64 位 + 32 位设备）
+for abi in arm64-v8a armeabi-v7a; do
+  if [ -d "native-libs/$abi" ]; then
+    cp "native-libs/$abi"/*.so "tmp_apk/lib/$abi/"
+  fi
+done
 # 复制 Lingua 语言模型 JSON（必须放进 APK 根目录）
 cp -r language-models tmp_apk/
 

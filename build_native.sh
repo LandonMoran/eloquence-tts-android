@@ -20,6 +20,7 @@ ABI="${ABI:-arm64-v8a}"
 TRIPLE="${ABI%%-*}"   # arm64 -> aarch64, x86_64 -> x86_64
 CLANG_NAME="${TRIPLE}-linux-android28-clang"
 if [ "$ABI" = "arm64-v8a" ]; then CLANG_NAME="aarch64-linux-android28-clang"; fi
+if [ "$ABI" = "armeabi-v7a" ]; then CLANG_NAME="armv7a-linux-androideabi28-clang"; fi
 if [ -z "$NDK" ] && [ -d "$SDK/ndk" ]; then
   # Prefer the pinned toolchain when present; else whatever the image ships.
   for cand in "$SDK/ndk/26.3.11579264" "$SDK"/ndk/*/; do
@@ -49,6 +50,15 @@ for l in $LANGS; do
   SUF="$SUF-${l#lang/}"
 done
 
+# 0. chs oracle table: regenerate the runtime C from the consolidated TSV so
+# the archive carries the captured PCM (the tree's committed copy is a small
+# placeholder).  Cheap (~seconds) and authoritative: never hand-edit it.
+if [ -f "oracle/table/zh-cn.consolidated.tsv" ] || ls oracle/table/*.consolidated.tsv >/dev/null 2>&1; then
+  # fitter takes the table DIR and globs every *.consolidated.tsv (parts)
+  python3 oracle/fitter.py oracle/table \
+    native/openevv/lang/chs/oracle_chs.c
+fi
+
 # 1. openevv: static archive, cross-compiled, PIC objects so they bind
 # into a shared library.  RULES=c bakes the rules as generated C (faster
 # warm-up and lower latency on-device than bytecode.;
@@ -75,6 +85,7 @@ fi
         -o "$OUT/libvvtts_core.so" \
         jni/vvtts_core.c \
         jni/eci_compat.c \
+        jni/chs_oracle_synth.c \
         "$LIBEVV" \
     -lm
 

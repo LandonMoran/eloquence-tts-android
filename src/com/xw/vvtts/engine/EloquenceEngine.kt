@@ -148,15 +148,15 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
         const val DIALECT_IT_IT = 0x50000    // [5.0] ita
-        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs —— 本构建未链接 lang/chs，见 SHIPPED_DIALECTS
+        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs —— 已链接 lang/chs，合成走 oracle 音库（见 SHIPPED_DIALECTS）
         const val DIALECT_ZH_TW = 0x60001    // [6.1] cht
         const val DIALECT_PT_BR = 0x70000    // [7.0] ptb
         const val DIALECT_JA_JP = 0x80000    // [8.0] jpn
         const val DIALECT_FI_FI = 0x90000    // [9.0] fin
         const val DIALECT_KO_KR = 0xA0000    // [10.0] kor
         // 本构建实际链接的语言模块（与 build_native.sh LANGS 一致）。
-        // 未列出的方言（zh/zh-TW/ko）引擎里没有模块，native 侧会拒绝，
-        // 这里先拦截以免依赖 native 拒绝对话。
+        // chs 已链接（合成 = oracle 音库）；zh-TW(cht)/ko(kor) 无模块，
+        // native 侧会拒绝，这里先拦截以免依赖 native 拒绝对话。
         val SHIPPED_DIALECTS: Set<Long> = setOf(
             0x10000L, 0x10001L,             // enus, engb
             0x20000L, 0x20001L, 0x20002L,    // eses, esus, esmx

@@ -23,6 +23,7 @@
 #include <string.h>
 #include <time.h>
 #include "eci.h"
+#include "chs_oracle_synth.h"
 
 /* The engine's own text layer (upstream cli/probe.c path): the eci*
  * shims for add/synthesize are inert, so call the et_* entry points
@@ -102,6 +103,7 @@ static int vv_dialect_shipped(int32_t dialect) {
     case 0x50000:                /* itit */
     case 0x80000:                /* jajp */
     case 0x110000:               /* plpl */
+    case 0x60000:                /* chs -- linked; synthesis is oracle-fed */
         return 1;
     default:
         return 0;
@@ -179,6 +181,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     if (s->text) free(s->text);
     s->text = buf;
     s->pcmLen = 0;
+
+    if (dialect == 0x60000) {
+        /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
+         * from the oracle bank instead -- raw PCM keyed by the GB18030 bytes
+         * the app already sends (charsetId == CHARSET_GBK).  No engine call,
+         * no synthesis thread; the session still owns the buffer. */
+        short *pcm = NULL;
+        size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
+        if (samples == 0) return NULL;
+        free(s->pcm);
+        s->pcm = pcm;
+        s->pcmLen = samples;
+        s->pcmCap = samples;
+        jshortArray out = (*env)->NewShortArray(env, (jsize)samples);
+        if (!out) return NULL;
+        (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
+        return out;
+    }
 
     eciClearInput(s->hECI);
     et_insertIndex(s->hECI, 4242);   /* upstream cli probe's index */
