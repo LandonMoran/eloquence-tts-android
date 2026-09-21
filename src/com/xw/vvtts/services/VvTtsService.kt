@@ -16,12 +16,12 @@ import com.xw.vvtts.utils.VoiceProfile
 import java.util.Locale
 
 /**
- * 双引擎系统 TTS：
- * - CF 引擎：deu/eng/enu/esm/esn/fra/frc/ita/ptb/fin 10 语言（完整 ECI，支持角色 annotation）
- * - 广荣引擎：zh-CN / zh-TW / ja / ko 等未覆盖语言兜底（中英确认可用）
+ * Eloquence TTS service (openevv port, single engine).
+ * 11 dialects are linked in this build: en-US/en-GB/de-DE/fr-FR/fr-CA/
+ * es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL. (zh/pt/fi/ko are not linked here.)
  */
 class VvTtsService : TextToSpeechService() {
-    private var engine: EloquenceEngine? = null     // 广荣（中英）
+    private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
 
@@ -32,17 +32,17 @@ class VvTtsService : TextToSpeechService() {
         engine = EloquenceEngine(this)
         engine!!.setVoiceProfile(voiceProfile)
         val ok = engine!!.initialize()
-        // 恢复语言检测设置
+        // Restore the language-detection settings
         restoreLanguageSettings()
-        // 预加载 Lingua
+        // Preload Lingua (background thread)
         LanguageDetector.preloadLingua()
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
     override fun onDestroy() {
-        // 不激进 shutdown：TextToSpeechService 会被系统频繁创建/销毁，
-        // 激进 shutdown 会导致 native 引擎反复重载、进程重启。
-        // 让系统 GC 回收，引擎 handle 泄漏可接受（Service 进程生命周期内复用）。
+        // No aggressive shutdown: TextToSpeechService gets created/destroyed,
+        // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
+        // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
         try {
             if (engine != null) engine!!.stop()
         } catch (ignore: Throwable) {
@@ -51,9 +51,12 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onGetLanguage(): Array<String> {
-        // 与 onGetVoices / onIsLanguageAvailable / onGetDefaultVoiceNameFor 完全对齐（ISO639-1）
+        // Keep in sync with onGetVoices / onIsLanguageAvailable /
+        // onGetDefaultVoiceNameFor (ISO 639-1); only dialects actually
+        // linked in this build are listed.
+
         return arrayOf(
-            "en", "de", "fr", "es", "it", "pt", "fi", "zh", "ja", "ko"
+            "en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi"
         )
     }
 
@@ -63,19 +66,18 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return if ("MX" == c) "es-MX" else "es-ES"
+        if (lang.startsWith("es")) return when (c) { "US" -> "es-US"; "MX" -> "es-MX"; else -> "es-ES" }
         if (lang.startsWith("it")) return "it-IT"
-        if (lang.startsWith("pt")) return "pt-BR"
-        if (lang.startsWith("fi")) return "fi-FI"
-        if (lang.startsWith("zh")) return if ("TW" == c) "zh-TW" else "zh-CN"
         if (lang.startsWith("ja")) return "ja-JP"
-        if (lang.startsWith("ko")) return "ko-KR"
+        if (lang.startsWith("pl")) return "pl-PL"
+        if (lang.startsWith("pt")) return if ("BR" == c) "pt-BR" else "pt-PT"
+        if (lang.startsWith("fi")) return "fi-FI"
         return "en-US"
     }
 
     override fun onGetVoices(): List<Voice> {
         val voices = ArrayList<Voice>()
-        // 每个 Voice 的 name 用 BCP-47，Locale 用对应 Locale，feature=null 表示普通
+        // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
         voices.add(Voice("en-US", Locale.US,
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("en-GB", Locale.UK,
@@ -88,21 +90,22 @@ class VvTtsService : TextToSpeechService() {
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("es-ES", Locale("es", "ES"),
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        voices.add(Voice("es-US", Locale("es", "US"),
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("es-MX", Locale("es", "MX"),
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("it-IT", Locale.ITALY,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        voices.add(Voice("pt-BR", Locale("pt", "BR"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        voices.add(Voice("fi-FI", Locale("fi", "FI"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        voices.add(Voice("ja-JP", Locale.JAPAN,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        voices.add(Voice("ko-KR", Locale.KOREA,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        // 仅广告本构建实际链接（可合成）的语言：zh-CN/zh-TW 未链接，
-        // 若仍广告，系统会选本引擎读中文 → 合成返回空 → 回退“正常TTS”→ 表现为“崩溃”。
-        return voices
+                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
+                voices.add(Voice("ja-JP", Locale.JAPAN,
+                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
+                voices.add(Voice("pl-PL", Locale("pl", "PL"),
+                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
+                voices.add(Voice("pt-BR", Locale("pt", "BR"),
+                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
+                voices.add(Voice("fi-FI", Locale("fi", "FI"),
+                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
+                // Only advertise dialects actually linked in this build (build_native.sh LANGS)。
+                return voices
     }
 
     override fun onIsLanguageAvailable(language: String, country: String, variant: String): Int {
@@ -110,11 +113,10 @@ class VvTtsService : TextToSpeechService() {
         val lang = language.lowercase()
         val supported = lang.startsWith("en") || lang.startsWith("de")
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
-                || lang.startsWith("pt") || lang.startsWith("fi")
-                || lang.startsWith("ja") || lang.startsWith("ko")
+                || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
-        // 有国别/变体 → COUNTRY_AVAILABLE；仅语言 → AVAILABLE
+        // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
         val hasVariant = variant != null && variant.isNotEmpty()
         if (hasCountry || hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
@@ -144,7 +146,7 @@ class VvTtsService : TextToSpeechService() {
                 return
             }
 
-            // 自动检测 + 分片
+            // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
 
             var started = false
@@ -210,112 +212,14 @@ class VvTtsService : TextToSpeechService() {
 
     private fun isCjkDialect(dialect: Int): Boolean {
         // TextNormalizer's symbol/number readings are Mandarin (it is
-        // documented "给中文（简/繁）用"), so apply it to zh only — feeding
+        // documented "for Chinese (Simplified/Traditional)"), so apply it to zh only — feeding
         // Chinese readings to ja/ko voices would be wrong.
         return dialect == EloquenceEngine.DIALECT_ZH_CN
                 || dialect == EloquenceEngine.DIALECT_ZH_TW
     }
 
-    private fun bcpToDialect(bcp: String): Int {
-        if (bcp == null) return EloquenceEngine.DIALECT_EN_US
-        if (bcp.startsWith("en")) return if ("GB" == bcp.substring(3)) EloquenceEngine.DIALECT_EN_GB else EloquenceEngine.DIALECT_EN_US
-        if (bcp.startsWith("de")) return EloquenceEngine.DIALECT_DE_DE
-        if (bcp.startsWith("fr")) return if ("ca".equals(bcp.substring(3), ignoreCase = true)) EloquenceEngine.DIALECT_FR_CA else EloquenceEngine.DIALECT_FR_FR
-        if (bcp.startsWith("es")) return if ("mx".equals(bcp.substring(3), ignoreCase = true)) EloquenceEngine.DIALECT_ES_MX else EloquenceEngine.DIALECT_ES_ES
-        if (bcp.startsWith("it")) return EloquenceEngine.DIALECT_IT_IT
-        if (bcp.startsWith("pt")) return EloquenceEngine.DIALECT_PT_BR
-        if (bcp.startsWith("fi")) return EloquenceEngine.DIALECT_FI_FI
-        if (bcp.startsWith("zh")) return if ("tw".equals(bcp.substring(3), ignoreCase = true)) EloquenceEngine.DIALECT_ZH_TW else EloquenceEngine.DIALECT_ZH_CN
-        if (bcp.startsWith("ja")) return EloquenceEngine.DIALECT_JA_JP
-        if (bcp.startsWith("ko")) return EloquenceEngine.DIALECT_KO_KR
-        return EloquenceEngine.DIALECT_EN_US
-    }
-
-    private fun detectBcp47(request: SynthesisRequest, text: String): String {
-        if (text != null) {
-            for (i in 0 until text.length) {
-                val c = text[i]
-                if (c.code >= 0x4E00 && c.code <= 0x9FFF) return "zh-CN"
-            }
-        }
-        val lang = (request.language ?: "").lowercase()
-        val c = (request.country ?: "").uppercase()
-        if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
-        if (lang.startsWith("de")) return "de-DE"
-        if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return if ("MX" == c) "es-MX" else "es-ES"
-        if (lang.startsWith("it")) return "it-IT"
-        if (lang.startsWith("pt")) return "pt-BR"
-        if (lang.startsWith("fi")) return "fi-FI"
-        return "en-US"
-    }
-
-    // ===== 苹果引擎链路（14 语言全走 synthesizeCore）=====
-    private fun synthesizeGr(text: String?, dialect: Int, callback: SynthesisCallback) {
-        callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
-        if (engine == null || !engine!!.isInitialized()) {
-            Log.e(TAG, "engine not initialized")
-            callback.done()
-            return
-        }
-        if (text == null || text.isEmpty()) {
-            callback.done()
-            return
-        }
-
-        val preset = if (voiceProfile != null) voiceProfile!!.preset else 1
-        // 14 语言全走自研桥接（苹果完整引擎），角色由 8 个 eciSetVoiceParam 注入音色差异
-        val rate = voiceConfig!!.rate     // UI 1-300
-        val pitch = voiceConfig!!.pitch   // UI 0-100
-        val pcm = engine!!.synthesizeCore(text, dialect, voiceConfig!!.volume, preset, pitch, rate)
-        Log.e(TAG, "core synthesize dialect=" + Integer.toHexString(dialect)
-                + " preset=" + preset + " pitch=" + pitch + " rate=" + rate
-                + " pcm=" + if (pcm == null) "null" else pcm.size)
-
-        if (pcm != null && pcm.size > 0) {
-            val bytes = shortsToBytes(pcm)
-            val max = callback.maxBufferSize
-            var offset = 0
-            while (offset < bytes.size) {
-                val len = Math.min(max, bytes.size - offset)
-                callback.audioAvailable(bytes, offset, len)
-                offset += len
-            }
-        }
-        callback.done()
-    }
-
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
         return if (v < lo) lo else Math.min(v, hi)
-    }
-
-    // 界面预设 → 苹果 CSV eciVoiceNumber
-    private fun presetEciVoice(n: Int): Int {
-        return when (n) {
-            1 -> 1  // Reed
-            2 -> 2  // Shelley
-            3 -> 3  // Sandy
-            4 -> 4  // Rocko
-            5 -> 6  // Flo
-            6 -> 7  // Grandma
-            7 -> 8  // Grandpa
-            8 -> 9  // Eddy
-            else -> 1
-        }
-    }
-
-    // 界面预设 → 苹果 CSV {breathiness, headSize, roughness, pitchFluctuation, speed}
-    private fun presetCsvParams(n: Int): IntArray {
-        return when (n) {
-            2 -> intArrayOf(20, 30, 5, 30, 50)   // Shelley
-            3 -> intArrayOf(61, 31, 18, 44, 50)  // Sandy
-            4 -> intArrayOf(0, 50, 45, 25, 48)   // Rocko
-            5 -> intArrayOf(35, 35, 10, 40, 52)  // Flo
-            6 -> intArrayOf(45, 40, 20, 35, 45)  // Grandma
-            7 -> intArrayOf(30, 45, 28, 22, 44)  // Grandpa
-            8 -> intArrayOf(10, 55, 8, 35, 50)   // Eddy
-            else -> intArrayOf(0, 50, 0, 30, 50) // Reed
-        }
     }
 
     private fun shortsToBytes(pcm: ShortArray): ByteArray {
@@ -332,7 +236,7 @@ class VvTtsService : TextToSpeechService() {
         if (engine != null) engine!!.stop()
     }
 
-    // SharedPreferences 恢复语言检测设置
+    // Restore language-detection settings from SharedPreferences
     private fun restoreLanguageSettings() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))

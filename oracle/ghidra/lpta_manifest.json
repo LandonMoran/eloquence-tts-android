@@ -1,0 +1,20 @@
+{
+ "chs": {
+  "lpta_data": "chs_lpta_data.bin",
+  "size": 18576,
+  "rule_stream_head": "ffff56009c00ffff57009b00ffff57006900ffff58006400ffff58007300ffff59006e00ffff59007d00ffff5a007800ffff5a008200ffff5b008000ffff5b008b00ffff5c008600ffff5c009400ffff",
+  "looks_seq_codes": true
+ },
+ "cht": {
+  "lpta_data": "cht_lpta_data.bin",
+  "size": 18576,
+  "rule_stream_head": "ffff56009c00ffff57009b00ffff57006900ffff58006400ffff58007300ffff59006e00ffff59007d00ffff5a007800ffff5a008200ffff5b008000ffff5b008b00ffff5c008600ffff5c009400ffff",
+  "looks_seq_codes": true
+ },
+ "kor": {
+  "lpta_data": "kor_lpta_data.bin",
+  "size": 18576,
+  "rule_stream_head": "0931c943f604d801751849ffcbebd585c9756a43f604d8017563ffc031c989c7eb0889f931ff85c0755349ffcb89f8ebb0498d7bff48897db885d26a015a488b7db8759a43f604d901ba00000000748e",
+  "looks_seq_codes": true
+ }
+}

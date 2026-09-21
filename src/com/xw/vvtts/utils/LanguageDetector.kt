@@ -28,8 +28,9 @@ class LanguageDetector {
         // ECI dialect 常量
         const val DIALECT_EN_US = 0x10000
         const val DIALECT_EN_GB = 0x10001
-        const val DIALECT_ES_ES = 0x20000
-        const val DIALECT_ES_MX = 0x20001
+        const val DIALECT_ES_ES =  0x20000
+        const val DIALECT_ES_US =  0x20001
+        const val DIALECT_ES_MX =  0x20002
         const val DIALECT_FR_FR = 0x30000
         const val DIALECT_FR_CA = 0x30001
         const val DIALECT_DE_DE = 0x40000
@@ -39,16 +40,17 @@ class LanguageDetector {
         const val DIALECT_PT_BR = 0x70000
         const val DIALECT_JA_JP = 0x80000
         const val DIALECT_FI_FI = 0x90000
-        const val DIALECT_KO_KR = 0xA0000
+        const val DIALECT_KO_KR =  0xA0000
+        const val DIALECT_PL_PL =  0x110000
 
-        // 默认语言特殊值
-        const val DEFAULT_UNSPECIFIED = -1  // 不指定（数字/检测不出的文本跟随上一段）
+        // Special value for "unspecified default language"
+        const val DEFAULT_UNSPECIFIED = -1
 
         // 所有支持的语言代码（用于设置多选）
-        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pt", "fi", "zh", "ja", "ko")
+        // Only languages actually linked in this build (see build_native.sh LANGS)。
+        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi")
         val ALL_LANG_NAMES = arrayOf(
-            "English", "Deutsch", "Français", "Español", "Italiano",
-            "Português", "Suomi", "中文", "日本語", "한국어",
+            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish",
         )
 
         // 设置项
@@ -56,8 +58,10 @@ class LanguageDetector {
         @Volatile private var englishDialect = DIALECT_EN_US
         @Volatile private var spanishDialect = DIALECT_ES_ES
         @Volatile private var frenchDialect = DIALECT_FR_FR
-        // 检测的语言白名单：默认只检测中英文。不在白名单里的语言即使被识别也 fallback 默认语言。
-        @Volatile private var enabledLanguages: Set<String> = HashSet(listOf("en", "zh"))
+        // Detection whitelist: by default only English + Japanese
+        // (zh is not linked in this build; ja-JP is the only shipped CJK dialect)。
+        // Languages outside the whitelist fall back to the default language when detected。
+        @Volatile private var enabledLanguages: Set<String> = HashSet(listOf("en", "ja"))
         // 默认语言：DEFAULT_UNSPECIFIED(不指定) 或 具体 dialect。
         // 仅在"语言检测开启"时生效：数字和检测不出的文本用它；不指定则跟随上一段。
         @Volatile private var defaultLanguage = DEFAULT_UNSPECIFIED
@@ -164,15 +168,15 @@ class LanguageDetector {
         }
 
         private fun getEnabledLanguageEnums(): List<Language> {
-            // Lingua 只负责拉丁语言互分。CJK（zh/ja/ko）走 Unicode 规则，不进 Lingua。
+            // Lingua only disambiguates Latin scripts; CJK (zh/ja/ko) use Unicode
+            // rules and never go through Lingua。
             val allLatin = ArrayList<Language>()
-            allLatin.add(Language.ENGLISH)
-            allLatin.add(Language.GERMAN)
-            allLatin.add(Language.FRENCH)
-            allLatin.add(Language.SPANISH)
-            allLatin.add(Language.ITALIAN)
-            allLatin.add(Language.PORTUGUESE)
-            allLatin.add(Language.FINNISH)
+            allLatin.add(Language.ENGLISH>
+            allLatin.add(Language.GERMAN>
+            allLatin.add(Language.FRENCH>
+            allLatin.add(Language.SPANISH>
+            allLatin.add(Language.ITALIAN>
+            allLatin.add(Language.POLISH>
 
             val en = enabledLanguages
             if (en == null) return allLatin // 理论上不会发生，防御
@@ -194,11 +198,9 @@ class LanguageDetector {
             if (lang == Language.FRENCH) return "fr"
             if (lang == Language.SPANISH) return "es"
             if (lang == Language.ITALIAN) return "it"
+            if (lang == Language.POLISH) return "pl"
             if (lang == Language.PORTUGUESE) return "pt"
             if (lang == Language.FINNISH) return "fi"
-            if (lang == Language.CHINESE) return "zh"
-            if (lang == Language.JAPANESE) return "ja"
-            if (lang == Language.KOREAN) return "ko"
             return "en"
         }
 
@@ -208,11 +210,9 @@ class LanguageDetector {
             if (lang == Language.FRENCH) return frenchDialect
             if (lang == Language.SPANISH) return spanishDialect
             if (lang == Language.ITALIAN) return DIALECT_IT_IT
+            if (lang == Language.POLISH) return DIALECT_PL_PL
             if (lang == Language.PORTUGUESE) return DIALECT_PT_BR
             if (lang == Language.FINNISH) return DIALECT_FI_FI
-            if (lang == Language.CHINESE) return chineseDialect
-            if (lang == Language.JAPANESE) return DIALECT_JA_JP
-            if (lang == Language.KOREAN) return DIALECT_KO_KR
             return englishDialect
         }
 
@@ -422,15 +422,15 @@ class LanguageDetector {
             }
         }
 
-        /** 判断 dialect 是否是拉丁字母语言（英/德/法/西/意/葡/芬） */
+        /** Whether this dialect uses the Latin alphabet (all shipped Western dialects). */
         private fun isLatinDialect(dialect: Int): Boolean {
             return dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB
                 || dialect == DIALECT_DE_DE
                 || dialect == DIALECT_FR_FR || dialect == DIALECT_FR_CA
-                || dialect == DIALECT_ES_ES || dialect == DIALECT_ES_MX
+                || dialect == DIALECT_ES_ES || dialect == DIALECT_ES_US || dialect == DIALECT_ES_MX
                 || dialect == DIALECT_IT_IT
-                || dialect == DIALECT_PT_BR
-                || dialect == DIALECT_FI_FI
+                || dialect == DIALECT_PL_PL
+                || dialect == DIALECT_PT_BR || dialect == DIALECT_FI_FI
         }
 
         private fun mergeConsecutive(segments: MutableList<Segment>) {

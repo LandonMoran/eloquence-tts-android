@@ -15,8 +15,8 @@ import com.xw.vvtts.utils.KonaVoice
 import com.xw.vvtts.utils.VoiceProfile
 
 /**
- * 发音角色选择。
- * 点击角色立即选中并返回；长按进入编辑对话框（自定义捏声）。
+ * Voice profile picker.
+ * Tap a voice to select and return;; long-press opens the edit dialog (custom voice tuning).
  */
 class VoiceProfileActivity : Activity() {
     private var voiceProfile: VoiceProfile? = null
@@ -28,7 +28,7 @@ class VoiceProfileActivity : Activity() {
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         val pad = dp(16)
-        // 顶部大幅留白，确保第一个角色（Reed）不被 ActionBar/状态栏遮挡
+        // Top padding so the first voice (Reed) is not obscured by the ActionBar/status bar
         root.setPadding(pad, dp(48), pad, pad)
 
         val curPreset = voiceProfile!!.preset
@@ -43,7 +43,7 @@ class VoiceProfileActivity : Activity() {
             row.isClickable = true
             row.isLongClickable = true
 
-            // 点击：选中并返回
+            // Tap: select and return
             row.setOnClickListener {
                 voiceProfile!!.setPreset(idx)
                 Toast.makeText(this, VoiceProfile.PRESET_NAMES[idx - 1], Toast.LENGTH_SHORT).show()
@@ -51,7 +51,7 @@ class VoiceProfileActivity : Activity() {
                 finish()
             }
 
-            // 长按：编辑该角色
+            // Long-press: edit this voice
             row.setOnLongClickListener {
                 showEditDialog(idx)
                 true
@@ -66,7 +66,7 @@ class VoiceProfileActivity : Activity() {
         setContentView(scroll)
     }
 
-    /** 编辑对话框：性别单选 + 6 个滑块 + 恢复默认/确定/取消 */
+    /** Edit dialog: gender radio + 6 sliders + reset/OK/cancel */
     private fun showEditDialog(preset: Int) {
         val voice = KonaVoice.byPreset(preset)
 
@@ -75,26 +75,26 @@ class VoiceProfileActivity : Activity() {
         val p = dp(16)
         box.setPadding(p, p, p, p)
 
-        // 性别单选
+        // Gender radio
         val genderLabel = TextView(this)
-        genderLabel.text = "性别"
+        genderLabel.text = "Gender"
         genderLabel.textSize = 14f
         box.addView(genderLabel)
 
         val genderGroup = RadioGroup(this)
         genderGroup.orientation = RadioGroup.HORIZONTAL
         val curGender = voiceProfile!!.getParam(preset, VoiceProfile.PARAM_GENDER)
-        val genders = arrayOf("男声", "女声")
+        val genders = arrayOf("Male", "Female")
         for (g in 0..1) {
             val rb = RadioButton(this)
-            rb.id = g + 1          // 用 1=男, 2=女，避免 id=0 触发 NO_ID 异常
+            // ids 1=male, 2=female - avoid id=0 (NO_ID crash)
             rb.text = genders[g]
             genderGroup.addView(rb)
         }
         genderGroup.check(curGender + 1) // curGender 0/1 → id 1/2
         box.addView(genderGroup)
 
-        // 6 个滑块参数
+        // 6 slider params
         val cur = IntArray(VoiceProfile.EDITABLE_PARAMS.size)
         val bars = arrayOfNulls<SeekBar>(VoiceProfile.EDITABLE_PARAMS.size)
         val vals = arrayOfNulls<TextView>(VoiceProfile.EDITABLE_PARAMS.size)
@@ -134,25 +134,25 @@ class VoiceProfileActivity : Activity() {
         dialogScroll.addView(box)
 
         AlertDialog.Builder(this)
-            .setTitle("编辑 " + voice.name)
+            .setTitle("Edit " + voice.name)
             .setView(dialogScroll)
-            .setPositiveButton("确定") { _, _ ->
-                // 保存性别：RadioButton id 1/2 → ECI gender 0/1
+            .setPositiveButton("OK") { _, _ ->
+                // Save gender: RadioButton id 1/2 → ECI gender 0/1
                 var gender = genderGroup.checkedRadioButtonId - 1
                 if (gender < 0) gender = 0
                 if (gender > 1) gender = 1
                 voiceProfile!!.setParam(preset, VoiceProfile.PARAM_GENDER, gender)
-                // 保存 6 个滑块
+                // Save the 6 sliders
                 for (i in VoiceProfile.EDITABLE_PARAMS.indices) {
                     voiceProfile!!.setParam(preset, VoiceProfile.EDITABLE_PARAMS[i], bars[i]!!.progress)
                 }
-                Toast.makeText(this, "已保存 " + voice.name + " 的自定义参数", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Saved custom parameters for " + voice.name, Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("取消") { _, _ -> }
-            .setNeutralButton("恢复默认") { _, _ ->
+            .setNegativeButton("Cancel") { _, _ -> }
+            .setNeutralButton("Reset defaults") { _, _ ->
                 voiceProfile!!.resetPreset(preset)
-                Toast.makeText(this, "已恢复 " + voice.name + " 的默认参数", Toast.LENGTH_SHORT).show()
-                // 重新打开编辑框显示默认值
+                Toast.makeText(this, "Restored default parameters for " + voice.name, Toast.LENGTH_SHORT).show()
+                // Reopen the editor showing the defaults
                 showEditDialog(preset)
             }
             .create()

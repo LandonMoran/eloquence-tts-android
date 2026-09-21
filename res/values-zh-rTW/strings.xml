@@ -1,16 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Eloquence TTS</string>
-    <string name="title_main">Eloquence TTS</string>
-    <string name="lang_header">語言環境</string>
-    <string name="lang_auto">自動偵測</string>
-    <string name="voice_profile">發音角色</string>
-    <string name="rate">語速</string>
-    <string name="pitch">音調</string>
-    <string name="volume">音量</string>
-    <string name="test">測試發音</string>
-    <string name="engine_not_ready">引擎未初始化</string>
-    <string name="synth_ok">已發音</string>
-    <string name="synth_failed">合成失敗</string>
-    <string name="saved">已儲存</string>
+<!-- UI is English-only in this build; zh strings were migrated out. -->
 </resources>

@@ -4,10 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * 发音角色配置。
- * 预置 8 个 Kona 角色，支持按角色自定义覆盖 8 个 ECI voice 参数。
- * 默认值来自 KonaVoice（KonaVoicePresets.csv 权威数据），
- * 用户自定义值存 SharedPreferences，恢复默认即删除覆盖。
+ * Voice profile configuration.
+ * 8 preset Kona voices;; per-role custom overrides of the 8 ECI voice params.
+ * Defaults come from KonaVoice (KonaVoicePresets.csv is the source of truth),
+ * user custom values live in SharedPreferences;; reset removes the overrides.
  */
 class VoiceProfile(context: Context) {
     private val prefs: SharedPreferences =
@@ -23,24 +23,24 @@ class VoiceProfile(context: Context) {
         prefs.edit().putInt(KEY_PRESET, v).commit()
     }
 
-    /** 某角色某参数是否有自定义覆盖 */
+    /** Whether the given param has a custom override for this preset */
     fun hasOverride(preset: Int, param: Int): Boolean {
         return prefs.contains(overrideKey(preset, param))
     }
 
-    /** 取某角色的参数值：优先自定义覆盖，否则回落 KonaVoice 默认 */
+    /** Get a preset's param value: custom override first, else KonaVoice default */
     fun getParam(preset: Int, param: Int): Int {
         val key = overrideKey(preset, param)
         if (prefs.contains(key)) return prefs.getInt(key, 0)
         return KonaVoice.byPreset(preset).param(param)
     }
 
-    /** 设置某角色的参数自定义覆盖 */
+    /** Set a custom override for a preset param */
     fun setParam(preset: Int, param: Int, value: Int) {
         prefs.edit().putInt(overrideKey(preset, param), value).commit()
     }
 
-    /** 恢复某角色的默认（删除该角色全部自定义覆盖） */
+    /** Restore a preset's defaults (delete all its custom overrides) */
     fun resetPreset(preset: Int) {
         val e = prefs.edit()
         for (p in 0 until 8) {
@@ -51,30 +51,26 @@ class VoiceProfile(context: Context) {
 
     companion object {
         private const val PREFS = "vvtts_voice_profile"
-        private const val KEY_PRESET = "preset"   // 当前选中的预置角色 1-8
+        private const val KEY_PRESET = "preset"   // Currently selected preset role 1-8
 
-        // ECI voice param 权威编号（eci.h）
-        const val PARAM_GENDER = 0        // 性别 0=男 1=女（二选一）
-        const val PARAM_HEAD_SIZE = 1     // 头部大小 0-100
-        const val PARAM_PITCH_BASE = 2    // 音调基线 40-120
-        const val PARAM_PITCH_FLUC = 3    // 抖动 0-100
-        const val PARAM_ROUGHNESS = 4     // 粗糙度 0-100
-        const val PARAM_BREATHINESS = 5   // 沙哑度/气声 0-100
-        const val PARAM_SPEED = 6         // 语速 0-250
-        const val PARAM_VOLUME = 7        // 音量 0-100
+        // ECI voice param canonical ids (eci.h)
+        const val PARAM_GENDER = 0        // Gender:  0=male  1=female (pick one)
+        const val PARAM_HEAD_SIZE = 1     // Head size  0-100
+        const val PARAM_PITCH_BASE = 2    // Pitch baseline  40-120
+        const val PARAM_PITCH_FLUC =  3    // Pitch flutter  0-100
+        const val PARAM_ROUGHNESS = 4     // Roughness  0-100
+        const val PARAM_BREATHINESS =  5   // Breathiness  0-100
+        const val PARAM_SPEED =  6         // Speed  0-250
+        const val PARAM_VOLUME =  7        // Volume  0-100
 
-        // 弹编辑对话框时展示的音色滑杆参数（gender 单独单选做官方原厂切换；
-        // pitchBase/speed/volume 由主界面的音调/语速/音量控制，编辑界面不重复暴露）
+        // Sliders shown in the edit dialog (gender is a separate radio — official voice switch;
+        // pitchBase/speed/volume are controlled from the main screen, not duplicated here)
         val EDITABLE_PARAMS = intArrayOf(
             PARAM_HEAD_SIZE, PARAM_PITCH_FLUC, PARAM_ROUGHNESS, PARAM_BREATHINESS,
         )
 
-        // 预置角色英文名（苹果 Kona 8 角色）
+        // Preset voice names (Apple Kona 8 roles)
         val PRESET_NAMES = arrayOf(
-            "Reed", "Shelley", "Sandy", "Rocko", "Flo", "Grandma", "Grandpa", "Eddy",
-        )
-
-        val PRESET_NAMES_CN = arrayOf(
             "Reed", "Shelley", "Sandy", "Rocko", "Flo", "Grandma", "Grandpa", "Eddy",
         )
 
@@ -82,18 +78,18 @@ class VoiceProfile(context: Context) {
             return "override_$preset" + "_" + param
         }
 
-        /** 参数中文名 */
+        /** Parameter display name */
         fun paramName(param: Int): String {
             return when (param) {
-                PARAM_GENDER -> "性别"
-                PARAM_HEAD_SIZE -> "头部大小"
-                PARAM_PITCH_BASE -> "音调"
-                PARAM_PITCH_FLUC -> "情感起伏"
-                PARAM_ROUGHNESS -> "粗糙度"
-                PARAM_BREATHINESS -> "沙哑度"
-                PARAM_SPEED -> "语速"
-                PARAM_VOLUME -> "音量"
-                else -> "参数$param"
+                PARAM_GENDER -> "Gender"
+                PARAM_HEAD_SIZE -> "Head size"
+                PARAM_PITCH_BASE -> "Pitch"
+                PARAM_PITCH_FLUC -> "Pitch flutter"
+                PARAM_ROUGHNESS -> "Roughness"
+                PARAM_BREATHINESS -> "Breathiness"
+                PARAM_SPEED -> "Speed"
+                PARAM_VOLUME -> "Volume"
+                else -> "Parameter $param"
             }
         }
     }

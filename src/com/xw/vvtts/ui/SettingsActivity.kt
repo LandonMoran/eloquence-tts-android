@@ -39,21 +39,21 @@ class SettingsActivity : Activity() {
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
         engine = EloquenceEngine(this)
-        engine!!.setVoiceProfile(voiceProfile) // 让合成读取角色自定义覆盖
+        engine!!.setVoiceProfile(voiceProfile) // let synthesis read custom voice overrides
         engine!!.initialize()
-        // 预加载 Lingua 语言检测器（后台线程，避免首次合成卡顿）
+        // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
-        // 从 SharedPreferences 恢复语言检测设置
+        // Restore language-detection settings from SharedPreferences
         restoreLanguageSettings()
-        // 自动测试钩子：am start --es autotest chinese
+        // Auto-test hook: am start --es autotest chinese
         val autotest = intent?.getStringExtra("autotest")
         if ("chinese" == autotest) {
             Handler(Looper.getMainLooper()).postDelayed({ testSpeech() }, 3000)
         } else if ("german" == autotest) {
-            // 兼容旧钩子：英文三角色测试，用于验证角色参数
+            // Legacy hook: compare three English voices (validates voice params)
             Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
         }
-        // 自动应用当前角色配置
+        // Apply the current role config automatically
         engine!!.applyVoiceProfile(EloquenceEngine.DIALECT_ZH_CN, voiceProfile)
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
@@ -65,15 +65,15 @@ class SettingsActivity : Activity() {
         title.textSize = 22f
         root.addView(title)
 
-        // 语言环境（融合成一个按钮，按钮文案即当前选择，不带独立标题）
+        // Language (single button; label shows current selection)
         val langBtnLocal = Button(this)
         langBtn = langBtnLocal
-        langBtnLocal.contentDescription = getString(R.string.lang_header) // 无障碍 description
+        langBtnLocal.contentDescription = getString(R.string.lang_header) // accessibility description
         langBtnLocal.setOnClickListener { showLanguageDialog() }
         root.addView(langBtnLocal)
         refreshLangButton(langBtnLocal)
 
-        // 发音角色入口（纯中文，点选即进）
+        // Voice profile entry (tap to open)
         val voiceProfileBtn = Button(this)
         voiceProfileBtn.text = getString(R.string.voice_profile)
         val vpLp = LinearLayout.LayoutParams(
@@ -85,9 +85,9 @@ class SettingsActivity : Activity() {
         }
         root.addView(voiceProfileBtn)
 
-        // 语言检测设置
+        // Language-detection settings
         val langDetectBtn = Button(this)
-        langDetectBtn.text = "语言检测设置"
+        langDetectBtn.text = "Language detection settings"
         val ldLp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         ldLp.setMargins(0, dp(4), 0, 0)
@@ -95,25 +95,26 @@ class SettingsActivity : Activity() {
         langDetectBtn.setOnClickListener { showDetectionSettingsDialog() }
         root.addView(langDetectBtn)
 
-        // 语速
-        rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1, 300) { v ->
-            voiceConfig!!.setRate(v)
+        // Rate
+        rateVal = addSeekBar(root, getString(R.string.rate), voiceConfig!!.rate, 1,String  300) { v ->
+            rateVal!!.setRate(v)
             rateVal!!.text = getString(R.string.rate_fmt, v)
         }
 
-        // 音调
-        pitchVal = addSeekBar(root, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100) { v ->
-            voiceConfig!!.setPitch(v)
+        // Pitch
+        pitchVal = addSeekBar(root, getString(R.string.pitch], voiceConfig!!.pitch, 0,,  100) { v ->
+            pitchVal!!.setPitch(v)
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
 
-        // 音量
-        volumeVal = addSeekBar(root, getString(R.string.volume), voiceConfig!!.volume, 0, 100) { v ->
-            voiceConfig!!.setVolume(v)
+        // Volume
+        volumeVal = addSeekBar(root, getString(R.string.volume], voiceConfig!!.volume,,  0,,  100) { v ->
+            volumeVal!!.setVolume(v)
             volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
 
-        // 音质模式：0=标准（原始音色），1=增强（去嘶声+限幅）；默认标准
+
+        // Audio quality mode: 0=standard (raw tone), 1=enhanced (de-hiss + limiter); default standard
         val dspBtnLocal = Button(this)
         dspBtn = dspBtnLocal
         dspBtnLocal.setOnClickListener { showDspDialog() }
@@ -139,7 +140,7 @@ class SettingsActivity : Activity() {
 
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, cb: (Int) -> Unit): TextView {
         val tv = TextView(this)
-        // label 已经是资源字符串，这里直接拼接 %d%%
+        // label is already a resource string; just append %d%%
         tv.text = "$label: $initial%"
         tv.textSize = 14f
         tv.setPadding(0, dp(12), 0, dp(4))
@@ -162,35 +163,36 @@ class SettingsActivity : Activity() {
 
     private fun testSpeech() {
         if (engine == null || !engine!!.isInitialized()) {
-            Toast.makeText(this, "引擎未初始化", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Engine not initialized", Toast.LENGTH_SHORT).show()
             return
         }
         val preset = voiceProfile?.preset ?: 1
-        // 根据当前语言环境选测试文本 + 对应 dialect
+        // Pick a sample + dialect matching the current language setting
         val text: String
         val dialect: Int
         if (voiceConfig!!.isAutoDetect) {
-            text = "这是一个语音合成测试。"
-            dialect = EloquenceEngine.DIALECT_ZH_CN
+            text = "Hello, this is a speech synthesis test."
+                        dialect = EloquenceEngine.DIALECT_EN_US
         } else {
             val code = voiceConfig!!.voice
             val lang = VoiceConfig.findLang(code)
             text = sampleTextFor(lang.code)
             dialect = bcpToDialect(lang.code)
         }
-        // 本构建未链接该语言模块（如 zh-CN）：不能合成，回退英语并说明。
-        // 硬性要求：绝不把未链接语言的 dialect 送进引擎（eciNewEx 会因缺少
-        // 语言模块走无效 voice 表崩溃，曾导致测试按钮一按即崩）。
+        // If this build lacks the language module (e.g. zh-CN), synthesis is
+                // impossible: fall back to English and say so.Hard rule: never feed
+                // the engine an unlinked dialect (eciNewEx walks an invalid voice table
+                // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
-            Toast.makeText(this, "当前语言未包含在本构建中，已用英语试听", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Language not included in this build; previewing in English", Toast.LENGTH_LONG].show()
             val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
                 voiceConfig!!.pitch, voiceConfig!!.rate)
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, engine!!.getCoreSampleRate())
-                Toast.makeText(this, "已发音（英语）", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Spoken (English)", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "合成失败", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Synthesis failed", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -199,16 +201,16 @@ class SettingsActivity : Activity() {
             voiceConfig!!.pitch, voiceConfig!!.rate)
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, engine!!.getCoreSampleRate())
-            Toast.makeText(this, "已发音", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Spoken", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "合成失败", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Synthesis failed", Toast.LENGTH_SHORT).show()
         }
     }
 
-    /** 各语言的测试文本 */
+    /** Per-language sample texts */
     private fun sampleTextFor(code: String): String {
         if (code == null) return "Hello, this is a speech test."
-        if (code.startsWith("zh")) return "这是一个语音合成测试。"
+        if (code.startsWith("zh")) return "Hello, this is a speech synthesis test."
         if (code.startsWith("en")) return "Hello, this is a speech synthesis test."
         if (code.startsWith("de")) return "Hallo, das ist ein Sprachsynthesetest."
         if (code.startsWith("fr")) return "Bonjour, ceci est un test de synthèse vocale."
@@ -221,14 +223,14 @@ class SettingsActivity : Activity() {
         return "Hello, this is a speech synthesis test."
     }
 
-    /** bcp47 → ECI dialect（实测表，见 VoiceConfig.LANGS；未链接语言回退 en-US） */
+    /** bcp47 → ECI dialect (see VoiceConfig.LANGS; unlinked languages fall back to en-US) */
     private fun bcpToDialect(code: String): Int {
         val d = VoiceConfig.findLang(code).eciDialect
         return if (d != 0L) d.toInt() else EloquenceEngine.DIALECT_EN_US
     }
 
     private fun testGerman() {
-        // 英文角色对比测试：Reed(1) → Sandy(2) → Grandpa(8)
+        // English-voice comparison test: Reed(1) → Sandy(2) → Grandpa(8)
         Thread {
             val t0 = System.currentTimeMillis()
             val pcm1 = engine!!.synthesizeCore("Hello, this is a voice test.",
@@ -243,11 +245,11 @@ class SettingsActivity : Activity() {
             runOnUiThread {
                 if (total > 0) {
                     Toast.makeText(this, "3 roles OK total=$total", Toast.LENGTH_SHORT).show()
-                    // 顺序连播（一个播完再播下一个，避免重叠）
+                    // Play sequentially (one finishes before the next starts; avoids overlap)
                     val pcms = arrayOf(pcm1, pcm2, pcm3)
                     playSequential(pcms, 0, EloquenceEngine.SAMPLE_RATE)
                 } else {
-                    Toast.makeText(this, "角色测试失败（看日志）", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Voice test failed (see log)", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
@@ -262,7 +264,7 @@ class SettingsActivity : Activity() {
         track.play()
     }
 
-    /** 顺序播放多段 PCM（后台线程依次播，每段按时长 sleep 等待播完） */
+    /** Play several PCM chunks sequentially (background thread; sleeps for each chunk's duration) */
     private fun playSequential(pcms: Array<ShortArray?>, idx: Int, sampleRate: Int) {
         Thread {
             for (i in idx until pcms.size) {
@@ -273,7 +275,7 @@ class SettingsActivity : Activity() {
         }.start()
     }
 
-    /** 播放并阻塞等待播完（时长 = samples / rate） */
+    /** Play and block until done (duration = samples / rate) */
     private fun playPcmAndWait(pcm: ShortArray, sampleRate: Int) {
         val bytes = shortsToBytes(pcm)
         val track = AudioTrack(AudioManager.STREAM_MUSIC, sampleRate,
@@ -303,7 +305,7 @@ class SettingsActivity : Activity() {
 
     private fun refreshLangButton(btn: Button) {
         if (LanguageDetector.isDetectionEnabled()) {
-            btn.text = "自动检测"
+            btn.text = "Auto detect"
         } else {
             val d = LanguageDetector.getFixedDialect()
             btn.text = dialectName(d)
@@ -313,34 +315,36 @@ class SettingsActivity : Activity() {
     private fun dialectName(dialect: Int): String {
         if (dialect == LanguageDetector.DIALECT_EN_US) return "English (US)"
         if (dialect == LanguageDetector.DIALECT_EN_GB) return "English (UK)"
-        if (dialect == LanguageDetector.DIALECT_DE_DE) return "Deutsch"
-        if (dialect == LanguageDetector.DIALECT_FR_FR) return "Français"
-        if (dialect == LanguageDetector.DIALECT_ES_ES) return "Español"
-        if (dialect == LanguageDetector.DIALECT_IT_IT) return "Italiano"
-        if (dialect == LanguageDetector.DIALECT_PT_BR) return "Português"
-        if (dialect == LanguageDetector.DIALECT_FI_FI) return "Suomi"
-        if (dialect == LanguageDetector.DIALECT_ZH_CN) return "中文（简体）"
-        if (dialect == LanguageDetector.DIALECT_ZH_TW) return "中文（台湾）"
-        if (dialect == LanguageDetector.DIALECT_JA_JP) return "日本語"
-        if (dialect == LanguageDetector.DIALECT_KO_KR) return "한국어"
+        if (dialect == LanguageDetector.DIALECT_DE_DE) return "German"
+        if (dialect == LanguageDetector.DIALECT_FR_FR) return "French (France)"
+        if (dialect == LanguageDetector.DIALECT_FR_CA) return "French (Canada)"
+        if (dialect == LanguageDetector.DIALECT_ES_ES) return "Spanish (Spain)"
+        if (dialect == LanguageDetector.DIALECT_ES_US) return "Spanish (US)"
+        if (dialect == LanguageDetector.DIALECT_ES_MX) return "Spanish (Mexico)"
+        if (dialect == LanguageDetector.DIALECT_IT_IT) return "Italian"
+        if (dialect == LanguageDetector.DIALECT_JA_JP) return "Japanese"
+        if (dialect == LanguageDetector.DIALECT_PL_PL) return "Polish"
+        if (dialect == LanguageDetector.DIALECT_PT_BR) return "Portuguese (Brazil)"
+        if (dialect == LanguageDetector.DIALECT_FI_FI) return "Finnish"
         return "English (US)"
     }
 
     private fun showLanguageDialog() {
         val items = arrayOf(
-            "🔄 自动检测",
+            "🔄 Auto detect",
             "English (US)",
             "English (UK)",
-            "Deutsch",
-            "Français",
-            "Español",
-            "Italiano",
-            "Português",
-            "Suomi",
-            "中文（简体）",
-            "中文（台湾）",
-            "日本語",
-            "한국어",
+            "German",
+            "French (France)",
+            "French (Canada)",
+            "Spanish (Spain)",
+            "Spanish (US)",
+            "Spanish (Mexico)",
+            "Italian",
+            "Japanese",
+            "Polish",
+            "Portuguese (Brazil)",
+            "Finnish",
         )
         val dialects = intArrayOf(
             -1, // auto
@@ -348,17 +352,18 @@ class SettingsActivity : Activity() {
             LanguageDetector.DIALECT_EN_GB,
             LanguageDetector.DIALECT_DE_DE,
             LanguageDetector.DIALECT_FR_FR,
+            LanguageDetector.DIALECT_FR_CA,
             LanguageDetector.DIALECT_ES_ES,
+            LanguageDetector.DIALECT_ES_US,
+            LanguageDetector.DIALECT_ES_MX,
             LanguageDetector.DIALECT_IT_IT,
+            LanguageDetector.DIALECT_JA_JP,
+            LanguageDetector.DIALECT_PL_PL,
             LanguageDetector.DIALECT_PT_BR,
             LanguageDetector.DIALECT_FI_FI,
-            LanguageDetector.DIALECT_ZH_CN,
-            LanguageDetector.DIALECT_ZH_TW,
-            LanguageDetector.DIALECT_JA_JP,
-            LanguageDetector.DIALECT_KO_KR,
         )
         AlertDialog.Builder(this)
-            .setTitle("语言环境")
+            .setTitle("Language")
             .setItems(items) { _, which ->
                 if (which == 0) {
                     LanguageDetector.setDetectionEnabled(true)
@@ -369,65 +374,61 @@ class SettingsActivity : Activity() {
                 saveLanguageSettings()
                 refreshLangButton(langBtn!!)
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /** 语言检测设置对话框 */
+    /** Language-detection settings dialog */
     private fun showDetectionSettingsDialog() {
         val items = arrayOf(
-            "默认语言",
-            "检测的语言",
-            "中文口音",
-            "英文口音",
-            "西班牙语口音",
-            "法语口音",
+            "Default language",
+            "Detect languages",
+            "English accent",
+            "Spanish accent",
+            "French accent",
         )
         AlertDialog.Builder(this)
-            .setTitle("语言检测设置")
+            .setTitle("Language detection settings")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showDefaultLanguageDialog()
                     1 -> showDetectionLanguagesDialog()
-                    2 -> showChineseDialectDialog()
-                    3 -> showEnglishAccentDialog()
-                    4 -> showSpanishDialectDialog()
-                    5 -> showFrenchDialectDialog()
+                    2 -> showEnglishAccentDialog()
+                    3 -> showSpanishDialectDialog()
+                    4 -> showFrenchDialectDialog()
                 }
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /** 默认语言（单选，选择后立即返回）。语言只到"英语/中文"级别，
-     *  英美/简繁等口音由口音设置控制，此处不展开。 */
+    /** Default language (single choice; closes immediately). Only the
+     * language family can be picked here; accents (US/UK, Spain/Mexico, etc.) are set by the accent dialogs. */
     private fun showDefaultLanguageDialog() {
         val items = arrayOf(
-            "不指定",
-            "英语",
-            "德语",
-            "法语",
-            "西班牙语",
-            "意大利语",
-            "葡萄牙语",
-            "芬兰语",
-            "中文",
-            "日语",
-            "韩语",
+            "Unspecified",
+            "English",
+            "German",
+            "French",
+            "Spanish",
+            "Italian",
+            "Japanese",
+            "Polish",
+            "Portuguese",
+            "Finnish",
         )
-        // values[i] 对应 items[i] 的 dialect（英语/中文用当前口音方言）
+        // values[i] is the dialect for items[i] (English/French/Spanish use the current accent)
         val values = intArrayOf(
             LanguageDetector.DEFAULT_UNSPECIFIED,
-            LanguageDetector.getEnglishDialect(),     // 英语（口音设置决定英美）
+            LanguageDetector.getEnglishDialect(),     // English (accent setting picks US/UK)
             LanguageDetector.DIALECT_DE_DE,
-            LanguageDetector.getFrenchDialect(),      // 法语（口音设置决定法加法）
-            LanguageDetector.getSpanishDialect(),     // 西班牙语（口音设置决定西墨）
+            LanguageDetector.getFrenchDialect(),      // French (accent setting picks France/Canada)
+            LanguageDetector.getSpanishDialect(),     // Spanish (accent setting picks Spain/US/Mexico)
             LanguageDetector.DIALECT_IT_IT,
+            LanguageDetector.DIALECT_JA_JP,
+            LanguageDetector.DIALECT_PL_PL,
             LanguageDetector.DIALECT_PT_BR,
             LanguageDetector.DIALECT_FI_FI,
-            LanguageDetector.getChineseDialect(),     // 中文（口音设置决定简繁）
-            LanguageDetector.DIALECT_JA_JP,
-            LanguageDetector.DIALECT_KO_KR,
         )
 
         val cur = LanguageDetector.getDefaultLanguage()
@@ -440,19 +441,19 @@ class SettingsActivity : Activity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle("默认语言")
+            .setTitle("Default language")
             .setSingleChoiceItems(items, checked) { d, which ->
                 LanguageDetector.setDefaultLanguage(values[which])
                 saveLanguageSettings()
                 d.dismiss()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /** 检测的语言（多选） */
+    /** Detect languages (multi-select) */
     private fun showDetectionLanguagesDialog() {
-        // 当前白名单；默认只选中英文、中文
+        // Current whitelist; default is English + Japanese
         val enabled = LanguageDetector.getEnabledLanguages()
         val checked = BooleanArray(LanguageDetector.ALL_LANG_CODES.size)
         for (i in LanguageDetector.ALL_LANG_CODES.indices) {
@@ -460,117 +461,108 @@ class SettingsActivity : Activity() {
             checked[i] = enabled != null && enabled.contains(code)
         }
         val names = LanguageDetector.ALL_LANG_NAMES
-        // 实时同步勾选状态到临时数组
+        // Mirror checkbox state into a temp array as the user toggles
         val finalChecked = checked.clone()
         AlertDialog.Builder(this)
-            .setTitle("检测的语言")
+            .setTitle("Detect languages")
             .setMultiChoiceItems(names, checked) { _, which, isChecked ->
                 finalChecked[which] = isChecked
             }
-            .setPositiveButton("确定") { _, _ ->
+            .setPositiveButton("OK") { _, _ ->
                 val newEnabled = HashSet<String>()
                 for (i in finalChecked.indices) {
                     if (finalChecked[i]) {
                         newEnabled.add(LanguageDetector.ALL_LANG_CODES[i])
                     }
                 }
-                // 立即生效（setEnabledLanguages 内部会重建 Lingua）
+                // Apply immediately (setEnabledLanguages rebuilds Lingua internally)
                 LanguageDetector.setEnabledLanguages(newEnabled)
                 saveLanguageSettings()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /** 中文口音 */
-    private fun showChineseDialectDialog() {
-        val items = arrayOf("简体（zh-CN）", "台湾（zh-TW）")
-        val cur = LanguageDetector.getChineseDialect()
-        val checked = if (cur == LanguageDetector.DIALECT_ZH_TW) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle("中文口音")
-            .setSingleChoiceItems(items, checked) { d, which ->
-                LanguageDetector.setChineseDialect(
-                    if (which == 1) LanguageDetector.DIALECT_ZH_TW else LanguageDetector.DIALECT_ZH_CN)
-                saveLanguageSettings()
-                d.dismiss()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    /** 英文口音 */
+    /** English accent */
     private fun showEnglishAccentDialog() {
-        val items = arrayOf("美式英语 (en-US)", "英式英语 (en-GB)")
+        val items = arrayOf("American English (en-US)", "British English (en-GB)")
         val cur = LanguageDetector.getEnglishDialect()
         val checked = if (cur == LanguageDetector.DIALECT_EN_GB) 1 else 0
         AlertDialog.Builder(this)
-            .setTitle("英文口音")
+            .setTitle("English accent")
             .setSingleChoiceItems(items, checked) { d, which ->
                 LanguageDetector.setEnglishDialect(
                     if (which == 1) LanguageDetector.DIALECT_EN_GB else LanguageDetector.DIALECT_EN_US)
                 saveLanguageSettings()
                 d.dismiss()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /** 西班牙语口音 */
-    private fun showSpanishDialectDialog() {
-        val items = arrayOf("西班牙西班牙语 (es-ES)", "墨西哥西班牙语 (es-MX)")
-        val cur = LanguageDetector.getSpanishDialect()
-        val checked = if (cur == LanguageDetector.DIALECT_ES_MX) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle("西班牙语口音")
-            .setSingleChoiceItems(items, checked) { d, which ->
-                LanguageDetector.setSpanishDialect(
-                    if (which == 1) LanguageDetector.DIALECT_ES_MX else LanguageDetector.DIALECT_ES_ES)
-                saveLanguageSettings()
-                d.dismiss()
+    /** Spanish accent */
+        private fun showSpanishDialectDialog() {
+            val items = arrayOf("Spanish (Spain) es-ES)", "Spanish (US) es-US)", "Spanish (Mexico] es-MX)")
+            val cur = LanguageDetector.getSpanishDialect()
+            val checked = when (cur) {
+                LanguageDetector.DIALECT_ES_US -> 1
+                LanguageDetector.DIALECT_ES_MX -> 2
+                else -> 0
             }
-            .setNegativeButton("取消", null)
-            .show()
-    }
+            AlertDialog.Builder(this)
+                .setTitle("Spanish accent")
+                .setSingleChoiceItems(items, checked) { d, which ->
+                    LanguageDetector.setSpanishDialect(
+                        when ((which) {
+                            1 -> LanguageDetector.DIALECT_ES_US
+                            2 -> LanguageDetector.DIALECT_ES_MX
+                            else -> LanguageDetector.DIALECT_ES_ES
+                        }))
+                    saveLanguageSettings()
+                    d.dismiss()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
 
-    /** 法语口音 */
-    private fun showFrenchDialectDialog() {
-        val items = arrayOf("法国法语 (fr-FR)", "加拿大法语 (fr-CA)")
-        val cur = LanguageDetector.getFrenchDialect()
-        val checked = if (cur == LanguageDetector.DIALECT_FR_CA) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle("法语口音")
+    /** French accent */
+        private fun showFrenchDialectDialog() {
+            val items = arrayOf("French (France) fr-FR)", "French (Canada] fr-CA)")
+            val cur = LanguageDetector.getFrenchDialect()
+            val checked = = if (cur == LanguageDetector.DIALECT_FR_CA) 1 else 0
+            AlertDialog.Builder(this)
+                .setTitle("French accent")
             .setSingleChoiceItems(items, checked) { d, which ->
                 LanguageDetector.setFrenchDialect(
                     if (which == 1) LanguageDetector.DIALECT_FR_CA else LanguageDetector.DIALECT_FR_FR)
                 saveLanguageSettings()
                 d.dismiss()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /** 音质模式：标准（原始音色）或增强（去嘶声+限幅） */
+    /** Audio quality: standard (original tone) or enhanced (de-hiss + limiter) */
     private fun showDspDialog() {
-        val items = arrayOf("标准（原始音色）", "增强（去嘶声）")
+        val items = arrayOf("Standard (original tone)", "Enhanced (de-hiss)")
         val cur = voiceConfig!!.dspMode
         AlertDialog.Builder(this)
-            .setTitle("音质模式")
+            .setTitle("Audio quality mode")
             .setSingleChoiceItems(items, cur) { d, which ->
                 voiceConfig!!.setDspMode(which)
                 dspBtn!!.let { refreshDspButton(it) }
                 d.dismiss()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
     private fun refreshDspButton(btn: Button) {
-        val name = if (voiceConfig!!.dspMode == 1) "增强（去嘶声）" else "标准（原始音色）"
-        btn.text = "音质模式：" + name
+        val name = if (voiceConfig!!.dspMode == 1) "Enhanced (de-hiss)" else "Standard (original tone)"
+        btn.text = "Audio quality: " + name
     }
 
-    // SharedPreferences 持久化
+    // SharedPreferences persistence
     fun saveLanguageSettings() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val e = prefs.edit()
@@ -599,12 +591,12 @@ class SettingsActivity : Activity() {
         LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
         LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
         LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
-        // 检测语言白名单：默认只中英文（首次安装或未设置过）
+        // Detection whitelist: default English + Japanese (fresh install or never set)
         val enabled: Set<String>
         if (prefs.contains("enabled_langs")) {
             enabled = prefs.getStringSet("enabled_langs", null)!!
         } else {
-            enabled = HashSet(listOf("en", "zh"))
+            enabled = HashSet(listOf("en", "ja"))
         }
         LanguageDetector.setEnabledLanguages(enabled)
     }
