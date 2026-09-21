@@ -7,6 +7,7 @@
 
 #include "delta.h"
 #include "delta_lang.h"
+#include "delta_rules_c.h"
 #include "evv_arena.h"
 
 static const unsigned char actent_store[1] = { 0 };
@@ -55,7 +56,7 @@ void chs_link_delete(delta_state *d)
 {
     if (d == 0)
         return;
-    free(d->fence_chars_base);
-    free(d->fence_index_base);
-    free(d->fence_marks_base);
+    free(EVV_AT(uint8_t *, d->fence_chars_base));
+    free(EVV_AT(uint8_t *, d->fence_index_base));
+    free(EVV_AT(uint8_t *, d->fence_marks_base));
 }
