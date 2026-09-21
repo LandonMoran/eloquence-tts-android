@@ -185,6 +185,7 @@ static int chs_lookup(struct ChsRom *rom, uint8_t b0, uint8_t b1,
         while (p[0] || p[1] || p[2] || p[3]) {
             c0 = p[0]; c1 = p[1];
             if (c0 == 0xff) break;
+            if (d - out >= 56) break;   /* keep within caller's tmp[] */
             chs_emit_syllable(&d, c0, c1);
             p += 2;
         }
@@ -193,7 +194,7 @@ static int chs_lookup(struct ChsRom *rom, uint8_t b0, uint8_t b1,
         chs_emit_syllable(&d, c0, c1);
         if (ent[2] || ent[3]) {
             c0 = ent[2]; c1 = ent[3];
-            chs_emit_syllable(&d, c0, c1);
+            if (d - out < 56) chs_emit_syllable(&d, c0, c1);
         }
     }
     *outn = (int)(d - out);
