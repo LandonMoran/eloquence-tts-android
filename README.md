@@ -20,7 +20,7 @@
 ├── src/                      Java 源码（engine / services / ui / utils）
 ├── jni/                      native 桥接层（ECI C API 封装）
 ├── native-libs/arm64-v8a/    编译好的语言库与引擎 .so
-├── language-models/          Lingua 语言检测模型（JSON）
+├── language-models/          Lingua 语言检测模型（JSON；P3 起含打包版 models.elqm）
 ├── libs/                     第三方依赖 jar
 ├── res/                      Android 资源（多语言 strings）
 ├── AndroidManifest.xml

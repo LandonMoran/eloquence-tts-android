@@ -22,4 +22,10 @@
 
 同时，Lingua 依赖的第三方库（kotlin-stdlib、fastutil、moshi、moshi-kotlin、okio、kotlin-reflect）需要在 build 时一起通过 d8 打进 dex。详见 `build.sh`。
 
-> 注意：`language-models/` 目录的 JSON 必须打进 APK 根目录（`Class.getResourceAsStream` 从 classpath 根目录读取），这是打包时的关键一步，漏了会导致欧洲语言检测静默失败。
+## P3: 语言模型打包 `models.elqm`
+
+从 P3 起，10 语言的 n-gram JSON 不再逐一读取，而是由 `tools/model_pack.py` 打包为单个 `language-models/models.elqm`（ELQM v2 无损格式，体积约 -60%）。`lingua-slim.jar` 内的 `LanguageDetector` 已由 ASM 补丁（`tools/p3_golden/PatchLingua.java`）改写：优先从 `models.elqm` 加载全部模型；若 ELQM 缺失或不可读，自动回退到 `language-models/<lang>/` 的 JSON 逐个加载，行为与原始 jar 完全一致。
+
+`build.sh` 在打包阶段自动生成 `models.elqm` 并连同原始 JSON 一起打进 APK 根目录。补丁正确性已通过 JVM golden-compare 验证：全部 2,614,548 个 n-gram 逐字节比对，输出与未打补丁的原始 jar + JSON 完全一致（见 `tools/p3_golden/`）。
+
+> 注意：`models.elqm` 必须打进 APK 根目录（`Class.getResourceAsStream` 从 classpath 根目录读取）。漏了会自动回退到逐 JSON 加载，功能不变，仅体积优化失效。

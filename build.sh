@@ -26,6 +26,29 @@ cd "$(dirname "$0")"
 
 LIBS_DIR="libs"
 
+# ---- P3: single packed models.elqm + ASM-patched lingua-slim.jar ----
+# Lossless pack (oracle-verified); the patched jar reads models.elqm with
+# fallback to per-file JSON inside the bridge.  No classes.dex / build.gradle edits.
+P3DIR="tools/p3_golden"
+ASM_JAR="$P3DIR/asm.jar"
+ELQM="language-models/models.elqm"
+
+if [ ! -f "$ELQM" ] || find language-models -name '*.json' -newer "$ELQM" | grep -q .; then
+  echo "[P3] packing $ELQM ..."
+  python3 tools/model_pack.py pack language-models "$ELQM" || exit 1
+fi
+
+if ! unzip -l libs/lingua-slim.jar | grep -q "ElqmBridge.class"; then
+  echo "[P3] patching libs/lingua-slim.jar (bridge: packed models.elqm, fallback per-file) ..."
+  rm -rf "$P3DIR/build"
+  mkdir -p "$P3DIR/build"
+  javac -source 11 -target 11 -d "$P3DIR/build" "$P3DIR/ElqmBridge.java" 2>&1 || exit 1
+  javac -cp "$ASM_JAR" -d "$P3DIR/build" "$P3DIR/PatchLingua.java" 2>&1 || exit 1
+cp libs/lingua-slim.jar /tmp/lingua-pristine.jar
+  java -cp "$P3DIR/build:$ASM_JAR" PatchLingua /tmp/lingua-pristine.jar libs/lingua-slim.jar "$P3DIR/build/com/github/pemistahl/lingua/internal/ElqmBridge.class" || exit 1
+  rm -f /tmp/lingua-pristine.jar
+fi
+
 # 0. 用 aapt 编译资源并生成 R.java
 rm -rf gen
 mkdir -p gen
