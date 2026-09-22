@@ -12,6 +12,7 @@ on:
           - jpn.so
         default: chs.so
         description: "language rule .so to decompile"
+<<<<<<< HEAD
       script:
         type: choice
         options:
@@ -19,13 +20,19 @@ on:
           - DecompileLpta
         default: DecompileLptaV2
         description: "Ghidra post-script (V2 = adds FUN_* helpers + REF map)"
+=======
+>>>>>>> origin/main
 
 permissions:
   contents: read
 
 jobs:
   decompile:
+<<<<<<< HEAD
     runs-on: ubuntu-24.04
+=======
+    runs-on: ubuntu-24.04-arm
+>>>>>>> origin/main
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,11 +60,16 @@ jobs:
           curl -sL -o /tmp/ghidra.zip "$URL"
           sudo mkdir -p /opt/ghidra
           sudo unzip -q /tmp/ghidra.zip -d /opt/ghidra
+<<<<<<< HEAD
           sudo chmod -R a+x /opt/ghidra
+=======
+          sudo chmod -R a+rX /opt/ghidra
+>>>>>>> origin/main
           ls /opt/ghidra
 
       - name: Decompile LPTA rule functions from ${{ inputs.lib }}
         run: |
+<<<<<<< HEAD
           ls "$GITHUB_WORKSPACE/oracle/ghidra/" | head -30
           find /opt/ghidra -path '*Decompiler*' -name 'decompile*' -o -path '*Decompiler/os*' -maxdepth 9 | head -20
           cd /opt/ghidra/ghidra_*
@@ -66,6 +78,13 @@ jobs:
             -import "$GITHUB_WORKSPACE/apple-eloquence-elf-1.2.3-linux-aarch64/lib/${{ inputs.lib }}" \
             -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
             -postScript ${{ inputs.script }}.java \
+=======
+          cd /opt/ghidra/ghidra_*
+          ./support/analyzeHeadless /tmp/proj lpta \
+            -import "$GITHUB_WORKSPACE/apple-eloquence-elf-1.2.3-linux-aarch64/lib/${{ inputs.lib }}" \
+            -scriptPath "$GITHUB_WORKSPACE/oracle/ghidra" \
+            -postScript DecompileLpta.java \
+>>>>>>> origin/main
             -deleteProject 2>&1 | tail -25
           ls -la /tmp/decomp.txt
 

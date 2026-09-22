@@ -62,15 +62,24 @@ jobs:
         id: bps
         run: |
           set -o pipefail
+<<<<<<< HEAD
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           case "${{ inputs.dialect }}" in
             zh-cn) LIB=chs.so; WORK=work_zh_cn; D=0x60000; ENC=GB18030; SWEEP=hanzi-cjk-sweep.txt ;;
             zh-tw) LIB=cht.so; WORK=work_zh_tw; D=0x60001; ENC=BIG5;    SWEEP=hanzi-cjk-sweep.txt ;;
+=======
+          case "${{ inputs.dialect }}" in
+            zh-cn) LIB=chs.so; WORK=work_zh_cn; D=0x60000; ENC=GB18030; SWEEP=hanzi-sweep.txt ;;
+            zh-tw) LIB=cht.so; WORK=work_zh_tw; D=0x60001; ENC=BIG5;    SWEEP=hanzi-sweep.txt ;;
+>>>>>>> origin/main
             ko)    LIB=kor.so; WORK=work_ko;    D=0xA0000; ENC=;        SWEEP=kor-sweep.txt ;;
             ja)    LIB=jpn.so; WORK=work_ja;    D=0x80000; ENC=;        SWEEP=ja-sample.txt ;;
           esac
           echo "DIALECT=${{ inputs.dialect }}" >> "$GITHUB_ENV"
+<<<<<<< HEAD
           echo "WORKDIR=$WORK" >> "$GITHUB_ENV"
+=======
+>>>>>>> origin/main
           echo "ENCODING=$ENC" >> "$GITHUB_ENV"
           echo "SWEEPFILE=$SWEEP" >> "$GITHUB_ENV"
           echo "DIALECT_HEX=$D" >> "$GITHUB_ENV"
@@ -79,7 +88,13 @@ jobs:
           for s in $APPLIES; do
             printf 'break %s\ncommands\n  silent\n  printf "APL %s\\n"\n  continue\nend\n' "$s" "$s" >> /tmp/bp_apply.gdb
           done
+<<<<<<< HEAD
           { cat "$GITHUB_WORKSPACE/oracle/trace.gdb"; cat /tmp/bp_apply.gdb; echo; printf 'run %s < /tmp/sweep\nset logging off\n' "$D"; } > /tmp/trace_full.gdb
+=======
+          cp "$GITHUB_WORKSPACE/oracle/trace.gdb" /tmp/trace_full.gdb
+          cat /tmp/bp_apply.gdb >> /tmp/trace_full.gdb
+          printf 'run < /tmp/sweep\nset logging off\n' >> /tmp/trace_full.gdb
+>>>>>>> origin/main
           echo "bp_count=$(grep -c '^break ' /tmp/trace_full.gdb)"
 
       - name: Generate corpora
@@ -90,10 +105,18 @@ jobs:
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
           export LD_LIBRARY_PATH="$PWD/lib"
+<<<<<<< HEAD
           export DUMP_WORKDIR="$PWD/$WORKDIR"
           export DUMP_ONESHOT=1
           export DUMP_WANT_PHONEME=1
           unset DUMP_NOSYNTH DUMP_TRACE DUMP_PINYIN DUMP_GENPHON
+=======
+          export DUMP_WORKDIR="$PWD/work_${{ inputs.dialect }}"
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          export DUMP_NOSYNTH=1
+          unset DUMP_TRACE DUMP_PINYIN DUMP_GENPHON
+>>>>>>> origin/main
           if [ -n "$ENCODING" ]; then
             iconv -f UTF-8 -t "$ENCODING" -c "$GITHUB_WORKSPACE/oracle/corpus/$SWEEPFILE" > /tmp/sweep.all 2>/dev/null || true
           else
@@ -104,8 +127,12 @@ jobs:
           else
             head -n "${{ inputs.lines }}" /tmp/sweep.all > /tmp/sweep
           fi
+<<<<<<< HEAD
           sed -i "1i set solib-search-path $DUMP_WORKDIR" /tmp/trace_full.gdb
           gdb -batch -ex "file /tmp/dump_engine" -x /tmp/trace_full.gdb 2>/tmp/gdb.err || true
+=======
+          gdb -batch -x /tmp/trace_full.gdb --args /tmp/dump_engine "$DIALECT_HEX" 2>/tmp/gdb.err || true
+>>>>>>> origin/main
           echo "in_lines=$(wc -l < /tmp/sweep)"
           echo "fire_bp=$(grep -c '^breakpoint' /tmp/gdb.err || true)"
           echo "tst_rows=$(grep -c '^TST' /tmp/rulefire.log || true)"
