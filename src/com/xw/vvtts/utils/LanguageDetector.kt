@@ -176,6 +176,8 @@ class LanguageDetector {
             allLatin.add(Language.FRENCH)
             allLatin.add(Language.SPANISH)
             allLatin.add(Language.ITALIAN)
+            allLatin.add(Language.PORTUGUESE)
+            allLatin.add(Language.FINNISH)
             allLatin.add(Language.POLISH)
 
             val en = enabledLanguages

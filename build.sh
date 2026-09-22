@@ -35,7 +35,7 @@ ELQM="language-models/models.elqm"
 
 if [ ! -f "$ELQM" ] || find language-models -name '*.json' -newer "$ELQM" | grep -q .; then
   echo "[P3] packing $ELQM ..."
-  python3 tools/model_pack.py pack language-models "$ELQM" || exit 1
+  python3 tools/model_pack.py pack --prune language-models "$ELQM" || exit 1
 fi
 
 if ! unzip -l libs/lingua-slim.jar | grep -q "ElqmBridge.class"; then

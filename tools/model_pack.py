@@ -394,9 +394,20 @@ def run_selftest(models_dir):
     return 0 if ok else 1
 
 
-def run_pack(models_dir, out_path):
-    """Pack all models to out_path and print size comparison."""
+def run_pack(models_dir, out_path, min_count=1):
+    """Pack all models to out_path and print size comparison.
+
+    min_count >1 prunes rare n-gram groups (tokens occurring fewer times).
+    """
     parsed, json_bytes = collect_models(models_dir)
+    if min_count > 1:
+        parsed = {
+            lang: {
+                oid: [g for g in groups if g[0] >= min_count]
+                for oid, groups in orders.items()
+            }
+            for lang, orders in parsed.items()
+        }
     pack_bytes = build_pack(parsed)
     out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
     if not os.path.isdir(out_dir):
@@ -439,9 +450,12 @@ def main(argv):
         usage()
         return 2
     cmd = argv[1]
-    if cmd == "pack" and len(argv) == 4:
-        return run_pack(argv[2], argv[3])
-    if cmd in ("selftest", "roundtrip") and len(argv) == 3:
+    if cmd == "pack":
+        if len(argv) == 4:
+            return run_pack(argv[2], argv[3])
+        if len(argv) == 5 and argv[2] == "--prune":
+            return run_pack(argv[3], argv[4], min_count=2)
+    if cmd in ("selftest", "roundtrip")and len(argv) == 3:
         return run_selftest(argv[2])
     if cmd == "verify" and len(argv) == 4:
         return run_verify(argv[2], argv[3])
