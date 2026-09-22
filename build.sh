@@ -99,7 +99,7 @@ cp -r language-models tmp_apk/
 if [ $? -ne 0 ]; then echo "AAPT FAILED"; exit 1; fi
 
 cp vvtts_base.apk vvtts_unsigned.apk
-cd tmp_apk && zip -r ../vvtts_unsigned.apk classes*.dex language-models lib > /dev/null && cd ..
+cd tmp_apk && zip -9 -r ../vvttts_unsigned.apk classes*.dex language-models lib > /dev/null && cd ..
 
 # 4. 签名
 "$ZIPALIGN" -f 4 vvtts_unsigned.apk vvtts_aligned.apk
