@@ -8,10 +8,25 @@ on:
       - '.github/workflows/oracle-dump.yml'
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_min_api:
+        description: >-
+          TEST-ONLY override: build the armeabi-v7a APK at this minSdk instead of
+          28 (use 25 so an API-25 arm32 emulator can install it). Ignored for the
+          arm64/universal/x86_64 builds.
+        required: false
+        default: '28'
+        type: string
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Test-only min-api override for the armeabi-v7a APK. Defaults to 28 in
+      # normal CI (push/PR); workflow_dispatch may set 25 for the arm32 lab
+      # emulator. Read by build.sh as ${MIN_API:-28} for D8 --min-api.
+      TEST_MIN_API: ${{ inputs.test_min_api || '28' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,22 +70,28 @@ jobs:
             -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
-      - name: Build native bridge (arm64-v8a + armeabi-v7a; openevv + JNI core)
+      - name: Build native bridge (arm64-v8a + armeabi-v7a + x86_64; openevv + JNI core)
         run: |
           ABI=arm64-v8a bash build_native.sh
           ABI=armeabi-v7a bash build_native.sh
+          # TEST-ONLY: x86_64 .so for the emulator lab (x86_64 system image).
+          ABI=x86_64 bash build_native.sh
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
 
-      - name: Build APKs (arm64 + arm32 + universal)
+      - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
         run: |
-          rm -f vvttts-arm64-v8a.apk vvttts-armeabi-v7a.apk vvttts-universal.apk
+          rm -f vvttts-arm64-v8a.apk vvttts-armeabi-v7a.apk vvttts-universal.apk vvttts-test-x86_64.apk
           echo "=== Build arm64-v8a (phones) ==="
           ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvttts-arm64-v8a.apk
           echo "=== Build armeabi-v7a (32-bit devices/emulators) ==="
-          ABI=armeabi-v7a bash build.sh && cp vvtts_signed.apk vvttts-armeabi-v7a.apk
+          # TEST_MIN_API is a test-only override (default 28); MIN_API=25 lets an
+          # API-25 arm32 emulator install this APK.
+          ABI=armeabi-v7a MIN_API="${TEST_MIN_API:-28}" bash build.sh && cp vvtts_signed.apk vvttts-armeabi-v7a.apk
           echo "=== Build universal (both ABIs) ==="
           ABI=universal bash build.sh && cp vvtts_signed.apk vvttts-universal.apk
+          echo "=== Build x86_64 (TEST-ONLY: emulator lab smoke; not a shipping artifact) ==="
+          ABI=x86_64 bash build.sh && cp vvtts_signed.apk vvttts-test-x86_64.apk
           ls -lh vvttts-*.apk
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
@@ -87,6 +108,13 @@ jobs:
             vvttts-arm64-v8a.apk
             vvttts-armeabi-v7a.apk
             vvttts-universal.apk
+          if-no-files-found: error
+
+      - name: Upload TEST-ONLY x86_64 APK (emulator lab)
+        uses: actions/upload-artifact@v4
+        with:
+          name: vvttts-test-x86_64-apk
+          path: vvttts-test-x86_64.apk
           if-no-files-found: error
 
   chs-smoke:
