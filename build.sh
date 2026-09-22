@@ -68,15 +68,22 @@ find out_classes -name '*.class' > /tmp/class_files.txt
   "$LIBS_DIR/kotlin-reflect.jar" 2>&1
 if [ $? -ne 0 ]; then echo "D8 FAILED"; exit 1; fi
 
-# 2.5. Build the native bridge first if missing (openevv + JNI core,; no Apple code(.
+# 2.5. Build the native bridge first if missing (openevv + JNI core); no Apple code).
 # CI runs build_native.sh as its own earlier step; this guard covers fresh clones
-# where only build.sh was invoked.  ABI defaults to arm64-v8a (phones); the
-# emulator-test workflow also uses arm64-v8a.
-ABI="${ABI:-arm64-v8a}"
-if [ ! -f "native-libs/$ABI/libvvtts_core.so" ]; then
-  echo "libvvtts_core.so missing -- running build_native.sh first..."
-  ABI="$ABI" bash build_native.sh || exit $?
-fi
+# where only build.sh was invoked.  ABI modes: universal = all present ABIs (arm64
+# + arm32); or a single ABI (arm64-v8a / armeabi-v7a / x86_64) for slim builds;
+# emulator-test workflow builds x86_64.
+ABI="${ABI:-universal}"
+case "$ABI" in
+  universal) ABIS="arm64-v8a armeabi-v7a x86_64" ;;
+  *)        ABIS="$ABI" ;;
+esac
+for need in $ABIS; do
+  if [ ! -f "native-libs/$need/libvvttts_core.so" ]; then
+    echo "libvvttts_core.so missing ($need) -- running build_native.sh first..."
+    ABI="$need" bash build_native.sh || exit $?
+  fi
+done
 
 # 3. 组装 APK
 rm -rf tmp_apk vvtts_base.apk vvtts_unsigned.apk vvtts_aligned.apk vvtts_signed.apk
@@ -84,8 +91,8 @@ mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/assets
 
 # 复制所有 dex（multidex）
 cp out_dex/classes*.dex tmp_apk/
-# 复制 native 语言库（多 ABI：64 位 + 32 位设备 + 模拟器测试）
-for abi in arm64-v8a armeabi-v7a x86_64; do
+# 复制 native 语言库（ABI=universal 时全量，否则单 ABI） — 单 ABI 出瘦 APK
+for abi in $ABIS; do
   if [ -d "native-libs/$abi" ]; then
     cp "native-libs/$abi"/*.so "tmp_apk/lib/$abi/"
   fi

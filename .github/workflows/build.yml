@@ -31,10 +31,12 @@ jobs:
           [ -d "$SDK/ndk" ] || "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264"
           # build.sh expects d8 under cmdline-tools/latest/bin; it actually
           # lives in build-tools. Symlink so the upstream script runs unmodified.
+
           mkdir -p "$SDK/cmdline-tools/latest/bin"
           ln -sf "$SDK/build-tools/35.0.0/d8" "$SDK/cmdline-tools/latest/bin/d8"
 
       - name: Install Kotlin compiler 1.9.25 (embeddable jar, no unzip)
+
         run: |
           set -e
           curl -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
@@ -49,8 +51,8 @@ jobs:
       - name: Generate keystore
         run: |
           keytool -genkeypair -v \
-            -keystore vvtts.jks -storepass android123 -keypass android123 \
-            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore vvttts.jks -storepass android123 -keypass android123 \
+            -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
       - name: Build native bridge (arm64-v8a + armeabi-v7a; openevv + JNI core)
@@ -60,23 +62,35 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
 
-      - name: Build APK
-        run: bash build.sh
+      - name: Build APKs (arm64 + arm32 + universal)
+        run: |
+          rm -f vvttts-arm64-v8a.apk vvttts-armeabi-v7a.apk vvttts-universal.apk
+          echo "=== Build arm64-v8a (phones) ==="
+          ABI=arm64-v8a bash build.sh && cp vvttts_signed.apk vvttts-arm64-v8a.apk
+          echo "=== Build armeabi-v7a (32-bit devices/emulators) ==="
+          ABI=armeabi-v7a bash build.sh && cp vvttts_signed.apk vvttts-armeabi-v7a.apk
+          echo "=== Build universal (both ABIs) ==="
+          ABI=universal bash build.sh && cp vvttts_signed.apk vvttts-universal.apk
+          ls -lh vvttts-*.apk
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
-          KEYSTORE: vvtts.jks
+          KEYSTORE: vvttts.jks
           KS_PASS: android123
           KEY_PASS: android123
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
 
-      - name: Upload APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: vvtts-signed-apk
-          path: vvtts_signed.apk
+          name: vvttts-signed-apk
+          path: |
+            vvttts-arm64-v8a.apk
+            vvttts-armeabi-v7a.apk
+            vvttts-universal.apk
           if-no-files-found: error
 
   chs-smoke:
+
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
