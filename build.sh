@@ -97,7 +97,7 @@ case "$ABI" in
   *)        ABIS="$ABI" ;;
 esac
 for need in $ABIS; do
-  if [ ! -f "native-libs/$need/libvvttts_core.so" ]; then
+  if [ ! -f "native-libs/$need/libvvtts_core.so" ]; then
     echo "libvvttts_core.so missing ($need) -- running build_native.sh first..."
     ABI="$need" bash build_native.sh || exit $?
   fi
@@ -105,7 +105,7 @@ done
 
 # 3. 组装 APK
 rm -rf tmp_apk vvtts_base.apk vvtts_unsigned.apk vvtts_aligned.apk vvtts_signed.apk
-mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/assets
+mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/lib/x86_64 tmp_apk/assets
 
 # 复制所有 dex（multidex）
 cp out_dex/classes*.dex tmp_apk/
@@ -119,7 +119,7 @@ done
 # ship ONLY models.elqm（golden-compare 已验证，逐字节一致）; JSON sources stay in
 # repo（打包/再打包的权威输入）, but no longer ride along in the APK as fallback bytes.
 cp -r language-models tmp_apk/
-rm -f tmp_apk/language-models/*.json
+find tmp_apk/language-models -name '*.json' -delete
 
 "$AAPT" package -f -M AndroidManifest.xml -S res -A tmp_apk/assets -I "$ANDROID_JAR" -F vvtts_base.apk 2>&1
 if [ $? -ne 0 ]; then echo "AAPT FAILED"; exit 1; fi
