@@ -99,7 +99,7 @@ cp -r language-models tmp_apk/
 if [ $? -ne 0 ]; then echo "AAPT FAILED"; exit 1; fi
 
 cp vvtts_base.apk vvtts_unsigned.apk
-cd tmp_apk && zip -9 -r ../vvttts_unsigned.apk classes*.dex language-models lib > /dev/null && cd ..
+cd tmp_apk && zip -9 -r ../vvtts_unsigned.apk classes*.dex language-models lib > /dev/null && cd ..
 
 # 4. 签名
 "$ZIPALIGN" -f 4 vvtts_unsigned.apk vvtts_aligned.apk
@@ -109,8 +109,8 @@ cd tmp_apk && zip -9 -r ../vvttts_unsigned.apk classes*.dex language-models lib 
 echo "=== BUILD DONE ==="
 
 # ===== SIZE REPORT (Phase 0) =====
-unzip -l vvttts_signed.apk | awk '
+unzip -l vvtts_signed.apk | awk '
   /classes.*dex/ {dex+=$1} /lib\// {lib+=$1} /language-models/ {m+=$1}
   END {printf "dex=%d lib=%d models=%d total=%d\n", dex, lib, m, dex+lib+m}'
-ls -l vvttts_signed.apk | awk '{printf "APK_ON_DISK=%d\n", $5}'
+ls -l vvtts_signed.apk | awk '{printf "APK_ON_DISK=%d\n", $5}'
 ls -lh vvtts_signed.apk
