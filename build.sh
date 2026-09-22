@@ -115,8 +115,11 @@ for abi in $ABIS; do
     cp "native-libs/$abi"/*.so "tmp_apk/lib/$abi/"
   fi
 done
-# 复制 Lingua 语言模型 JSON（必须放进 APK 根目录）
+# 复制 Lingua 语言模型（必须放进 APK 根目录）— P3 re-baseline:
+# ship ONLY models.elqm（golden-compare 已验证，逐字节一致）; JSON sources stay in
+# repo（打包/再打包的权威输入）, but no longer ride along in the APK as fallback bytes.
 cp -r language-models tmp_apk/
+rm -f tmp_apk/language-models/*.json
 
 "$AAPT" package -f -M AndroidManifest.xml -S res -A tmp_apk/assets -I "$ANDROID_JAR" -F vvtts_base.apk 2>&1
 if [ $? -ne 0 ]; then echo "AAPT FAILED"; exit 1; fi

@@ -90,6 +90,10 @@ fi
         "$LIBEVV" \
     -lm
 
+# P1 re-baseline: symbol-strip（symtab/strtab ≈5.5 MB raw per ABI）— keeps
+# dynsym（JNI exports）so dlopen + the check below still work; ELF stays valid.
+"$TC/llvm-strip" --strip-unneeded "$OUT/libvvttts_core.so"
+
 echo "native bridge OK:"
 file "$OUT/libvvtts_core.so"
 "$TC/llvm-nm" -D "$OUT/libvvtts_core.so" | grep ' Java_com_xw_vvtts_core' | sed 's/^[0-9a-fA-F]* //' | sort | head -12
