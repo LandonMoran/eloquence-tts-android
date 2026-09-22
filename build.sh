@@ -58,14 +58,9 @@ if [ $? -ne 0 ]; then echo "COMPILE FAILED"; exit 1; fi
 rm -rf out_dex
 mkdir -p out_dex
 find out_classes -name '*.class' > /tmp/class_files.txt
-"$D8" --min-api 28 --output out_dex @/tmp/class_files.txt \
+"$D8" --min-api "${MIN_API:-28}" --output out_dex @/tmp/class_files.txt \
   "$LIBS_DIR/lingua-slim.jar" \
-  "$LIBS_DIR/kotlin-stdlib-1.9.25.jar" \
-  "$LIBS_DIR/fastutil.jar" \
-  "$LIBS_DIR/moshi.jar" \
-  "$LIBS_DIR/moshi-kotlin.jar" \
-  "$LIBS_DIR/okio.jar" \
-  "$LIBS_DIR/kotlin-reflect.jar" 2>&1
+  "$LIBS_DIR/kotlin-stdlib-1.9.25.jar" 2>&1
 if [ $? -ne 0 ]; then echo "D8 FAILED"; exit 1; fi
 
 # 2.5. Build the native bridge first if missing (openevv + JNI core); no Apple code).
@@ -112,4 +107,10 @@ cd tmp_apk && zip -r ../vvtts_unsigned.apk classes*.dex language-models lib > /d
 "$APKSIGNER" verify vvtts_signed.apk 2>&1 | head -3
 
 echo "=== BUILD DONE ==="
+
+# ===== SIZE REPORT (Phase 0) =====
+unzip -l vvttts_signed.apk | awk '
+  /classes.*dex/ {dex+=$1} /lib\// {lib+=$1} /language-models/ {m+=$1}
+  END {printf "dex=%d lib=%d models=%d total=%d\n", dex, lib, m, dex+lib+m}'
+ls -l vvttts_signed.apk | awk '{printf "APK_ON_DISK=%d\n", $5}'
 ls -lh vvtts_signed.apk
