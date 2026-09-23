@@ -358,12 +358,23 @@ class EloquenceEngine(context: Context) {
                 coreHandles[dialect] = handle
             }
 
-            // === Full param adaptation (Apple Kona CSV is the authoritative source).
-            // Caution: eciSetStandardVoice2 crashes (ETIEvent::wait, libeci+0x149b4).
-            // even after the ctype fix — this is a separate ETIEvent lifecycle issue.
-            // So voice switching avoids eciSetStandardVoice2 and relies on the 8 eciSetVoiceParam calls below.
-            // to fully inject the voice (headSize/pitchBase/pitchFluc/rough/breath/speed/vol.
+            // === Voice row copy + full param tuning — Apple Kona CSV is the authoritative source.
+            // The copy below must precede the param writes: params tune the copied row but never pick
+            // WHICH voice (engine default=Reed without the copy; CLI probe corr 0.02 Reed vs Sandy).
             val voice: KonaVoice.Voice = KonaVoice.byPreset(presetId)
+
+
+
+            // Copy the selected preset row onto the active voice 0 (openevv's eciCopyVoice,
+            // equivalent of the old Apple eciSetStandardVoice2 — crash-free here). Without it,
+            // every utterance speaks engine default=Reed; params tune but never pick the voice.
+
+
+            if (voice.eciVoiceNumber != pendingEciVoice) {
+
+                VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
+                pendingEciVoice = voice.eciVoiceNumber
+            }
 
             // Inject this voice's 8 ECI voice params (gender=0 head=1 pitchBase=2
             // pitchFluc=3 rough=4 breath=5 speed=6 vol=7.
