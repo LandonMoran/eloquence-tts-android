@@ -216,7 +216,8 @@ class VvTtsService : TextToSpeechService() {
             for (seg in segments) {
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
-                // The Apple CJK libs skip plain digits and many symbols; the
+                Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
+                // The Apple CJK libs skip plain digits and many symbols;the
                 // bundled TextNormalizer fixes exactly that for CJK segments.
                 // (For en/de/etc. the ECI libs already read digits fine.)
                 if (isCjkDialect(seg.dialect)) {
