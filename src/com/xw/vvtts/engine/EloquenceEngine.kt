@@ -390,16 +390,16 @@ class EloquenceEngine(context: Context) {
                 // successes once per param, so a dead channel shows in logcat without spam.
 
                 if (ret < 0) {
-                    Log.w("VvTts", "voice param #%d=%d -> ret %d (FAILURE)", p, value, ret)
+                    Log.w("VvTts", "voice param #$p=$value -> ret $ret (FAILURE)")
                 } else if (p==2 && !pitchLogged) {
 
-                    Log.i("VvTts", "voice param #2 pitch=%d -> ret %d (OK)", value, ret)
+                    Log.i("VvTts", "voice param #2 pitch=$value -> ret $ret (OK)")
                     pitchLogged = true
                 } else if (p==6 && !speedLogged) {
-                    Log.i("VvTts", "voice param #6 speed=%d -> ret %d (OK)", value, ret)
+                    Log.i("VvTts", "voice param #6 speed=$value -> ret $ret (OK)")
                     speedLogged = true
                 } else if (p==7 && !volLogged) {
-                    Log.i("VvTts", "voice param #7 vol=%d -> ret %d (OK)", value, ret)
+                    Log.i("VvTts", "voice param #7 vol=$value -> ret $ret (OK)")
                     volLogged = true
                 }
             }
