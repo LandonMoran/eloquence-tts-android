@@ -93,7 +93,7 @@ class EloquenceEngine(context: Context) {
     fun initialize(): Boolean {
         if (initialized) return true
         // New Apple engine: no longer uses the legacy Guangrong JNI (libeloquence_jni.so is deprecated)
-        // Synthesis runs through VvtttsCore's in-house bridge (dlopen Apple libeci.so); we just pre-write eci.ini here.
+        // Synthesis runs through VvttsCore's in-house bridge (dlopen Apple libeci.so); we just pre-write eci.ini here.
         try {
             val info: ApplicationInfo = appContext.applicationInfo
             val libDir = info.nativeLibraryDir

@@ -109,5 +109,5 @@ class VvttsCore {
         }
     }
 
-       /** Stateless bridge class(default constructor kept for compat with old new VvtttsCore() call sites) */
+       /** Stateless bridge class(default constructor kept for compat with old new VvttsCore() call sites) */
 }

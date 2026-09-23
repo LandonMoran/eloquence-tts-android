@@ -1,5 +1,5 @@
 /*
- * vvttts_bridge.c - Eloquence self-developed bridge layer
+ * vvtts_bridge.c - Eloquence self-developed bridge layer
  *
  * Our own calling layer:the voice library reuses Guangrong(libeloquence_jni + libeci),
  * with the bridge/params/voices/language dispatch all implemented by us.

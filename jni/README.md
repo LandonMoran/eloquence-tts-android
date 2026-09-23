@@ -3,9 +3,9 @@
 本目录包含 native 桥接层源码，以及引擎本体随 `native/openevv/` 一并 vendor（MIT 协议，
 IBM Eloquence/ETI 的可移植 C 重实现，**不含任何 Apple 代码**）。
 
-- **`vvttts_core.c`** —— JNI 桥接层（唯一 native 源码），把 Kotlin 端的 8 个
+- **`vvtts_core.c`** —— JNI 桥接层（唯一 native 源码），把 Kotlin 端的 8 个
   `@JvmStatic external fun` 接到 openevv 的 `eci.h` API。
-  - 对应 `com.xw.vvttts.core.VvtttsCore`（`System.loadLibrary("vvttts_core")`）：
+  - 对应 `com.xw.vvtts.core.VvttsCore`（`System.loadLibrary("vvtts_core")`）：
     `nativeInitEngine` `nativeSynthesize` `nativeSetVoiceParam` `nativeGetVoiceParam`
     `nativeSetParam` `nativeSetStandardVoice` `nativeStop` `nativeShutdown`
   - 采样率 `eciSampleRate=1`（11,025 Hz，引擎原生格式，与 Kotlin 播放端一致）
@@ -18,13 +18,13 @@ IBM Eloquence/ETI 的可移植 C 重实现，**不含任何 Apple 代码**）。
 
 ## 构建
 
-`build_native.sh`（仓库根目录）把引擎+桥层**静态链接成单一 `native-libs/arm64-v8a/libvvttts_core.so`，
+`build_native.sh`（仓库根目录）把引擎+桥层**静态链接成单一 `native-libs/arm64-v8a/libvvtts_core.so`，
 并清空该目录下全部旧 `.so`（旧 Apple 语言库 `.so` 已从仓库删除，不再随 APK 分发）。
 
 - 交叉编译：`make CC=<NDK aarch64 clang> CFLAGS=-fPIC RULES=c` —— C 规则内联
   （冷启动/延迟低于 bytecode 规则），10 个 IBM 语言全量打包进同一镜像。
 - 引擎运行时不读任何文件、不依赖任何库（仅 libm）。`.so` 自包含，APK 只需这一个 native 文件。
-- 唯一构件产物路径写死为 `native-libs/arm64-v8a/libvvttts_core.so`（已 gitignore）；CI 每次重新生成。
+- 唯一构件产物路径写死为 `native-libs/arm64-v8a/libvvtts_core.so`（已 gitignore）；CI 每次重新生成。
 
 >
 
