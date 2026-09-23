@@ -671,14 +671,20 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this)
                     .setTitle(getString(R.string.language_dlg_title))
                     .setItems(items) { _,which ->
-                        if (which == 0) {
-                            LanguageDetector.setDetectionEnabled(true)
-                        } else {
-                            LanguageDetector.setDetectionEnabled(false)
-                            LanguageDetector.setFixedDialect(dialects[which])
-                        }
-                        saveLanguageSettings()
-                        refreshLangButton(langBtn!!)
+                    if (which == 0) {
+                        LanguageDetector.setDetectionEnabled(true)
+                        // Auto: the spoken-voice locale follows the detected text;
+                        // clear any stale zh voice pin (else a previous "Voice: Chinese" pick would force every utterance to Chinese).
+                        voiceConfig!!.setVoice("en-US")
+                        voiceConfig!!.setAutoDetect(true)
+                    } else {
+                        LanguageDetector.setDetectionEnabled(false)
+                        LanguageDetector.setFixedDialect(dialects[which)(
+                        voiceConfig!!.setAutoDetect(false)
+                    }
+                    saveLanguageSettings()
+                    refreshLangButton(langBtn!!)
+                    voiceBtn?.let { refreshVoiceButton(it) }
                     }
                     .setNegativeButton(getString(R.string.cancel), null)
                     .show()

@@ -133,6 +133,7 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         var text: String? = request.text
+        Log.i("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 
@@ -144,8 +145,14 @@ class VvTtsService : TextToSpeechService() {
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
+        // A zh voice from the *system picker* always pins zh (explicit user
+        // choice(;the app's own "Voice" row only pins zh when detection is OFF —
+        // with Auto ON the spoken-voice locale must follow the detected text,
+        // otherwise choosing "Auto detect" after a zh voice pick would read
+        // every language as Chinese (the reported bug).
+        val autoDetect = LanguageDetector.isDetectionEnabled()
         val zhRequested = (voiceName != null && voiceName.lowercase().startsWith("zh"))
-            || (voiceName.isNullOrBlank() && appVoice != null && appVoice.lowercase().startsWith("zh"))
+            || (voiceName.isNullOrBlank() && !autoDetect && appVoice != null && appVoice.lowercase().startsWith("zh"))
         if (zhRequested) {
 
             LanguageDetector.setDefaultLanguage(EloquenceEngine.DIALECT_ZH_CN)
