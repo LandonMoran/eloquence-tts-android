@@ -190,7 +190,15 @@ class LanguageDetector {
                 }
             }
             // 至少要有一个语言，否则 Lingua build 会失败
-            if (filtered.isEmpty()) filtered.add(Language.ENGLISH)
+            // Lingua requires >=2 languages to build. The default whitelist
+            // {en,ja,zh} yields only ENGLISH (ja/zh are CJK-excluded), so a
+            // fresh install would throw every init into the // catch above.
+            // Top up neutrally; downstream gating (detectLatin) re-checks the
+            // real whitelist per segment, so fillers never leak through.
+            if (filtered.size() < 2) {
+                if (!filtered.contains(Language.ENGLISH)) filtered.add(Language.ENGLISH)
+                if (filtered.size() < 2) filtered.add(Language.GERMAN)
+            }
             return filtered
         }
 
