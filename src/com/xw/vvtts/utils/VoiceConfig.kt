@@ -27,9 +27,6 @@ class VoiceConfig(context: Context) {
         get() = prefs.getInt(KEY_PITCH, 50)
     val volume: Int
         get() = prefs.getInt(KEY_VOLUME, 100)
-    /** DSP mode: 0 = standard (raw engine output), 1 = enhanced (de-hiss + limiter). Default: standard. */
-    val dspMode: Int
-        get() = prefs.getInt(KEY_DSP_MODE, 0)
     val isAutoDetect: Boolean
         get() = prefs.getBoolean(KEY_AUTO_DETECT, true)
 
@@ -37,7 +34,6 @@ class VoiceConfig(context: Context) {
     fun setRate(r: Int) { prefs.edit().putInt(KEY_RATE, r).apply() }
     fun setPitch(p: Int) { prefs.edit().putInt(KEY_PITCH, p).apply() }
     fun setVolume(v: Int) { prefs.edit().putInt(KEY_VOLUME, v).apply() }
-    fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).apply() }
     fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).apply() }
 
     fun setPunctEnabled(b: Boolean) { prefs.edit().putBoolean(KEY_PUNCT, b).apply() }
@@ -90,7 +86,6 @@ class VoiceConfig(context: Context) {
         const val KEY_RATE = "rate"
         const val KEY_PITCH = "pitch"
         const val KEY_VOLUME = "volume"
-        const val KEY_DSP_MODE = "dsp_mode"
         const val KEY_AUTO_DETECT = "auto_detect"
         const val KEY_PUNCT = "speak_punctuation"
         const val KEY_DICT = "user_dict"

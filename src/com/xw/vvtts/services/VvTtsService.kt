@@ -30,7 +30,6 @@ class VvTtsService : TextToSpeechService() {
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
         engine = EloquenceEngine(this)
-        engine!!.setVoiceProfile(voiceProfile)
         val ok = engine!!.initialize()
         // Restore the language-detection settings
         restoreLanguageSettings()
@@ -96,19 +95,19 @@ class VvTtsService : TextToSpeechService() {
         voices.add(Voice("es-MX", Locale("es", "MX"),
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("it-IT", Locale.ITALY,
-                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
-                voices.add(Voice("ja-JP", Locale.JAPAN,
-                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
-                voices.add(Voice("pl-PL", Locale("pl", "PL"),
-                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
-                voices.add(Voice("pt-BR", Locale("pt", "BR"),
-                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
-                voices.add(Voice("fi-FI", Locale("fi", "FI"),
-                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
-                voices.add(Voice("zh-CN", Locale.SIMPLIFIED_CHINESE,
-                    Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false,null))
-                // Only advertise dialects actually linked in this build (build_native.sh LANGS)。
-                return voices
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        voices.add(Voice("ja-JP", Locale.JAPAN,
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        voices.add(Voice("pl-PL", Locale("pl", "PL"),
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        voices.add(Voice("pt-BR", Locale("pt", "BR"),
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        voices.add(Voice("fi-FI", Locale("fi", "FI"),
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        voices.add(Voice("zh-CN", Locale("zh", "CN"),
+            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+        // Only advertise dialects actually linked in this build (build_native.sh LANGS)。
+        return voices
     }
 
     override fun onIsLanguageAvailable(language: String, country: String, variant: String): Int {
@@ -137,9 +136,9 @@ class VvTtsService : TextToSpeechService() {
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 
-        // A zh selection is honored per-utterance (and reverted in finally): zh was
-        // never advertised, so the picker could not offer it — that is why changing
-        // the language always fell back to English。
+        // A zh picker row iso honored per-utterance (and reverted in finally):the
+                // engine speaks zh via its oracle bank, so a zh voice must be pinned for
+                // that utterance;the app's own detection/default stays untouched。
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedLangs = LanguageDetector.getEnabledLanguages()
         val savedFixed = LanguageDetector.getFixedDialect()
@@ -165,29 +164,25 @@ class VvTtsService : TextToSpeechService() {
             val pv = voiceName ?: appVoice
 
             if (pv != null) {
-                val pd = VoiceConfig.findLang(pv(.eciDialect
+                val pd = VoiceConfig.findLang(pv).eciDialect
 
                 if (pd != 0L) {
-                    LanguageDetector.setDefaultLanguage(pd.toInt((
-                    if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt((
+                    LanguageDetector.setDefaultLanguage(pd.toInt())
+                    if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt())
                 }
             }
         }
 
         try {
             if (text == null || text.isEmpty()) {
-                callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
-                callback.done()
-                return
+                return  // finally emits the start+done pair for an empty utterance
             }
 
             // emoji -> we ask the speech engine to say what the symbol means.
             // The ECI engine has zero emoji support, so expand before anything else.
             text = EmojiExpander.expand(text!!)
             if (text == null || text.isEmpty()) {
-                callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
-                callback.done()
-                return
+                return  // finally emits the start+done pair for an empty utterance
             }
 
             // Auto-detect + chunk
@@ -196,8 +191,7 @@ class VvTtsService : TextToSpeechService() {
             var started = false
 
             if (engine == null || !engine!!.isInitialized()) {
-                callback.done()
-                return
+                return  // finally emits the start+done pair for an uninitialized engine
             }
 
             val preset = if (voiceProfile != null) voiceProfile!!.preset else 1
@@ -213,10 +207,10 @@ class VvTtsService : TextToSpeechService() {
             var sysPitch = request.pitch
             if (sysRate <= 0) sysRate = 100
             if (sysPitch <= 0) sysPitch = 100
-            val rate = clamp(Math.round(voiceConfig!!.rate * (sysRate / 100.0f)).toInt(,1,300)
+            val rate = clamp(Math.round(voiceConfig!!.rate * (sysRate / 100.0f)).toInt(),1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
-            val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100( + (sysPitch - 100) / 2, 0, 100)
+            val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0, 100)
             val volume = voiceConfig!!.volume
 
             for (seg in segments) {
@@ -247,15 +241,21 @@ class VvTtsService : TextToSpeechService() {
         } catch (e: Throwable) {
             Log.e(TAG, "onSynthesizeText failed", e)
         } finally {
-            // Revert the per-utterance override (preserve app-pref state)。
-            LanguageDetector.setDefaultLanguage(savedDefault)
-            LanguageDetector.setEnabledLanguages(savedLangs)
-            LanguageDetector.setFixedDialect(savedFixed)
-            try {
-                callback.done()
-            } catch (ignore: Throwable) {
-            }
-        }
+                    // Revert the per-utterance override (preserve app-pref state)。
+                    LanguageDetector.setDefaultLanguage(savedDefault)
+                    LanguageDetector.setEnabledLanguages(savedLangs)
+                    LanguageDetector.setFixedDialect(savedFixed)
+                    try {
+                        // Playback contract: start() must precede done((),the framework throws
+                        // otherwise. One pair per utterance — every path funnels here, so
+                        // all silent/empty/early returns get the pair exactly once。
+                        if (!started) {
+                            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+                        }
+                        callback.done()
+                    } catch (ignore: Throwable) {
+                    }
+                }
     }
 
     private fun isCjkDialect(dialect: Int): Boolean {

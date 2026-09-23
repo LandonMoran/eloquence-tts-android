@@ -43,6 +43,7 @@
     <string name="dict_delete">Delete</string>
     <string name="dict_done">Done</string>
     <string name="dict_clear_all">Clear all</string>
+    <string name="dict_clear_confirm">This permanently deletes all dictionary entries.</string>
     <string name="dict_imported">Imported: %1$d words</string>
     <string name="dict_exported">Dictionary exported</string>
     <string name="reset_button">Reset defaults</string>
@@ -50,10 +51,6 @@
     <string name="reset_msg">Reset voice, speed, pitch, volume, language detection, dictionary and punctuation to defaults?</string>
     <string name="reset_confirm">Reset</string>
     <string name="reset_done">Defaults restored</string>
-    <string name="audio_quality_fmt">Audio quality: %1$s</string>
-    <string name="dsp_title">Audio quality mode</string>
-    <string name="dsp_standard">Standard (original tone)</string>
-    <string name="dsp_enhanced">Enhanced (de-hiss)</string>
 
     <!-- Voice names -->
     <string name="voice_reed">Reed</string>
@@ -76,7 +73,6 @@
     <string name="sec_speech">Speech</string>
     <string name="sec_reading">Reading</string>
     <string name="sec_langdetect">Language detection</string>
-    <string name="sec_quality">Audio quality</string>
     <string name="sec_dictionary">Dictionary</string>
     <string name="sec_maintenance">Maintenance</string>
     <string name="sec_about">About</string>
@@ -139,6 +135,13 @@
     <string name="spoken_en">Spoken (English)</string>
     <string name="voice_dlg_title">Voice</string>
     <string name="language_dlg_title">Language</string>
+
+    <!-- Tabs -->
+    <string name="tab_voice">Voice</string>
+    <string name="tab_speech">Speech</string>
+    <string name="tab_reading">Reading</string>
+    <string name="tab_detection">Detection</string>
+    <string name="tab_tools">Tools</string>
 
     <!-- About -->
     <string name="about_title">About Eloquence TTS</string>

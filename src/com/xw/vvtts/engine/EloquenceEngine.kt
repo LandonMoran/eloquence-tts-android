@@ -190,7 +190,7 @@ class EloquenceEngine(context: Context) {
         }
 
         @JvmStatic
-        fun applyVolume(pcm: ShortArray, volume: Int, mode: Int): ShortArray {
+        fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
             var volume = volume
             if (volume < 0) volume = 0
             if (volume > 100) volume = 100
@@ -200,36 +200,17 @@ class EloquenceEngine(context: Context) {
             // at the default setting of 100. volume/100.0 is clean unity at default.
 
             val gain = volume / 100.0f
-
-            // Mode 0 (standard, default): original engine output, gain only.
-            // No filtering or limiter -- preserves the raw Eloquence voice character.
-            if (mode <= 0) {
-                val out = ShortArray(pcm.size)
-                for (i in pcm.indices) {
-                    val s = (pcm[i] * gain).toInt()
-                    out[i] = if (s > 32767) 32767.toShort()
-                    else if (s < -32768) (-32768).toShort()
-                    else s.toShort()
-                }
-                return out
-            }
-
-            // Mode 1 (enhanced): de-hiss DSP. A one-pole LPF (a=0.87 -> ~3.7 kHz
-            // at 11,025 Hz) rolls off the ringing top band, and a tanh soft ceiling
-            // (-2.7 dBFS) guarantees headroom so peaks never hard-clip into harshness.
-            val a = 0.87f
-            val lim = 24000.0f
-            var lp = 0.0f
             val out = ShortArray(pcm.size)
             for (i in pcm.indices) {
-                val s = pcm[i] * gain
-                lp += a * (s - lp)
-                val o = lim * kotlin.math.tanh(lp / lim)
-                out[i] = o.toInt().toShort()
+                val s = (pcm[i] * gain).toInt()
+                out[i] = if (s > 32767) 32767.toShort()
+                else if (s < -32768) (-32768).toShort()
+                else s.toShort()
             }
             return out
         }
     }
+
 
     /** Preprocess text before synthesis: user dictionary + punctuation mode. */
     private fun preprocess(text: String, dialect: Int): String {
@@ -433,8 +414,7 @@ class EloquenceEngine(context: Context) {
             var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
-            val dspMode = VoiceConfig(appContext).dspMode
-            if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume, dspMode)
+            if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)
             pcm
         }
     }

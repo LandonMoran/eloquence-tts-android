@@ -138,13 +138,14 @@ void rz_removeUnusedByCode(RomanizerManager *m, uint8_t f, uint8_t d);
 
 /* ---- which languages have a romanizer at all ------------------------- */
 
-/* Five families do, and only some of their dialects. Everything else is
-   spoken as it is written. */
-int rz_isRomExist(int32_t family, int32_t dialect)
+/* Four families do,and only some of their dialects. Everything else is
+   spoken as it is written. (ja-JP had a romanizer slot, but this tree has
+   no rom/jajp module -- so it stays spoken-as-written.) */
+int rz_isRomExist(int32_t family,int32_t dialect)
 {
     switch (family) {
     case 6:  return dialect == 0 || dialect == 1;
-    case 8:  return dialect == 0;
+    case 8: return 0; /* no rom/jajp module in this tree */
     case 10: return dialect == 0;
     case 11: return dialect == 0 || dialect == 1;
     case 16: return dialect == 0;

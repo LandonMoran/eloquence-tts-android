@@ -166,13 +166,9 @@ ECIAPI int ECICALL eciCopyVoice(ECIHand handle, int from, int to)
     return 1;
 }
 
-/* Host-only stub: the jajp rom module (rom/jajp, which defines jp_rom_new)
- * is not in this tree, so host probes link this in place of it. Android
- * builds must NOT define EVV_ROM_JAJP either (see native/openevv/Makefile):
- * a link-time reference to jp_rom_new is an undefined symbol at dlopen and
- * the APK dies with UnsatisfiedLinkError before the engine ever runs. */
-#if !defined(__ANDROID__)
-#include <stddef.h>
-typedef struct EvvRom EvvRom;
-EvvRom *jp_rom_new(const char *dir) { (void)dir; return NULL; }
-#endif
+/* Japanese is a real member of the engine now: the romanizer lives in
+ * rom/jajp ( 38 tracked files( and lands in the archive whenever jajp
+ * is in the build. The Makefile pins it through -DEVV_ROM_JAJP when jajp
+ * is in TAGS, so eci_romedll.c links jp_rom_new out of the archive -- no
+ * stub, no weak symbol, no dlopen hazard. Host probes link cli/evv.c
+ * against the archive directly and never see this file. */

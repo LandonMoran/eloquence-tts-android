@@ -390,9 +390,12 @@ class LanguageDetector {
                 // spaces/punct:follow the previous segment
                 dialect = fallbackDialect
             } else if (type == 5) {
-                // digit:default set -> use it;unset -> follow previous segment
-                val dl = resolveDefaultLanguage()
-                dialect = if (dl >= 0) dl else fallbackDialect
+                // Digits with detection on follow the surrounding language (numbers,dates,
+                // years in names and sentences belong to the neighboring text, never to a
+                // stale default like zh). The fixed-language path (detection off) never
+                // reaches here: segment() returns the whole run with the fixed dialect directly.
+
+                dialect = fallbackDialect
             } else {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
