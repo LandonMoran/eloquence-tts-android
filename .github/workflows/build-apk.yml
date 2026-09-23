@@ -1,4 +1,4 @@
-name: Emulator Crash Test (test button path)
+name: Build APK (x86_64)
 
 on:
   workflow_dispatch:
@@ -39,8 +39,6 @@ jobs:
           export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
           yes | sdk --licenses > /dev/null || true
           sdk "platform-tools" "platforms;android-34" "build-tools;35.0.0" "ndk;26.3.11579264"
-          sdk "emulator" "system-images;android-34;google_apis;x86_64"
-          ls "$SDK/emulator/emulator" "$SDK/system-images/android-34/google_apis/x86_64"
 
       - name: Fetch Kotlin compiler jars
         run: |
@@ -88,43 +86,4 @@ jobs:
         with:
           name: vvttts-apk
           path: vvttts_signed.apk
-          if-no-files-found: warn
-
-      - name: Boot emulator
-        run: |
-          SDK="$HOME/android-sdk"
-          echo "no" | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd \
-            -n test -k "system-images;android-34;google_apis;x86_64" --device "pixel_2" --force
-          "$SDK/emulator/emulator" -avd test -no-window -no-audio -no-snapshot \
-            -gpu swiftshader_indirect -no-boot-anim -memory 3072 &
-          "$SDK/platform-tools/adb" wait-for-device
-          BOOT_DONE=0
-          for i in $(seq 1 900); do
-            BOOT="$("$SDK/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-            if [ "$BOOT" = "1" ]; then BOOT_DONE=1; echo "BOOT_COMPLETED after ${i}x2s"; break; fi
-            sleep 2
-          done
-          if [ "$BOOT_DONE" != "1" ]; then echo "EMULATOR_BOOT_TIMEOUT"; exit 1; fi
-          "$SDK/platform-tools/adb" shell input keyevent 82
-          echo "BOOT_DONE"
-
-      - name: Install and trigger test button path (autotest hook)
-        run: |
-          SDK="$HOME/android-sdk"
-          "$SDK/platform-tools/adb" install -r vvtts_signed.apk
-          "$SDK/platform-tools/adb" logcat -c
-          "$SDK/platform-tools/adb" shell am start -n com.xw.vvtts/.ui.SettingsActivity --es autotest chinese
-          sleep 120
-          "$SDK/platform-tools/adb" shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" || true
-          "$SDK/platform-tools/adb" logcat -d -v threadtime > logcat-full.txt || true
-          echo "=== FATAL / CRASH LINES ===="
-          grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process com.xw.vvtts" logcat-full.txt | head -40 || echo "NO_CRASH_MARKERS"
-          echo "=== TAIL ===="
-          tail -25 logcat-full.txt
-
-      - name: Upload logcat
-        uses: actions/upload-artifact@v4
-        with:
-          name: emulator-logcat
-          path: logcat-full.txt
           if-no-files-found: warn
