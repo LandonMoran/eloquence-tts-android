@@ -83,6 +83,13 @@ jobs:
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
           ABI: x86_64
 
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vvttts-apk
+          path: vvttts_signed.apk
+          if-no-files-found: warn
+
       - name: Boot emulator
         run: |
           SDK="$HOME/android-sdk"
@@ -120,11 +127,4 @@ jobs:
         with:
           name: emulator-logcat
           path: logcat-full.txt
-          if-no-files-found: warn
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: vvttts-apk
-          path: vvttts_signed.apk
           if-no-files-found: warn
