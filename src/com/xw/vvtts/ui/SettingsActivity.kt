@@ -679,7 +679,7 @@ class SettingsActivity : Activity() {
                         voiceConfig!!.setAutoDetect(true)
                     } else {
                         LanguageDetector.setDetectionEnabled(false)
-                        LanguageDetector.setFixedDialect(dialects[which)(
+                        LanguageDetector.setFixedDialect(dialects[which])
                         voiceConfig!!.setAutoDetect(false)
                     }
                     saveLanguageSettings()
