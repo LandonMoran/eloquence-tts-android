@@ -17,7 +17,7 @@ import com.xw.vvtts.utils.VoiceProfile
 
 /**
  * Voice profile picker.
- * Tap a voice to select and return;; long-press opens the edit dialog (custom voice tuning).
+ * Tap a voice to select and return.
  */
 class VoiceProfileActivity : Activity() {
     private var voiceProfile: VoiceProfile? = null

@@ -80,7 +80,7 @@
     <!-- Row labels -->
     <string name="voice_fmt">Language: %1$s</string>
     <string name="lang_fmt">Detection: %1$s</string>
-    <string name="lang_detect_button">Language detection settings</string>
+    <string name="lang_detect_button">Auto-detection options ›</string>
 
     <!-- Language detection dialogs -->
     <string name="lang_detect_title">Language detection settings</string>

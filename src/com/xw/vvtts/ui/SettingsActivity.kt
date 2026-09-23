@@ -115,6 +115,11 @@ class SettingsActivity : Activity() {
                 tabGroup.setOnCheckedChangeListener { _, checkedId ->
                     for ((i in allPanels.indices)) {
                         allPanels[i].visibility = if (tabIds[i] == checkedId) View.VISIBLE else View.GONE
+                val activeIndex = allPanels.indices.firstOrNull { tabIds[it] == checkedId }
+                if (activeIndex != null) {
+                    val names = arrayOf("Voice settings", "Speech settings", "Reading settings", "Detection settings", "Tools")
+                    allPanels[activeIndex].announceForAccessibility(names[activeIndex])
+                }
                     }
                 }
                 // ---- Voice tab: preset voice + spoken voice + test ----
@@ -129,6 +134,10 @@ class SettingsActivity : Activity() {
                 voiceBtn = voiceBtnLocal
                 voiceBtnLocal.setOnClickListener { showVoiceDialog() };
                 refreshVoiceButton(voiceBtnLocal)
+                val langBtnLocal = addRow(this, panelVoice)
+                langBtn = langBtnLocal
+                langBtnLocal.setOnClickListener { showLanguageDialog() }
+                refreshLangButton(langBtnLocal)
                 addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
                 // ---- Speech tab: rate/pitch/volume ----
                 addSectionHeader(panelSpeech, R.string.sec_speech)
@@ -151,11 +160,6 @@ class SettingsActivity : Activity() {
                 punctBtnLocal.setOnClickListener { showPunctuationDialog() };
                 refreshPunctButton(punctBtnLocal)
                 // ---- Detection tab: language picker + detection settings ----
-                addSectionHeader(panelDetection, R.string.sec_langdetect)
-                val langBtnLocal = addRow(this, panelDetection)
-                langBtn = langBtnLocal
-                langBtnLocal.setOnClickListener { showLanguageDialog() };
-                refreshLangButton(langBtnLocal)
                 val langDetectBtn = addRow(this, panelDetection)
                 langDetectBtn.text = getString(R.string.lang_detect_button)
                 langDetectBtn.setOnClickListener { showDetectionSettingsDialog() };
