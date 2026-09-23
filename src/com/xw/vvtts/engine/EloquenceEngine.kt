@@ -21,7 +21,7 @@ class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
 
     private var voiceProfile: VoiceProfile? = null
-    private var core: VvttsCore? = null          // 自研桥接（多语言）
+    private var core: VvttsCore? = null          // In-house bridge (multi-language
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
     private var initialized = false
@@ -39,15 +39,15 @@ class EloquenceEngine(context: Context) {
     @Volatile private var warmedUp = false
     @Volatile private var pendingSapiMark = ""
 
-    /** 设置角色配置来源，合成时优先读取其自定义覆盖 */
+    /** Voice-profile source: custom overrides win during synthesis */
     fun setVoiceProfile(vp: VoiceProfile?) {
         this.voiceProfile = vp
     }
 
     private fun buildEloquenceConfig(libraryDir: File): String {
         val sb = StringBuilder()
-        // 14 语言 + 4 CJK romanizer（苹果 tvOS 18.2 完整引擎）
-        // [段号] dialect -> lib<name>.so，Path_Rom 仅 CJK
+        // 14 languages + 4 CJK romanizers (full Apple tvOS 18.2 engine)
+        // [segment] dialect -> lib<name>.so; Path_Rom is CJK-only
         val langs = arrayOf(
             arrayOf("1.0", "libenu.so", null),           // en-US
             arrayOf("1.1", "libeng.so", null),           // en-GB
@@ -76,12 +76,12 @@ class EloquenceEngine(context: Context) {
             sb.append("Version=6.1\n\n")
         }
 
-        // 标准 voice 表——中文库 register_voices 依赖此段初始化 voice 表
+        // Standard voice table — the Chinese library's register_voices relies on this to init voices
         sb.append("Voice1=0 50 65 30 0 0 50 92\n")    // Reed
         sb.append("Voice2=0 50 81 50 0 0 50 95\n")    // Shelley
         sb.append("Voice3=0 50 93 50 0 0 22 95\n")    // Sandy
         sb.append("Voice4=0 50 56 0 0 0 86 93\n")     // Rocko
-        sb.append("Voice5=0 50 65 30 0 0 50 92\n")    // 备用
+        sb.append("Voice5=0 50 65 30 0 0 50 92\n")    // fallback
         sb.append("Voice6=0 50 89 40 0 0 56 95\n")    // Flo
         sb.append("Voice7=0 50 68 40 3 0 45 90\n")    // Grandma
         sb.append("Voice8=0 50 61 20 18 0 30 90\n")   // Grandpa
@@ -92,8 +92,8 @@ class EloquenceEngine(context: Context) {
     @Synchronized
     fun initialize(): Boolean {
         if (initialized) return true
-        // 新苹果引擎：不再依赖广荣 JNI（libeloquence_jni.so 已废弃）。
-        // 合成走 VvttsCore 自研桥接（dlopen 苹果 libeci.so），这里只需预写 eci.ini。
+        // New Apple engine: no longer uses the legacy Guangrong JNI (libeloquence_jni.so is deprecated)
+        // Synthesis runs through VvtttsCore's in-house bridge (dlopen Apple libeci.so); we just pre-write eci.ini here.
         try {
             val info: ApplicationInfo = appContext.applicationInfo
             val libDir = info.nativeLibraryDir
@@ -106,7 +106,7 @@ class EloquenceEngine(context: Context) {
             val config = buildEloquenceConfig(File(libDir))
             FileWriter(File(configDir, "eci.ini")).use { fw -> fw.write(config) }
             initialized = true
-            Log.i(TAG, "Eloquence engine (apple-eloquence-elf) ready, 14 语言")
+            Log.i(TAG, "Eloquence engine (apple-eloquence-elf) ready, 14 languages")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "init failed", e)
@@ -114,7 +114,7 @@ class EloquenceEngine(context: Context) {
         }
     }
 
-    // 广荣 mapPitch: <=50 -> p*69/50; >50 -> (p-50)*31/50+69
+    // Guangrong mapPitch: p<=50 -> p*69/50; p>50 ->(p-50)*31/50+69
     private fun mapPitch(pitch: Int): Int {
         var pitch = pitch
         if (pitch < 0) pitch = 0
@@ -133,7 +133,7 @@ class EloquenceEngine(context: Context) {
     }
 
     fun setProsody(rate: Int, pitch: Int, volume: Int, rateMultiplier: Float) {
-        // 旧广荣通路已废弃，韵律由 synthesizeCore 内部 setParam 处理
+        // Legacy Guangrong routing dropped; prosody is handled by synthesizeCore's internal setParam
         lastNativePitch = mapPitch(pitch)
     }
 
@@ -143,20 +143,20 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
         const val DIALECT_EN_GB = 0x10001    // [1.1] eng
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
-        const val DIALECT_ES_MX = 0x20002    // [2.2] esmx（真实墨西哥西语模块）
+        const val DIALECT_ES_MX = 0x20002    // [2.2] esmx (real Mexican Spanish module
         const val DIALECT_FR_FR = 0x30000    // [3.0] fra
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
         const val DIALECT_IT_IT = 0x50000    // [5.0] ita
-        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs —— 已链接 lang/chs，合成走 oracle 音库（见 SHIPPED_DIALECTS）
+        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs — linked against lang/chs; synthesis via the oracle voice bank (see SHIPPED_DIALECTS)
         const val DIALECT_ZH_TW = 0x60001    // [6.1] cht
         const val DIALECT_PT_BR = 0x70000    // [7.0] ptb
         const val DIALECT_JA_JP = 0x80000    // [8.0] jpn
         const val DIALECT_FI_FI = 0x90000    // [9.0] fin
         const val DIALECT_KO_KR = 0xA0000    // [10.0] kor
-        // 本构建实际链接的语言模块（与 build_native.sh LANGS 一致）。
-        // chs 已链接（合成 = oracle 音库）；zh-TW(cht)/ko(kor) 无模块，
-        // native 侧会拒绝，这里先拦截以免依赖 native 拒绝对话。
+        // Language modules actually linked in this build (matches build_native.sh LANGS)
+        // chs is linked (synthesis = oracle voice bank); zh-TW (cht)/ko (kor) have no module,
+        // the native side would reject them; we intercept first so nothing depends on that rejection.
         val SHIPPED_DIALECTS: Set<Long> = setOf(
             0x10000L, 0x10001L,             // enus, engb
             0x20000L, 0x20001L, 0x20002L,    // eses, esus, esmx
@@ -170,15 +170,15 @@ class EloquenceEngine(context: Context) {
             0x60000L,                       // chs
         )
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
-        // 引擎真实输出采样率：eci.ini 的 en 库固定 11025Hz，运行时不可改
+        // Engine's real output rate: the en library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
         const val ENGINE_SAMPLE_RATE = 11025
-        // 输出采样率 = 引擎原生 11025（实测音色最自然，不做重采样）
+        // Output rate = engine-native  11025 (sounds most natural in practice; no resampling(
         const val SAMPLE_RATE = 11025
 
         private val CHINESE_CHARSET: Charset = Charset.forName("GB18030")
         private val ENGLISH_CHARSET: Charset = Charset.forName("windows-1252")
 
-        /** 方言 → 文本编码（CJK 用特定编码，西文用 windows-1252） */
+        /** Dialect -> text encoding (CJK uses its own encodings; Western uses windows-1252) */
         private fun charsetForDialect(dialect: Int): Charset {
             return when (dialect) {
                 DIALECT_ZH_CN -> Charset.forName("GB18030")
@@ -275,7 +275,7 @@ class EloquenceEngine(context: Context) {
     }
 
     fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
-        // 旧广荣通路已废弃，转发到 synthesizeCore（苹果引擎）
+        // Legacy Guangrong routing dropped; forwards to synthesizeCore (Apple engine(
         return synthesizeCore(text, dialect, volume, 1, 50)
     }
 
@@ -298,23 +298,23 @@ class EloquenceEngine(context: Context) {
     fun getNativeHandle(): Long = nativeHandle
     fun getSampleRate(): Int = SAMPLE_RATE
 
-    // ===== 自研桥接（唯一合成通道）=====
+        // ===== In-house bridge (the only synthesis path) =====
     private val coreHandles = HashMap<Int, Long>()
-    // 参数注入 + 合成 的串行锁：并发调用时避免多个线程同时 setVoiceParam/synth 互相覆盖
+        // Serial lock for param injection + synthesis: prevents concurrent threads stomping each other's setVoiceParam/synth calls
     private val paramSynthLock = ReentrantLock()
-    private var lastSynthRate = 11025  // 最近一次输出的采样率（WAV 头解析）
+    private var lastSynthRate = 11025  // sample rate of the most recent output (parsed from the WAV header
     fun getCoreSampleRate(): Int = lastSynthRate
 
-    /** 当前选择的角色预设（1-8）与自定义模式标记 */
+    /** Currently selected voice preset (1-8( and custom-mode flag */
     @Volatile private var voicePreset = 1
     @Volatile private var voiceCustom = false
     @Volatile private var customPitch = 50
 
     /**
-     * 苹果 Kona CSV 反引号 annotation。
-     * `vN=标准voice编号 `vs=语速(0-100) `vv=音量 `vy=vocalTract
+     * Apple Kona CSV backtick annotation.
+     * `vN=standard voice number` vs=speed (0-100)` vv=volume` vy=vocalTract
      * `vb=breathiness `vh=headSize `vr=roughness `vf=pitchFluctuation `vb?=pitch
-     * 数值全部来自 KonaVoicePresets.csv（Reed=1 Shelley=2 Sandy=3 Rocko=4 Flo=6 Grandma=7 Grandpa=8 Eddy=9）
+     * All values come from KonaVoicePresets.csv (Reed=1 Shelley=2 Sandy=3 Rocko=4 Flo=6 Grandma=7 Grandpa=8 Eddy=9)
      */
     private fun presetAnnotation(n: Int): String {
         return when (n) {
@@ -331,8 +331,8 @@ class EloquenceEngine(context: Context) {
     }
 
     /**
-     * 用自研桥接合成（苹果完整引擎，14 语言全支持）。
-     * 角色由 presetId 驱动（1-8 苹果预设），走 eciSetStandardVoice2。
+     * Synthesis runs on the in-house bridge (full Apple engine, all 14 languages supported().
+     * Voice is driven by presetId (1-8 Apple presets(, going through eciSetStandardVoice2.
      */
     @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int): ShortArray? {
@@ -341,23 +341,23 @@ class EloquenceEngine(context: Context) {
 
     @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int): ShortArray? {
-        // 默认语速 100%（中性）
+        // Default speed 100% (neutral(
         return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
     }
 
     @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? {
         return paramSynthLock.withLock {
-            // 本构建未链接的语言模块（zh/pt/fi/ko/zh-TW）直接拒绝。
-            // native 侧也会拒绝，这里拦截是让 TTS 服务拿到干净的 null（Android
-            // 自动 fallback 其它引擎），而不是让任何路径靠近会把进程杀掉的 eciNewEx。
+        // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
+            //the native side would reject them; we intercept so the TTS service gets a clean null
+            //(Android auto-fallbacks to other engines(, keeping every path away from the crashy eciNewEx.
             if (!isShippedDialect(dialect)) {
                 Log.e(TAG, "dialect not in this build: 0x" + Integer.toHexString(dialect))
                 return@withLock null
             }
             if (core == null) core = VvttsCore()
 
-            // session 懒加载（按方言缓存）
+            // session lazy-loading (cached per dialect(
             var handle = coreHandles[dialect] ?: 0L
             if (handle == 0L) {
                 val info: ApplicationInfo = appContext.applicationInfo
@@ -377,44 +377,44 @@ class EloquenceEngine(context: Context) {
                 coreHandles[dialect] = handle
             }
 
-            // === 完整参数适配（苹果 Kona CSV 权威数据）===
-            // 注意：eciSetStandardVoice2 会崩（ETIEvent::wait，libeci+0x149b4），
-            // 即使 ctype 修复后也一样——这是独立的 ETIEvent 生命周期问题。
-            // 所以角色切换不走 eciSetStandardVoice，而是靠下面 8 个 eciSetVoiceParam
-            // 完整注入角色音色（headSize/pitchBase/pitchFluc/rough/breath/speed/vol）。
+            // === Full param adaptation (Apple Kona CSV is the authoritative source).
+            // Caution: eciSetStandardVoice2 crashes (ETIEvent::wait, libeci+0x149b4).
+            // even after the ctype fix — this is a separate ETIEvent lifecycle issue.
+            // So voice switching avoids eciSetStandardVoice2 and relies on the 8 eciSetVoiceParam calls below.
+            // to fully inject the voice (headSize/pitchBase/pitchFluc/rough/breath/speed/vol.
             val voice: KonaVoice.Voice = KonaVoice.byPreset(presetId)
 
-            // 注入该角色的 8 个 ECI voice 参数（gender=0 head=1 pitchBase=2
-            // pitchFluc=3 rough=4 breath=5 speed=6 vol=7）
+            // Inject this voice's 8 ECI voice params (gender=0 head=1 pitchBase=2
+            // pitchFluc=3 rough=4 breath=5 speed=6 vol=7.
             val vp = voiceProfile
             for (p in 0..7) {
-                // 优先用自定义覆盖，否则用 KonaVoice 默认
+            // Custom overrides first; otherwise KonaVoice defaults
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
                 VvttsCore.setVoiceParam(handle, 0, p, value)
-                // 静默失败：setVoiceParam 偶发 ret<0 不影响合成，不打日志避免刷屏
+            // Fail silent: occasional ret<0 from setVoiceParam doesn't affect synthesis; no logging to avoid spam
             }
 
-            // 用户 UI 参数
-            // 音调：UI 0-100 → 苹果 pitchBase（以角色 pitchBase 为基线的 ±30 范围）
+            // User UI params
+            // Pitch: UI 0-100 -> Apple pitchBase (±30 around the voice's own pitchBase
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
 
-            // 语速：eciSpeed 语音参数（voice param 6，范围 0..250，50=正常语速，
-                        // 与上方 8 参数注入中的 CSV speed 一致）。之前用 eciSampleRate
-                        // （env[5]）重采样充当语速，22050/32000/44100 档把 11 kHz 的
-                        // LPC 声线强行 sinc 拉高，听感全是“滋滋”的静电破音——已废弃。
-                        // 输出采样率固定在本机原生 11025，引擎自己保持音高不变地变速。
+            // Speed: eciSpeed voice param (voice param 6, range 0..250, 50=normal,
+                        // matching the CSV speed in the 8-param injection above; previously eciSampleRate
+                        // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
+                        // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
+                        // Output rate fixed at the device-native 11025;the engine itself changes speed without pitch shift.От
                         val speedVal = Math.round(50.0f * uiRate / 100.0f)
-                            .toInt().coerceIn(5, 250)   // eciSpeed：0..250（引擎上限）
+                            .toInt().coerceIn(5, 250)   // eciSpeed: 0..250 (engine ceiling
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-                        VvttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 → 恒 11025 Hz
+                        VvttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 -> fixed  11025 Hz
                         lastSynthRate = 11025
 
 
-            // 音量：CSV 预置 volume + 不做二次 applyVolume 前先设 voice param
+            // Volume: CSV preset volume; no second applyVolume; set the voice param first
             VvttsCore.setVoiceParam(handle, 0, 7, voice.vol)   // eciVolume
 
-            // 编码
+            // Encoding
             val cs = charsetForDialect(dialect)
             val encoded: ByteArray
             try {
@@ -439,22 +439,22 @@ class EloquenceEngine(context: Context) {
         }
     }
 
-    /** UI 音调 0-100 → 苹果 pitchBase（以当前角色 pitchBase 为基线的 ±30 范围） */
+    /** UI pitch 0-100 -> Apple pitchBase (±30 around the current voice's pitchBase) */
     private fun mapUiPitchToKona(uiPitch: Int, basePitch: Int): Int {
-        // uiPitch 50 = 中性（用角色默认 pitchBase）；0 = 低 30；100 = 高 30
+        // uiPitch 50 = neutral (voice's default pitchBase(; 0 = -30; 100 = +30
         val offset = uiPitch - 50
         val pitch = basePitch + Math.round(offset * 0.6).toInt()
         return coerceIn(pitch, 40, 120)
     }
 
-    /** 设置角色预设（1-8） */
+    /** Set the voice preset (1-8() */
     fun setVoicePreset(n: Int) {
         voicePreset = coerceIn(n, 1, 8)
         voiceCustom = false
         Log.e(TAG, "voicePreset -> " + voicePreset)
     }
 
-    /** 自定义音调模式（UI 滑块直接驱动） */
+    /** Custom pitch mode (driven directly by the UI slider( */
     fun setCustomPitch(pitch: Int) {
         customPitch = coerceIn(pitch, 0, 100)
         voiceCustom = true
@@ -463,14 +463,14 @@ class EloquenceEngine(context: Context) {
     fun getPendingPitchFactor(): Float = pendingPitchFactor
 
     /**
-     * 应用发音角色（现在角色参数在 synthesizeCore 内直接读 voiceProfile 覆盖，
-     * 这里保留空实现以兼容旧调用点）
+     * Apply the speaking voice (voice params are now read inside synthesizeCore from the
+     * voiceProfile override; this stub stays for backward compat.)
      */
     fun applyVoiceProfile(dialect: Int, profile: VoiceProfile?) {
-        // 不需要额外处理：synthesizeCore 已通过 voiceProfile 字段读取自定义覆盖
+        // Nothing extra needed: synthesizeCore already reads overrides via the voiceProfile field
     }
 
-    // 苹果 CSV pitchBase 换算的角色音调因子（以 Reed=65 为基准）
+    // Apple-CSV pitchBase-derived voice pitch factor (Reed=65 is the baseline(
     private fun presetPitchFactor(n: Int): Float {
         return when (n) {
             1 -> 1.00f  // Reed
@@ -485,7 +485,7 @@ class EloquenceEngine(context: Context) {
         }
     }
 
-    // 角色语速因子（苹果 CSV speed=50 基准的性格化微调）
+    // Voice speed factor (Apple CSV speed=50-baseline character tuning(
     private fun presetSpeedFactor(n: Int): Float {
         return when (n) {
             1 -> 1.00f  // Reed
@@ -500,7 +500,7 @@ class EloquenceEngine(context: Context) {
         }
     }
 
-    // 苹果 CSV eciVoiceNumber（en-US）：Reed=1 Shelley=2 Sandy=3 Rocko=4 Flo=6 Grandma=7 Grandpa=8 Eddy=9
+    // Apple CSV eciVoiceNumber (en-US(: Reed=1 Shelley=2 Sandy=3 Rocko=4 Flo=6 Grandma=7 Grandpa=8 Eddy=9
     private fun presetEciVoice(n: Int): Int {
         return when (n) {
             1 -> 1  // Reed
@@ -516,12 +516,12 @@ class EloquenceEngine(context: Context) {
     }
 
     /**
-     * 用苹果 KonaVoicePresets.csv 的参数（breathiness/headSize/roughness/pitchFlutter）
-     * 通过 eciSetVoiceParam 注入当前语音。ECI voice param 编号（与苹果 CSV 字段对应）：
-     * 声音质感参数走 ECI 的标准 voice 参数通道。
+     * Uses Apple KonaVoicePresets.csv params (breathiness/headSize/roughness/pitchFlutter(
+     * injected into the current voice via eciSetVoiceParam. ECI voice param numbers (matching the Apple CSV fields(:
+     * Voice-quality params go through ECI's standard voice param channel.
      */
     private fun applyCsvVoiceParams(handle: Long, presetId: Int) {
-        // 苹果 CSV {breathiness, headSize, roughness, pitchFluctuation}
+    // Apple CSV {breathiness, headSize, roughness, pitchFluctuation}
         val p: IntArray = when (presetId) {
             2 -> intArrayOf(50, 50, 0, 30)   // Shelley
             3 -> intArrayOf(50, 22, 0, 30)   // Sandy
@@ -532,16 +532,16 @@ class EloquenceEngine(context: Context) {
             8 -> intArrayOf(45, 40, 20, 35)  // Grandma
             else -> intArrayOf(0, 50, 0, 30) // Reed
         }
-        // ECI voice param：eciPitchBaseline=2, eciSpeed=3, eciVolume=4, eciGeneral=5,
-        // eciSayAsCtrl=6 ... 粗糙度/气声等是引擎特定扩展参数，此处按常见编号尝试
-        // 保守起见：只调已验证安全的基础参数，声音质感依赖 voiceNumber 本身
-        // （voiceNumber 已通过 eciSetStandardVoice2 切换，基础音色随之变化）
+        // ECI voice param:eciPitchBaseline=2, eciSpeed=3, eciVolume=4, eciGeneral=5,
+            // eciSayAsCtrl=6 ... roughness/breath are engine-specific extended params; trying common numbers here
+            // Conservative: only safe, verified base params are set; tone quality rides on voiceNumber itself
+            // (voiceNumber is switched via eciSetStandardVoice2, so the base timbre follows it)
         Log.e(TAG, "csvVoiceParams preset=" + presetId + " breath=" + p[0]
                 + " head=" + p[1] + " rough=" + p[2] + " flutter=" + p[3])
     }
 
-    // SAPI 内联标记（Eloquence 原生支持，格式参照 chtvoice.sapi.txt）
-    // \v=X\ 直接切换标准 voice 编号
+        // SAPI inline tags (natively supported by Eloquence; format follows chtvoice.sapi.txt(
+        // \\v=X\\ switches the standard voice number directly
     private fun presetSapiMark(n: Int): String {
         return when (n) {
             1 -> "\\v=1\\"   // Reed

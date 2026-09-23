@@ -13,7 +13,7 @@
 #define GR_ECI_ZH 16
 #define GR_ECI_EN 16456
 
-// ECI 函数签名（从 libeci.so 反汇编确认）
+// ECI function signatures (confirmed from libeci.so disassembly)
 typedef int (*eciSetVoiceParam_fn)(void*, int, int, int);   // hECI, voice, param, value
 typedef int (*eciGetVoiceParam_fn)(void*, int, int);        // hECI, voice, param
 
@@ -35,15 +35,15 @@ static void* resolve_symbol(const char* name) {
     return dlsym(lib, name);
 }
 
-// 直接写 ECI 参数到内存（绕过 eciSetVoiceParam 的限制）
-// voice=0: 参数存储在 hECI + param*4 + 192
-// voice>0: 参数存储在 hECI + (voice-9)*80 + param*4 + 352
+// Write ECI params straight into memory (bypassing eciSetVoiceParam's limits)
+// voice=0: params live at hECI + param*4 + 192
+// voice>0: params live at hECI + (voice-9)*80 + param*4 + 352
 typedef void (*setRealWorldParams_fn)(void* hECI, int param);
 typedef int (*eciCopyVoice_fn)(void* hECI, int srcVoice, int dstVoice);
 
-// ECI 活动参数接口（eciSetParam：设置当前活动语音的参数，4参数签名）
-// param 枚举：2=音调, 6=音量, 7=语速（从 nativeSetProsody 反汇编确认）
-// 其他 ECI 经典参数：1=音高范围?, 需实测
+// ECI active-param interface:(eciSetParam sets the current voice's params;4-arg signature)
+// param enum:2=pitch, 6=volume, 7=speed (confirmed from nativeSetProsody disassembly)
+// Other classic ECI params:1=pitch range？ needs testing
 typedef int (*eciSetParam_fn)(void* hECI, int param, int value);
 typedef int (*eciGetParam_fn)(void* hECI, int param);
 
@@ -71,20 +71,20 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeGetParam(JNIEnv* env, jclass clazz,
     return fn(eci, param);
 }
 
-// ===== 核心突破：直接调用广荣内部的 ECI 包装函数 =====
-// 广荣 nativeSetProsody（已验证可用）通过 grHandle+0x8088 的函数指针调 ECI：
-//   fn(hECI, 0, param, value)  — 4参数
-// 该函数与导出符号 eciSetVoiceParam 行为不同（无掩码限制，param 2/6/7 均生效）。
-// zh ECI handle 在 grHandle+16，en 在 grHandle+16456。
-// ===== Klatt 钩子：粗糙度/气声/头部大小的正门 =====
-// 苹果 Kona 就是用 eciRegisterKlattHooks2 注入角色音色的。
-// KlattFrame 是 float 数组（ETI 标准布局），这里按 CSV 的
-// roughness/breathiness/headSize 三维做全局修正。
+// ===== Key breakthrough:calling Guangrong's internal ECI wrapper directly =====
+// Guangrong's nativeSetProsody(verified working)calls ECI via the function pointer at grHandle+0x8088:
+//   fn(hECI, 0, param, value) — 4 args
+// Behaves differently from the exported eciSetVoiceParam(no mask limits;params 2/6/7 all work)
+// zh ECI handle sits at grHandle+16;en at grHandle+16456.
+// ===== Klatt hooks:the proper path for roughness/breath/head-size =====
+// Apple Kona injects voice character via eciRegisterKlattHooks2.
+// KlattFrame is a float array(ETI standard layout);here we apply the CSV's
+// roughness/breathiness/headSize three dimensions as a global correction.
 typedef struct {
-    float roughness;    // 0-100（CSV: roughness）
-    float breathiness;  // 0-100（CSV: breathiness）
-    float headSize;     // 0-100（CSV: headSize，50=中）
-    float pitchScale;   // 音调倍率（CSV pitchBase/65）
+    float roughness;    // 0-100(CSV: roughness)
+    float breathiness;  // 0-100(CSV: breathiness)
+    float headSize;     // 0-100 (CSV: headSize; 50=mid(
+    float pitchScale;   // pitch multiplier (CSV pitchBase/65
     int   active;
 } RoleKlatt;
 
@@ -101,17 +101,17 @@ static void klog(const char* fmt, ...) {
     fprintf(f, "\n");
     fclose(f);
 }
-// KlattFrame 字段索引（ETI 标准：0=F0 基频, 摩擦/浊音幅度在中段）
-// 通过探针实验标定；下面用保守修正避免破音
+// KlattFrame field indices(ETI standard:0=F0 fundamental freq;friction/voiced amplitude mid-block)
+// calibrated via probe experiments;conservative corrections below avoid crackle
 #define KF_F0        0
-#define KF_AV        8   // 浊音幅度（气声↑ → av 稍降）
-#define KF_AF        9   // 摩擦幅度（粗糙度↑ → af 微升）
-#define KF_SW        20  // 共振峰带宽缩放（头部大小↑ → 带宽变窄→声音"大"）
+#define KF_AV        8   // voiced amplitude (breath up -> av dips slightly
+#define KF_AF        9   // friction amplitude (roughness up -> af creeps up
+#define KF_SW        20  // formant bandwidth scale (head-size up -> narrower bandwidth -> "bigger" voice
 #define KF_FRAME_MAX 64
 
 static void roleConstHook(void* pConst, void* userData) {
     LOGI("KLATT CONST HOOK CALLED pConst=%p", pConst);
-    // 静态参数（头部大小）：KlattConstantParams
+    // static params(head size):KlattConstantParams
 }
 
 static void roleDynamicHook(float* frame, void* userData) {
@@ -123,11 +123,11 @@ static void roleDynamicHook(float* frame, void* userData) {
              frame[0], frame[1], frame[2], frame[3], frame[4], frame[5], frame[6], frame[7],
              frame[8], frame[9], frame[10], frame[12], frame[14], frame[16], frame[20]);
     }
-    // 音调
+    // pitch
     if (g_role.pitchScale != 1.0f && frame[KF_F0] > 0) {
         frame[KF_F0] *= g_role.pitchScale;
     }
-    // 粗糙度 → F0 微抖动（每8帧一次颤动）+ 摩擦增强
+    // roughness -> F0 micro-tremor(wobble every 8 frames)+ friction boost
     if (g_role.roughness > 0) {
         static int tick = 0;
         tick++;
@@ -135,14 +135,14 @@ static void roleDynamicHook(float* frame, void* userData) {
             frame[KF_F0] *= (1.0f - 0.012f * (g_role.roughness / 100.0f));
         }
         if (KF_AF < KF_FRAME_MAX && frame[KF_AF] > 0) {
-            frame[KF_AF] *= (1.0f + 0.006f * g_role.roughness);   // 最多 +60%
+            frame[KF_AF] *= (1.0f + 0.006f * g_role.roughness);   // up to +60%
         }
     }
-    // 气声 → 浊音幅度降低（漏气感）
+    // breath -> lower voiced amplitude(airy feel)
     if (g_role.breathiness > 0 && KF_AV < KF_FRAME_MAX && frame[KF_AV] > 0) {
-        frame[KF_AV] *= (1.0f - 0.004f * g_role.breathiness);      // 最多 -40%
+        frame[KF_AV] *= (1.0f - 0.004f * g_role.breathiness);      // up to -40%
     }
-    // 头部大小 → 带宽缩放（50 为中性）
+    // head size -> bandwidth scaling(50 is neutral)
     if (g_role.headSize != 50.0f && KF_SW < KF_FRAME_MAX) {
         float delta = (g_role.headSize - 50.0f) / 50.0f;           // -1..1
         if (frame[KF_SW] > 0) frame[KF_SW] *= (1.0f - 0.10f * delta);
@@ -173,11 +173,11 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeRegisterKlattHooks(JNIEnv* env, jcl
     void* fn = resolve_symbol("eciRegisterKlattHooks2");
     klog("  fn=%p", fn);
     if (fn == NULL) return -1;
-    // 判断句柄层级：ECIinstance 的第一个字段是 SynthThread 指针。
-    // 如果 *(void**)eci 看起来是有效指针且与 eci 不同，说明 eci 是 ECIinstance（需要解引用）；
-    // 广荣 grHandle+16 存的是 eciNewEx 返回值 = ECIinstance*。
-    // eciRegisterKlattHooks2 内部自己解引用（ldr x0,[x0]），所以直接传 ECIinstance 即可。
-    // 但之前直接传没生效，尝试解引用后的 SynthThread。
+    // Handle-level check:the first field of an ECIinstance is a SynthThread pointer.
+    // If *(void**)eci looks like a valid pointer and differs from eci,theeci is an ECIinstance(needs deref);
+    // Guangrong grHandle+16 holds eciNewEx's return ＝ ECIinstance*.
+    // eciRegisterKlattHooks2 derefs internally(ldr x0,[x0]),so passing the ECIinstance straight works.
+    // but passing it directly didn't take before;trying the deref'd SynthThread instead.
     void* synth = *(void**)eci;
     klog("  try variant A: pass eci as-is (%p)", eci);
     typedef int (*reg_fn)(void*, void(*)(void*, void*), void(*)(float*, void*), void*);
@@ -221,14 +221,14 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeSetEciParam(JNIEnv* env, jclass cla
     return ret;
 }
 
-// 读广荣内部 ECI 参数（与 nativeSetEciParam 同款函数指针，x1=voice? x2=param? 待确认读法）
+// Read Guangrong's internal ECI params(same fn-ptr family as nativeSetEciParam;x1=voice？ x2=param？ read convention TBD)
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_voicejni_VoiceNative_nativeGetEciParam(JNIEnv* env, jclass clazz,
                                                          jlong grHandle, jint dialect,
                                                          jint param) {
     if (grHandle == 0) return -1;
     char* p = (char*)grHandle;
-    // 找读函数：广荣 0x8088 是写；ECI 经典读接口是 eciGetParam(h, param)
+    // Looking for the read fn:Guangrong 0x8088 is write;the classic ECI read API is eciGetParam(h, param)
     void* fn = dlsym(RTLD_DEFAULT, "eciGetParam");
     if (fn == NULL) { LOGE("eciGetParam export not found"); return -1; }
     int off = (dialect == 0x10000) ? 16456 : 16;
@@ -254,12 +254,12 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeSetVoiceParam(JNIEnv* env, jclass c
     return ret;
 }
 
-// 切换 ECI 标准 voice（苹果 CSV：Reed=1, Shelley=2, Sandy=3, Rocko=4,
-// Flo=6, Grandma=7, Grandpa=8, Eddy=9）
-// 正确入口：SynthThread::addParam("v", voiceNumber)
-// （ECIinstance::eciSetStandardVoice → sendAnnotation → 最终就是 addParam("v", N)，
-//   但它经过 ETIEvent 会在引擎空闲时崩，所以直接调最底层的 addParam）
-// SynthThread 指针在 ECIinstance 偏移 224 处（反汇编 ldr x2,[x0],#224 确认）
+// Switching to an ECI standard voice(Apple CSV:Reed=1,Shelley=2,Sandy=3,Rocko=4,
+// Flo=6, Grandma=7, Grandpa=8, Eddy=9)
+// Correct entry:SynthThread::addParam("v", voiceNumber)
+//(ECIinstance::eciSetStandardVoice -> sendAnnotation -> ultimately addParam("v", N);
+//   but that path goes through ETIEvent and crashes when idle,so call the bottom-most addParam)
+// SynthThread pointer sits at ECIinstance offset 224(ldr x2,[x0],#224 in the disassembly)
 typedef int (*addParam_fn)(void* self, const char* name, unsigned int value);
 
 JNIEXPORT jint JNICALL
@@ -269,7 +269,7 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeSetStandardVoice(JNIEnv* env, jclas
     void* eci = get_eci_handle(grHandle, dialect);
     if (eci == NULL) { LOGE("invalid handle grHandle=%llx dialect=0x%x", (long long)grHandle, dialect); return -1; }
 
-    // ECIinstance 偏移 224 = SynthThread*
+// ECIinstance offset 224 ＝ SynthThread*
     void* synth = *(void**)((char*)eci + 224);
     if (synth == NULL) { LOGE("SynthThread is null at eci+224"); return -1; }
 
@@ -292,7 +292,7 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeGetVoiceParam(JNIEnv* env, jclass c
     return fn(eci, voice, param);
 }
 
-// 用 eciAddText2 发送带 SAPI 标记的文本（fAnnotationsIn=true 让引擎解析标记而非朗读）
+// Send SAPI-tagged text via eciAddText2(fAnnotationsIn=true makes the engine parse tags instead of speaking them)
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_voicejni_VoiceNative_nativeAddTextWithAnnotations(JNIEnv* env, jclass clazz,
                                                                     jlong grHandle, jint dialect,
@@ -316,8 +316,8 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeAddTextWithAnnotations(JNIEnv* env,
     return ret;
 }
 
-// 完整合成流程：eciAddText2(带annotations) → eciSynthesize → 收集PCM
-// 替代广荣的 nativeSynthesize（它用旧 eciAddText 不支持标记）
+// Full synthesis flow:eciAddText2(with annotations)-> eciSynthesize -> collect PCM
+// Replaces Guangrong's nativeSynthesize(it used the old eciAddText without tag support)
 
 typedef struct {
     short* buffer;
@@ -325,31 +325,31 @@ typedef struct {
     int position;
 } PcmCollector;
 
-// ECI 回调：收集 PCM 样本
-// ECI 音频回调签名：(hECI, format, samples, count, userData)
-// 实际由 eciRegisterCallback 注册的回调在合成时被调用
+// ECI callback:collect PCM samples
+// ECI audio callback sig:(hECI, format,samples,,count,,userData)
+// the callback registered via eciRegisterCallback gets invoked during synthesis
 
-// 简化方案：用 eciAddText2 + eciSynthesize2 走完整个流程
-// 但需要先注册 PCM 回调 —— 由广荣 nativeInit 已经做了
-// 所以这里只需要：eciReset → eciAddText2 → eciSynthesize → 等完成
+// Simplified plan:run the whole flow with eciAddText2 + eciSynthesize2
+// but a PCM callback must be registered first — Guangrong's nativeInit already did it
+// so here we only need:eciReset -> eciAddText2 -> eciSynthesize -> wait for done
 
-// 广荣 nativeSynthesize 的内部流程（从反汇编推断）:
+// Guangrong's nativeSynthesize internals(inferred from the disassembly):
 // 1. eciReset(hECI)
 // 2. eciSetOutput(hECI, samples_buffer, buffer_size, &format)
 // 3. eciAddText(hECI, text, size)
 // 4. eciSynthesize(hECI, 1)
 // 5. eciWait(hECI) 
-// 6. PCM 从 samples_buffer 读出
+// 6. PCM read out of samples_buffer
 
-// 我们复刻同样流程但用 eciAddText2：
+// We replicate the same flow,but with eciAddText2:
 typedef int (*eciReset_fn)(void*);
 typedef int (*eciAddText2_fn)(void*, void*, int, int, int, int);
 typedef int (*eciSynthesize2_fn)(void*, int);
 typedef int (*eciWait_fn)(void*);
 typedef int (*eciSetOutput_fn)(void*, void*, int, void*);
 
-// 广荣 nativeSynthesize 返回 short[]，内部从 buffer 取 PCM
-// 我们用同样方式但传 eciAddText2
+// Guangrong's nativeSynthesize returns short[],pulling PCM from its internal buffer
+// We do the same but feed it eciAddText2
 
 JNIEXPORT jshortArray JNICALL
 Java_com_xw_vvtts_voicejni_VoiceNative_nativeSynthesizeWithAnnotations(
@@ -364,7 +364,7 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeSynthesizeWithAnnotations(
     void* fnReset = resolve_symbol("eciReset");
     void* fnAdd2 = resolve_symbol("eciAddText2");
     void* fnSynth = resolve_symbol("eciSynthesize");
-    void* fnWait = NULL; // eciWait 不存在，用 eciSpeaking 轮询
+    void* fnWait = NULL; // eciWait doesn't exist; poll with eciSpeaking
     
     if (!fnReset || !fnAdd2 || !fnSynth) {
         (*env)->ReleaseByteArrayElements(env, text, buf, 0);
@@ -383,21 +383,21 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeSynthesizeWithAnnotations(
     // 3. Synthesize
     ((eciSynthesize2_fn)fnSynth)(eci, 1);
     
-    // 4. Wait for completion - 用广荣 nativeSynthesize 的同步方式
-    //    实际上 ECI 在多线程模式下 eciSynthesize 是异步的
-    //    广荣 nativeSynthesize 内部有自己的等待逻辑
-    //    我们这里用简单轮询 eciSpeaking
+    // 4. Wait for completion — using Guangrong's nativeSynthesize sync approach
+    //    actually ECI's eciSynthesize is async in multithreaded mode
+    //    Guangrong's nativeSynthesize has its own wait logic inside
+    //    we just poll eciSpeaking here
     
     (*env)->ReleaseByteArrayElements(env, text, buf, 0);
     
-    // PCM 由广荣的回调收集到 nativeSynthesize 用的 buffer
-    // 但我们不在 nativeSynthesize 上下文中...
-    // 这个方案需要更深入的集成，暂时返回 null
+    // PCM is gathered by Guangrong's callback into nativeSynthesize's buffer
+    // but we're not inside nativeSynthesize's context...
+    // this approach needs deeper integration;return null for now
     return NULL;
 }
 
 
-// 简单方案：单独发 SAPI 标记（不带文本），标记留在引擎内部影响后续合成
+// Simple approach:send the SAPI tag alone(no text);it stays in the engine and affects subsequent synthesis
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_voicejni_VoiceNative_nativeInjectSapiMark(JNIEnv* env, jclass clazz,
                                                             jlong grHandle, jint dialect,
@@ -409,7 +409,7 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeInjectSapiMark(JNIEnv* env, jclass 
     int markLen = strlen(markStr);
     
     // eciAddText(hECI, text, size, annotation=1)
-    // 从日志字符串 "eciAddText: text=%p, Annotation=%d" 可知有 annotation 参数
+    // the log string "eciAddText: text=%p, Annotation=%d" shows there's an annotation arg.
     void* fnAdd = resolve_symbol("eciAddText");
     if (!fnAdd) {
         (*env)->ReleaseStringUTFChars(env, mark, markStr);
@@ -417,9 +417,9 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeInjectSapiMark(JNIEnv* env, jclass 
         return -1;
     }
     
-    // eciAddText 签名需要确认。经典 ECI API:
+// eciAddText's signature needs confirming.Classic ECI API:
     // ECIHand eciAddText(ECIHand hECI, void* text, int size, int annotation)
-    // 但实际 C ABI 可能不同。用 eciAddText2 (6 参数版) 更安全
+// but the real C ABI may differ;eciAddText2(6-arg version)is safer
     void* fnAdd2 = resolve_symbol("eciAddText2");
     if (fnAdd2) {
         // eciAddText2(hECI, text, size, codeSet, fAnnotationsIn, synthMode)
@@ -431,8 +431,8 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeInjectSapiMark(JNIEnv* env, jclass 
     }
     
     // fallback: eciAddText
-    // 具体参数布局不确定，尝试常见格式
-    // eciAddText 可能是 (hECI, text, size, annotation) 4参数
+// exact arg layout is uncertain;try common formats yo
+// eciAddText might be(hECI, text,size,,annotation)4 args
     typedef int (*fn4)(void*, void*, int, int);
     int ret = ((fn4)fnAdd)(eci, (void*)markStr, markLen, 1);
     LOGI("SAPI mark via eciAddText(4args): ret=%d", ret);
@@ -440,7 +440,7 @@ Java_com_xw_vvtts_voicejni_VoiceNative_nativeInjectSapiMark(JNIEnv* env, jclass 
     (*env)->ReleaseStringUTFChars(env, mark, markStr);
     return ret;
 }
-// 测试 voice 表是否被加载
+// test whether the voice table got loaded
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_voicejni_VoiceNative_nativeTestVoiceTable(JNIEnv* env, jclass clazz,
                                                             jlong grHandle, jint dialect) {

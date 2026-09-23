@@ -1,12 +1,12 @@
 package com.xw.vvtts.utils
 
 /**
- * 文本分段：把中英混合文本按语言切成段，每段标注方言。
+ * Text segmentation:split mixed Chinese-English text by language,,tagging each run with its dialect.
  */
 class TextSegmenter {
     class Segment(
         val text: String,
-        /** 0x60000 中文, 0x10000 英文 */
+       /** 0x60000 Chinese,  0x10000 English */
         val dialect: Int,
     )
 
@@ -39,8 +39,8 @@ class TextSegmenter {
         }
 
         private fun isCjk(c: Char): Boolean {
-            return (c.code in 0x4E00..0x9FFF)      // 基本汉字
-                    || (c.code in 0x3400..0x4DBF)  // 扩展A
+            return (c.code in 0x4E00..0x9FFF)      // base Han
+                    || (c.code in 0x3400..0x4DBF)  // extension A
         }
     }
 }

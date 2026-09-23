@@ -1,17 +1,17 @@
 /*
- * vvtts_bridge.c - Eloquence 自主桥接层
+ * vvttts_bridge.c - Eloquence self-developed bridge layer
  *
- * 我们自己的调用库：音库复用广荣（libeloquence_jni + libeci），
- * 桥接/参数/角色/语言调度全部自主实现。
- * 苹果 Kona 官方 14语言×8角色 参数表编译期内置。
+ * Our own calling layer:the voice library reuses Guangrong(libeloquence_jni + libeci),
+ * with the bridge/params/voices/language dispatch all implemented by us.
+ * Apple Kona's official 14-language x 8-voice param table is baked in at compile time.
  *
- * 逆向成果集中区（广荣黑盒知识）：
+ * Central hub for reverse-engineering findings(Guangrong black-box knowledge):
  *  - grHandle+16     : zh-CN ECI handle
  *  - grHandle+16456  : en-US ECI handle
- *  - grHandle+0x8088 : 内部 ECI 参数函数指针 fn(hECI, voice, param, value)
- *    （与 nativeSetProsody 同款，确定作用于合成引擎）
- *  - param: 2=音调(经mapPitch), 6=音量, 7=语速；引擎输出 11025Hz
- *  - 中文文本 GB18030，英文 windows-1252
+ *  - grHandle+0x8088 : internal ECI param function pointer fn(hECI, voice, param, value
+ *    (same family as nativeSetProsody;confirmed to act on the synth engine)
+ *  - param:2=pitch (via mapPitch),6=volume,,7=speed;engine outputs  11025Hz
+ *  - Chinese text GB18030;English windows-1252
  */
 #include <jni.h>
 #include <dlfcn.h>
@@ -28,14 +28,14 @@
 #define DIALECT_ZH 0x60000
 #define DIALECT_EN 0x10000
 
-/* ---------------- 角色参数总线（跨 JNI 的活动状态） ---------------- */
+/* ---------------- voice-param bus(cross-JNI live state) ---------------- */
 typedef struct {
-    int   roleId;        // 1-8（0=无）
-    int   konaDialect;   // 当前语言
+    int   roleId;        // 1-8 (0=none
+    int   konaDialect;   // current language
     float pitchScale;    // pitchBase/65
     float speedScale;    // speed/50
     float volume;        // /100
-    float roughness;     // /100（预留：Klatt 钩子通道恢复后立即生效）
+    float roughness;     // /100 (reserved:takes effect as soon as the Klatt-hook channel is restored
     float breathiness;
     float headSize;
     float pitchFluctuation;
@@ -44,7 +44,7 @@ typedef struct {
 
 static BridgeRole g_role = {0, 0, 1.0f, 1.0f, 1.0f, 0, 0, 50, 30, 0};
 
-/* ---------------- 广荣引擎适配 ---------------- */
+/* ---------------- Guangrong engine adaptation ---------------- */
 static void* get_eci(jlong grHandle, int dialect) {
     if (grHandle == 0) return NULL;
     char* p = (char*)grHandle;
@@ -57,7 +57,7 @@ static void* get_prosody_fn(jlong grHandle) {
     return *(void**)((char*)grHandle + 0x8088);
 }
 
-/* 内部通道设参（确定作用于合成） */
+/* Setting params through the internal channel(confirmed to affect synthesis) */
 static int eciSetParamInternal(jlong grHandle, int dialect, int param, int value) {
     void* fn = get_prosody_fn(grHandle);
     void* eci = get_eci(grHandle, dialect);
@@ -66,23 +66,23 @@ static int eciSetParamInternal(jlong grHandle, int dialect, int param, int value
     return ((fn4)fn)(eci, 0, param, value);
 }
 
-/* ---------------- JNI 接口 ---------------- */
+/* ---------------- JNI interface ---------------- */
 
 /*
- * 应用角色：roleId 1-8 + konaDialect（0-13）。
- * 表按 (konaDialect, eciVoiceNumber 1,2,3,4,6,7,8,9) 排序，
- * 行索引 = konaDialect*8 + orderIndex，orderIndex 由 roleId 查。
+ * Apply voice:roleId 1-8 + konaDialect(0-13).
+ * Table is ordered by(konaDialect, eciVoiceNumber 1,2,3,4,6,7,8,9),
+ * row index ＝ konaDialect*8 + orderIndex with orderIndex looked up from roleId.
  */
 JNIEXPORT jfloatArray JNICALL
 Java_com_xw_vvtts_bridge_VvttsBridge_bridgeApplyRole(JNIEnv* env, jclass clazz,
                                                      jlong grHandle, jint dialect,
                                                      jint roleId, jint konaDialect) {
     if (roleId < 1 || roleId > 8 || konaDialect < 0 || konaDialect > 13) return NULL;
-    /* roleId(1-8 界面序) → 表内角色序位（按 eciVoiceNumber 升序 1,2,3,4,6,7,8,9） */
-    /* 界面 1..8 对应: Reed(1) Sandy(3) Shelley(2) Rocko(4) Eddy(9) Flo(6) Grandpa(8) Grandma(7) */
+     /* roleId(1-8 UI order)-> in-table voice position(ascending eciVoiceNumber 1,2,3,4,6,7,8,9) */
+     /* UI 1..8 map to:Reed(1)Sandy(3)Shelley(2)Rocko(4)Eddy(9)Flo(6)Grandpa(8)Grandma(7) */
     static const int roleOrder[9] = {-1, 0, 2, 1, 3, 7, 5, 6, 4};
-    /* 注意: 上面按界面顺序 Reed/Sandy/Shelley/Rocko/Eddy/Flo/Grandpa/Grandma
-       对应表内序位: Reed=0 Sandy=2 Shelley=1 Rocko=3 Eddy=7 Flo=4 Grandpa=6 Grandma=5 */
+     /* Note:the above is in UI order Reed/Sandy/Shelley/Rocko/Eddy/Flo/Grandpa/Grandma
+         mapping to in-table positions:Reed=0 Sandy=2 Shelley=1 Rocko=3 Eddy=7 Flo=4 Grandpa=6 Grandma=5 */
     int orderIdx = roleOrder[roleId];
     int row = konaDialect * 8 + orderIdx;
     if (row < 0 || row >= ROLE_ROW_COUNT) return NULL;
@@ -99,13 +99,13 @@ Java_com_xw_vvtts_bridge_VvttsBridge_bridgeApplyRole(JNIEnv* env, jclass clazz,
     g_role.speedScale       = p[7] / 50.0f;
     g_role.volume           = p[9] / 100.0f;
 
-    /* 透传：音调（倍率由 Java 端 setProsody 的 lastNativePitch 相乘，这里只回传因子）*/
-    /* 应用语速：基准 130（广荣 nativeSetProsody rate 域） */
+    /* Pass-through:pitch(the factor is multiplied by lastNativePitch from Java-side setProsody;we only relay the factor) */
+    /* Apply speed:baseline  130(Guangrong's nativeSetProsody rate field) */
     if (g_role.speedScale != 1.0f) {
         int spd = (int)(130 * g_role.speedScale);
         eciSetParamInternal(grHandle, dialect, 7, spd);
     }
-    /* 应用音量档（ECI param 6）*/
+    /* Apply volume level(ECI param  6) */
     if (g_role.volume != 1.0f) {
         int vol = (int)(100 * g_role.volume);
         eciSetParamInternal(grHandle, dialect, 6, vol);
@@ -113,7 +113,7 @@ Java_com_xw_vvtts_bridge_VvttsBridge_bridgeApplyRole(JNIEnv* env, jclass clazz,
     LOGI("applyRole id=%d kona=%d pitch=%.2f speed=%.2f vol=%.2f",
          roleId, konaDialect, g_role.pitchScale, g_role.speedScale, g_role.volume);
 
-    /* 返回 {pitchScale, speedScale, volume, roughness, breathiness, headSize, pitchFluctuation, eciVoiceNumber} */
+    /* returns {pitchScale, speedScale, volume, roughness, breathiness, headSize, pitchFluctuation, eciVoiceNumber} */
     jfloatArray out = (*env)->NewFloatArray(env, 8);
     float vals[8] = { g_role.pitchScale, g_role.speedScale, g_role.volume,
                       g_role.roughness, g_role.breathiness, g_role.headSize,
@@ -122,7 +122,7 @@ Java_com_xw_vvtts_bridge_VvttsBridge_bridgeApplyRole(JNIEnv* env, jclass clazz,
     return out;
 }
 
-/* 角色音调应用（Java 传入 mapPitch 后的原生音调，桥内乘因子） */
+/* Apply voice pitch(native pitch after Java's mapPitch;the bridge multiplies the factor) */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_bridge_VvttsBridge_bridgeApplyPitch(JNIEnv* env, jclass clazz,
                                                       jlong grHandle, jint dialect,
@@ -136,20 +136,20 @@ Java_com_xw_vvtts_bridge_VvttsBridge_bridgeApplyPitch(JNIEnv* env, jclass clazz,
     return ret;
 }
 
-/* 语言切换：dialect 预制映射（kona -> 广荣可用 dialect） */
+/* Language switch:dialect preset mapping(kona -> Guangrong-usable dialect) */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_bridge_VvttsBridge_bridgeResolveDialect(JNIEnv* env, jclass clazz,
                                                           jint konaDialect) {
     switch (konaDialect) {
-        case 12: return DIALECT_ZH;   // zh-CN（已接入）
-        case 0:  return DIALECT_EN;   // en-US（已接入）
-        case 1:  return DIALECT_EN;   // en-GB → 暂用 en-US 库（口音参数已内置于角色表）
-        /* 其余语言待接入音库后逐个映射（dialect 值实测修正） */
-        default: return -1;           // 未接入
+        case 12: return DIALECT_ZH;   // zh-CN (wired in
+        case 0:  return DIALECT_EN;   // en-US (wired in
+        case 1:  return DIALECT_EN;   // en-GB -> temporarily using the en-US bank(accent params baked into the voice table
+        /* remaining languages map one-by-one once their voice banks are wired in(dialect values fixed by testing) */
+        default: return -1;           // not wired in
     }
 }
 
-/* 查询支持状态 */
+/* Check support status */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_bridge_VvttsBridge_bridgeIsLanguageReady(JNIEnv* env, jclass clazz,
                                                            jint konaDialect) {
@@ -159,7 +159,7 @@ Java_com_xw_vvtts_bridge_VvttsBridge_bridgeIsLanguageReady(JNIEnv* env, jclass c
     }
 }
 
-/* Klatt 钩子注册（已打通的通道，音库升级后立即生效） */
+/* Klatt hook registration(the working channel;takes effect immediately after a bank upgrade) */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_bridge_VvttsBridge_bridgeRegisterKlatt(JNIEnv* env, jclass clazz,
                                                          jlong grHandle, jint dialect) {
@@ -173,7 +173,7 @@ Java_com_xw_vvtts_bridge_VvttsBridge_bridgeRegisterKlatt(JNIEnv* env, jclass cla
         if (!fn) return -1;
     }
     typedef int (*reg_fn)(void*, void(*)(void*, void*), void(*)(float*, void*), void*);
-    int ret = ((reg_fn)fn)(eci, NULL, NULL, NULL);  /* 占位：钩子体待迁移 */
+    int ret = ((reg_fn)fn)(eci, NULL, NULL, NULL);  /* placeholder:hook body yet to be migrated */
     LOGI("bridge registerKlatt ret=%d", ret);
     return ret;
 }

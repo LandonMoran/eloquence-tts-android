@@ -16,7 +16,7 @@
 #include "chs_oracle_synth.h"
 
 int main(void) {
-    /* 你好 in GB18030 */
+    /* "ni hao"  (the two Han chars in GB18030 */
     static const unsigned char text[] = { 0xC4, 0xE3, 0xBA, 0xC3 };
 
     ECIHand h = eciNewEx(0x60000);

@@ -5,15 +5,15 @@ import com.github.pemistahl.lingua.api.Language
 import com.github.pemistahl.lingua.api.LanguageDetectorBuilder
 
 /**
- * 多语言检测 + 文本分片器。
+ * Multi-language detection + text segmenter.
  *
- * 第 1 层：Unicode 规则（O(n) 单遍扫描，零延迟，100% 精准）
- *   假名 → 日文、谚文 → 韩文、汉字 → 中文、拉丁 → 拉丁块
- *   空格/标点/分隔符 → 永远跟随上一段语言（无论默认语言怎么设）
+ * Layer 1:Unicode rules(O(n)single-pass scan,zero latency,100% precise)
+ *   kana -> Japanese,Hangul -> Korean,Han -> Chinese,Latin -> Latin runs
+ *   spaces/punct/separators -> always follow the previous segment's language(regardless of the default language)
  *
- * 第 2 层：Lingua 统计（拉丁 10 语言互分，短文本回落默认语言）
+ * Layer 2:Lingua statistics(Latin 10-language disambiguation;short text falls back to the default language)
  *
- * 简繁不在此判断——由用户设置中文方言（简体 zh-CN / 台湾 zh-TW）。
+ * Simplified/Traditional is not judged here——the user picks the Chinese dialect(Simplified zh-CN / Traditional zh-TW).
  */
 class LanguageDetector {
 
@@ -25,7 +25,7 @@ class LanguageDetector {
     companion object {
         private const val TAG = "LangDetector"
 
-        // ECI dialect 常量
+            // ECI dialect constants
         const val DIALECT_EN_US = 0x10000
         const val DIALECT_EN_GB = 0x10001
         const val DIALECT_ES_ES =  0x20000
@@ -46,29 +46,29 @@ class LanguageDetector {
         // Special value for "unspecified default language"
         const val DEFAULT_UNSPECIFIED = -1
 
-        // 所有支持的语言代码（用于设置多选）
-        // Only languages actually linked in this build (see build_native.sh LANGS)。
+            // all supported language codes(for the settings multi-select)
+        // Only languages actually linked in this build (see build_native.sh LANGS).
         val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh")
         val ALL_LANG_NAMES = arrayOf(
             "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish", "Chinese",
         )
 
-        // 设置项
+            // settings key
         @Volatile private var chineseDialect = DIALECT_ZH_CN
         @Volatile private var englishDialect = DIALECT_EN_US
         @Volatile private var spanishDialect = DIALECT_ES_ES
         @Volatile private var frenchDialect = DIALECT_FR_FR
         // Detection whitelist: by default English + Japanese + Chinese
-        // (zh-CN is linked in this build via the oracle synth path)。
-        // Languages outside the whitelist fall back to the default language when detected。
+        // (zh-CN is linked in this build via the oracle synth path).
+        // Languages outside the whitelist fall back to the default language when detected.
         @Volatile private var enabledLanguages: Set<String> = HashSet(listOf("en", "ja", "zh"))
-        // 默认语言：DEFAULT_UNSPECIFIED(不指定) 或 具体 dialect。
-        // 仅在"语言检测开启"时生效：数字和检测不出的文本用它；不指定则跟随上一段。
+            // default language:DEFAULT_UNSPECIFIED(unspecified)or a specific dialect.
+            // only active when "language detection is on":digits and unrecognized text use it;if unset,follow the previous segment.
         @Volatile private var defaultLanguage = DEFAULT_UNSPECIFIED
 
-        // 是否关闭检测（语言环境选了具体语言时设为 false）
+            // whether detection is off(set to false when a specific language is chosen in settings)
         @Volatile private var detectionEnabled = true
-        // 关闭检测时的固定方言
+            // fixed dialect when detection is off
         @Volatile private var fixedDialect = DIALECT_EN_US
 
         private val lock = Any()
@@ -90,20 +90,20 @@ class LanguageDetector {
 
         fun setEnabledLanguages(langs: Set<String>?) {
             enabledLanguages = if (langs == null || langs.isEmpty()) HashSet() else HashSet(langs)
-            // 立即重建 Lingua 检测器（语言白名单变了）
+            // rebuild the Lingua detector immediately(the language whitelist changed)
             resetLingua()
         }
 
         fun getEnabledLanguages(): Set<String> = enabledLanguages
 
-        /** 某语言代码是否在检测白名单内 */
+        /** Whether a language code is in the detection whitelist */
         fun isLanguageEnabled(code: String): Boolean {
             val en = enabledLanguages
             if (en == null) return false
             return en.contains(code)
         }
 
-        /** 重建 Lingua（白名单变化时调用，立即生效，不需重启） */
+        /** Rebuild Lingua(call when the whitelist changes;takes effect immediately,no restart needed) */
         private fun resetLingua() {
             synchronized(lock) {
                 linguaDetector = null
@@ -117,13 +117,13 @@ class LanguageDetector {
         fun getDefaultLanguage() = defaultLanguage
 
         /**
-         * 解析默认语言为具体 dialect。
-         * 不指定 → -1（数字/检测不出的文本跟随上一段）。
+         * parse the default language into a concrete dialect.
+         * unspecified -> -1(digits/unrecognized text follow the previous segment).
          */
         fun resolveDefaultLanguage(): Int {
             val dl = defaultLanguage
             if (dl >= 0) return dl
-            return -1 // 不指定
+            return -1 // unspecified
         }
 
         fun setDetectionEnabled(enabled: Boolean) { detectionEnabled = enabled }
@@ -132,7 +132,7 @@ class LanguageDetector {
         fun setFixedDialect(dialect: Int) { fixedDialect = dialect }
         fun getFixedDialect() = fixedDialect
 
-        /** 预加载 Lingua（APP 启动时后台调用） */
+        /** Preload Lingua(called in the background at app startup) */
         fun preloadLingua() {
             if (linguaPreloaded || linguaInitFailed) return
             Thread {
@@ -169,7 +169,7 @@ class LanguageDetector {
 
         private fun getEnabledLanguageEnums(): List<Language> {
             // Lingua only disambiguates Latin scripts; CJK (zh/ja/ko) use Unicode
-            // rules and never go through Lingua。
+            // rules and never go through Lingua.
             val allLatin = ArrayList<Language>()
             allLatin.add(Language.ENGLISH)
             allLatin.add(Language.GERMAN)
@@ -181,7 +181,7 @@ class LanguageDetector {
             allLatin.add(Language.POLISH)
 
             val en = enabledLanguages
-            if (en == null) return allLatin // 理论上不会发生，防御
+            if (en == null) return allLatin // theoretically can't happen; defensive
 
             val filtered = ArrayList<Language>()
             for (l in allLatin) {
@@ -189,7 +189,7 @@ class LanguageDetector {
                     filtered.add(l)
                 }
             }
-            // 至少要有一个语言，否则 Lingua build 会失败
+            // need at least one language or Lingua's build fails
             // Lingua requires >=2 languages to build. The default whitelist
             // {en,ja,zh} yields only ENGLISH (ja/zh are CJK-excluded), so a
             // fresh install would throw every init into the // catch above.
@@ -227,36 +227,36 @@ class LanguageDetector {
         }
 
         /**
-         * 主入口：将混合文本分片。
-         * 如果检测关闭，直接返回整段+固定方言。
+         * Main entry:split mixed text into segments.
+         * if detection is off,return the whole run + fixed dialect directly.
          */
         fun segment(text: String?): List<Segment> {
             val result = ArrayList<Segment>()
             if (text == null || text.isEmpty()) return result
 
-            // 检测关闭：整段用固定方言
+            // detection off:whole run uses the fixed dialect
             if (!detectionEnabled) {
                 result.add(Segment(text, fixedDialect))
                 return result
             }
 
-            // 第 1 遍：Unicode 切块
+            // pass 1:Unicode run-splitting
             var current = StringBuilder()
-            var currentType = -1  // 0=中文, 1=假名, 2=谚文, 3=拉丁, 4=分隔符, 5=数字
-            var lastRealType = 3  // 上一个非分隔符类型（默认拉丁）
+            var currentType = -1  // 0=Chinese, 1=kana, 2=Hangul, 3=Latin,  4=separator,,  5=digit
+            var lastRealType = 3  //the last non-separator type (default Latin)
             var lastDialect = englishDialect
 
             for (i in text.indices) {
                 val c = text[i]
                 val type = classifyChar(c)
 
-                // 分隔符（空格/标点）：永远跟随上一段语言
+                // separator(space/punct):always follows the previous segment's language
                 if (type == 4) {
                     current.append(c)
                     continue
                 }
 
-                // 数字：指定默认语言→用默认语言；不指定→跟随上一段
+                // digit:explicit default -> use it;otherwise follow the previous segment
                 if (type == 5) {
                     if (currentType != 5) {
                         if (current.length > 0) {
@@ -269,7 +269,7 @@ class LanguageDetector {
                     continue
                 }
 
-                // 非分隔符、非数字
+                // not a separator nor digit
                 if (type != currentType) {
                     if (current.length > 0) {
                         flushSegment(current, currentType, lastDialect, result)
@@ -279,7 +279,7 @@ class LanguageDetector {
                 }
                 current.append(c)
 
-                // 记住最近的非分隔符语言
+                // remember the most recent non-separator language
                 if (type in 0..3) {
                     lastRealType = type
                     lastDialect = typeToDialect(type, lastDialect)
@@ -289,48 +289,48 @@ class LanguageDetector {
                 flushSegment(current, currentType, lastDialect, result)
             }
 
-            // 合并连续同方言段
+            // merge consecutive same-dialect runs
             mergeConsecutive(result)
 
             return result
         }
 
         /**
-         * 字符分类。
-         * 0=中文(汉字), 1=日文假名, 2=韩文谚文, 3=拉丁, 4=分隔符
+         * Character classification.
+         * 0=Chinese(Han),1=Japanese kana,,2=Korean Hangul,,3=Latin,,4=separator
          */
         private fun classifyChar(c: Char): Int {
-            // 假名
+            // kana
             if (c.code in 0x3040..0x309F || c.code in 0x30A0..0x30FF) return 1
-            // 谚文
+            // Hangul
             if (c.code in 0xAC00..0xD7AF) return 2
-            // CJK 汉字（简繁不分，统一归中文）
+            // CJK Han(no Simplified-vs-Traditional split;all treated as Chinese)
             if (c.code in 0x4E00..0x9FFF) return 0
             if (c.code in 0x3400..0x4DBF) return 0
-            // 拉丁字母
+            // Latin letters
             if (c in 'A'..'Z' || c in 'a'..'z') return 3
             if (c.code in 0x00C0..0x024F) return 3
-            // 空格（全角半角都算分隔符）
+            // space(full-width and half-width both count as separators)
             if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return 4
-            if (c.code == 0x3000) return 4  // 全角空格
-            // 数字（半角和全角）→ 独立类型 5（默认语言或跟随上一段）
+            if (c.code == 0x3000) return 4  // full-width space
+            // digit(half/full-width)-> standalone type 5(default language or follows previous segment)
             if (c in '0'..'9') return 5
             if (c.code in 0xFF10..0xFF19) return 5
-            // 标点分隔符（ASCII + CJK + 全角）
+            // punctuation separators(ASCII + CJK + full-width)
             if (isSeparator(c)) return 4
-            // 其他 ASCII 可打印（运算符等）→ 拉丁
+            // other ASCII printable(operators etc)-> Latin
             if (c.code in 0x20..0x7E) return 3
-            // 全角标点
+            // full-width punctuation
             if (c.code in 0xFF00..0xFFEF) return 4
-            // CJK 标点
+            // CJK punctuation
             if (c.code in 0x3000..0x303F) return 4
-            // 默认归拉丁
+            // default:Latin
             return 3
         }
 
-        /** 分隔符判断：空格、标点、符号——这些跟随上一段语言 */
+        /** Separator test:spaces,punct,,symbols——these follow the previous segment's language */
         private fun isSeparator(c: Char): Boolean {
-            // ASCII 标点
+            // ASCII punctuation
             if (c.code <= 0x7F) {
                 return c == ',' || c == '.' || c == '!' || c == '?' || c == ';' || c == ':'
                     || c == '-' || c == '(' || c == ')' || c == '[' || c == ']'
@@ -343,18 +343,18 @@ class LanguageDetector {
             return false
         }
 
-        /** 字符类型 → 目标语言代码（用于白名单判断） */
+        /** character type -> target language code(for whitelist checks) */
         private fun typeToCode(type: Int): String? {
             return when (type) {
                 0 -> "zh"
                 1 -> "ja"
                 2 -> "ko"
-                3 -> "en" // 拉丁占位，实际由 Lingua 决定
+                3 -> "en" // Latin placeholder;Lingua actually decides
                 else -> null
             }
         }
 
-        /** 字符类型 → ECI dialect（不查白名单，白名单在 flushSegment 统一处理） */
+        /** Character type -> ECI dialect(no whitelist check here;flushSegment handles the whitelist uniformly) */
         private fun typeToDialect(type: Int, fallbackDialect: Int): Int {
             return when (type) {
                 0 -> chineseDialect
@@ -365,18 +365,18 @@ class LanguageDetector {
             }
         }
 
-        /** 判断非拉丁类型（CJK）是否检测通过：白名单含该语言才有效 */
+        /** Whether a non-Latin type(CJK)passes detection:only valid if the whitelist contains that language */
         private fun cjkDialectOrFallback(type: Int, fallbackDialect: Int): Int {
             val code = typeToCode(type)
             if (code != null && isLanguageEnabled(code)) {
                 return typeToDialect(type, fallbackDialect)
             }
-            // 不在白名单：fallback 默认语言（指定时），否则英文（不跨到上一段 CJK）
+            // not in whitelist:fallback to default language(if set),else English(never across to previous CJK)
             val dl = resolveDefaultLanguage()
             return if (dl >= 0) dl else englishDialect
         }
 
-        /** 输出当前块为 Segment，拉丁块用 Lingua 精修 */
+        /** Emit the current run as a Segment;Latin runs get refined by Lingua */
         private fun flushSegment(sb: StringBuilder, type: Int, fallbackDialect: Int, out: MutableList<Segment>) {
             if (sb.length == 0) return
             val text = sb.toString()
@@ -384,29 +384,29 @@ class LanguageDetector {
 
             val dialect: Int
             if (type == 3) {
-                // 拉丁块：Lingua 检测（内部再查白名单）
+                // Latin run:Lingua detection(which re-checks the whitelist inside)
                 dialect = detectLatin(text, fallbackDialect)
             } else if (type == 4) {
-                // 空格标点：跟随上一段
+                // spaces/punct:follow the previous segment
                 dialect = fallbackDialect
             } else if (type == 5) {
-                // 数字：默认语言指定→用默认；不指定→跟随上一段
+                // digit:default set -> use it;unset -> follow previous segment
                 val dl = resolveDefaultLanguage()
                 dialect = if (dl >= 0) dl else fallbackDialect
             } else {
-                // 中文/日文/韩文：查白名单，不在白名单则 fallback 默认语言
+                // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
             }
             out.add(Segment(text, dialect))
         }
 
-        /** 拉丁文本检测：永远先 Lingua 检测，检测不出（null）才用默认语言。
-         * 关键：拉丁文本绝不能 fallback 到中文/韩文/日文——那是错误的。
-         * 检测出的语言若不在白名单，fallback 默认语言（否则英文）。 */
+        /** Latin-text detection:always try Lingua first;only use the default language when detection returns null.
+        * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
+        * if the detected language isn't in the whitelist,,fall back to the default language(or English). */
         private fun detectLatin(text: String, fallbackDialect: Int): Int {
             val ld = getLingua()
             if (ld == null) {
-                // Lingua 不可用：默认拉丁语言（默认语言若拉丁，否则英文）
+                // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
                 val dl = resolveDefaultLanguage()
                 return if (isLatinDialect(dl)) dl else englishDialect
             }
@@ -414,11 +414,11 @@ class LanguageDetector {
             try {
                 val lang = ld.detectLanguageOf(text)
                 if (lang == null) {
-                    // 检测不出 → 默认语言（仅拉丁），否则英文
+                    // detection returned null -> default language(Latin only),else English
                     val dl = resolveDefaultLanguage()
                     return if (isLatinDialect(dl)) dl else englishDialect
                 }
-                // 检测出的语言查白名单：不在白名单 → fallback 默认语言
+                    // detected language goes through the whitelist:if absent -> fallback to default language
                 val code = languageToCode(lang)
                 if (!isLanguageEnabled(code)) {
                     val dl = resolveDefaultLanguage()
@@ -426,7 +426,7 @@ class LanguageDetector {
                 }
                 return languageToDialect(lang)
             } catch (e: Throwable) {
-                // 检测异常 → 默认语言（仅拉丁），否则英文
+                // detection exception -> default language(Latin only),else English
                 val dl = resolveDefaultLanguage()
                 return if (isLatinDialect(dl)) dl else englishDialect
             }

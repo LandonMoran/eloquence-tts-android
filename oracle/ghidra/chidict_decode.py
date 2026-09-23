@@ -12,7 +12,7 @@ Implements exactly what the x86_64 chsrom.dylib code does (addresses cited):
 - getLexAddr        0x268a  m_pLexTB[which] + lexoff  (m_pLexTB = 8 pointers)
 - getPinyinFromKey  0x26b8  pinyin codes = entry[0..2) (+ Code2Pinyin letters)
 
-Verified against: 中 = 0xD6D0 -> idx 3619 -> which 18, offset 19 ->
+Verified against: "zhong" = 0xD6D0 -> idx 3619 -> which 18, offset 19 ->
 entry at aChiIndTB18[19] -> lexoff 0xea12.
 """
 import json, os, struct, sys

@@ -1,18 +1,18 @@
 package com.xw.vvtts.utils
 
 /**
- * 文本预处理（移植自广荣 TextNormalizer + DefaultPunctuationNormalizer）。
+ * Text preprocessing(ported from Guangrong's TextNormalizer + DefaultPunctuationNormalizer).
  *
- * 解决苹果 Eloquence CJK 库的三大问题：
- *   1. 纯 ASCII 数字不读 → 转中文读法（≤4位整体读，≥5位逐位读）
- *   2. 符号不读 → 139 个符号映射到中文读法
- *   3. 全角/半角宽度归一化（让日期、时间、数字能被正确识别）
+ * Fixes the three big issues in Apple's Eloquence CJK libraries:
+ *   1. Pure ASCII digits aren't spoken -> convert to Chinese number reading(≤4 digits read as a whole;≥5 digit-by-digit)
+ *   2. Symbols aren't spoken ->139 symbols mapped to Chinese readings
+ *   3. Full-width/half-width normalization(so dates,times,,digits are recognized correctly)
  *
- * 广荣算法（已逆向 grtts TextNormalizer.kt）：
- *   DIGIT_CHARS = 零一二三四五六七八九
- *   PLACE_CHARS = ["", 十, 百, 千]
- *   GROUP_UNITS = ["", 万, 亿, 兆, 京, 垓, 秭, 穰, 沟, 涧, 正, 载, 极, ...]
- *   short 规则 ≤4 位 → NUMERIC；long 规则 ≥5 位 → DIGIT
+ * Guangrong's algorithm(reverse-engineered from grtts TextNormalizer.kt):
+ *   DIGIT_CHARS ＝ zero,one,,two,,three,,four,,five,,six,,seven,,eight,,nine
+ *   PLACE_CHARS ＝ ["",ten,,hundred,,thousand]"
+ *   GROUP_UNITS ＝ [10^4, 10^8,,10^12,,...](powers of 10)
+ *   short rule:≤4 digits -> NUMERIC;long rule:≥5 digits -> DIGIT
  */
 class TextNormalizer {
 
@@ -24,7 +24,7 @@ class TextNormalizer {
             "正", "载", "极", "恒河沙", "阿僧祇", "那由他", "不可思议", "无量数",
         )
 
-        /** 符号 → 中文读法映射表（广荣 DefaultPunctuationNormalizer，139 项） */
+        /** Symbol -> Chinese-reading mapping table(Guangrong's DefaultPunctuationNormalizer;139 entries) */
         private val SYMBOL_NAMES: Map<Char, String> = buildSymbolTable()
 
         private fun buildSymbolTable(): Map<Char, String> {
@@ -64,7 +64,7 @@ class TextNormalizer {
             m['}'] = "右花括号"
             m['~'] = "波浪号"
 
-            // 全角符号
+            // full-width symbols
             m['、'] = "顿号"
             m['。'] = "句号"
             m['，'] = "逗号"
@@ -88,7 +88,7 @@ class TextNormalizer {
             m['％'] = "百分号"
             m['￥'] = "人民币符号"
 
-            // 货币/单位/数学符号
+            // currency/unit/math symbols
             m['€'] = "欧元符号"
             m['£'] = "英镑符号"
             m['¥'] = "人民币符号"
@@ -114,7 +114,7 @@ class TextNormalizer {
             return m
         }
 
-        /** 给中文（简/繁）用的规范化：符号读法 + 数字读法 + 宽度归一 */
+        /** Normalization for Chinese(Simplified/Traditional):symbol readings + number readings + width normalization */
         fun normalizeForChinese(input: String): String {
             if (input.isEmpty()) return input
             var s = normalizeSymbols(input)
@@ -122,7 +122,7 @@ class TextNormalizer {
             return s
         }
 
-        /** 符号 → 中文读法 */
+        /** Symbols -> Chinese readings */
         fun normalizeSymbols(input: String): String {
             val sb = StringBuilder(input.length)
             for (i in input.indices) {
@@ -137,7 +137,7 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** 数字读法：识别 ASCII 数字串，按长度规则转中文 */
+        /** Number reading:recognize ASCII digit runs and convert to Chinese by length rules */
         fun normalizeNumberReading(input: String): String {
             val sb = StringBuilder(input.length)
             var i = 0
@@ -145,11 +145,11 @@ class TextNormalizer {
             while (i < n) {
                 val c = input[i]
                 if (isAsciiDigit(c)) {
-                    // 收集连续数字
+                    // collect consecutive digits
                     val start = i
                     while (i < n && isAsciiDigit(input[i])) i++
                     val digits = input.substring(start, i)
-                    // 检查是否是日期/时间的一部分（避免误伤 2024-03-15 / 14:30）
+                    // check whether part of a date/time(avoid mangling 2024-03-15 / 14:30)
                     val isDateTime = hasDateTimeBoundaries(input, start, i)
                     if (isDateTime) {
                         sb.append(digits)
@@ -164,7 +164,7 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** 按 digit 数规则转换：≤4 位整体读，≥5 位逐位读 */
+        /** Convert by digit-count rules:≤4 digits read as a whole;≥5 digit-by-digit */
         fun convertNumber(digits: String): String {
             var t = digits
             while (t.length > 1 && t[0] == '0') t = t.substring(1)
@@ -173,7 +173,7 @@ class TextNormalizer {
             return toChineseDigits(t)
         }
 
-        /** 逐位读：12345 → 一二三四五 */
+        /** Digit-by-digit reading:12345 -> one two three four five */
         fun toChineseDigits(digits: String): String {
             val sb = StringBuilder()
             for (i in digits.indices) {
@@ -183,13 +183,13 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** 整体读：1234 → 一千二百三十四 */
+        /** Whole reading:1234 -> one-thousand-two-hundred-thirty-four */
         fun toChineseNumeric(digits: String): String {
             var t = digits
             while (t.length > 1 && t[0] == '0') t = t.substring(1)
             if (t.isEmpty()) return DIGIT_CHARS[0]
 
-            // 每 4 位分组（从右往左）
+            // group every 4 digits(right to left)
             val groups = ArrayList<String>()
             var rest = t
             while (rest.isNotEmpty()) {
@@ -202,14 +202,14 @@ class TextNormalizer {
             var emitted = false
             for (g in groups.indices) {
                 var group = groups[g]
-                val unitIdx = groups.size - 1 - g  // 组单位索引
+                val unitIdx = groups.size - 1 - g  // group-unit index
                 var gb = convertGroup(group)
                 if (gb.isNotEmpty()) {
-                    // 组间补零：前一非零组和当前组之间有零开头
+                    // zero-pad between groups:leading zeros between the previous non-zero group and this one
                     if (emitted && group[0] == '0') {
                         sb.append(DIGIT_CHARS[0])
                     }
-                    // 处理 "一十" → "十"
+                    // collapse the leading "one-ten" -> "ten"(teens read without the initial one)
                     if (gb.startsWith("一十")) {
                         gb = gb.substring(1)
                     }
@@ -221,7 +221,7 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** 4 位数字组转中文（带零处理） */
+        /** 4-digit group -> Chinese(with zero handling) */
         private fun convertGroup(group: String): String {
             val padded = StringBuilder("0000")
             padded.replace(4 - group.length, 4, group)
@@ -247,9 +247,9 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** 检测数字串是否是日期/时间的一部分（避免 2024/03/15、14:30 被误转） */
+        /** Detect whether a digit run is part of a date/time(avoid wrongly converting 2024/03/15,,14:30) */
         private fun hasDateTimeBoundaries(input: String, start: Int, end: Int): Boolean {
-            // 后面跟 年/月/日 或 - / 或 点/分/秒 或 :
+            // followed by year/month/day,,'-' or '/',,dot/min/sec,,or ':'
             if (end < input.length) {
                 val c = input[end]
                 if (c == '年' || c == '月' || c == '日' || c == '点' || c == '分' || c == '秒'
@@ -258,10 +258,10 @@ class TextNormalizer {
                     return true
                 }
             }
-            // 前面是数字（多段日期如 2024-03-15）
+            // preceded by a digit(multi-part date like 2024-03-15)
             if (start > 0) {
                 val c = input[start - 1]
-                if (c == '/' || c == '-' || c == ':' || c == '：' || c == '年' || c == '月' || c == '点') {
+            // preceded by a digit(multi-part date like 2024-03-15)
                     return true
                 }
             }

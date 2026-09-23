@@ -3,18 +3,18 @@ package com.xw.vvtts.core
 import android.util.Log
 
 /**
- * 自研 ECI 桥接（libvvtts_core.so）v3
- * 中英文各一个 session（dialect handle），角色由反引号 annotation 驱动。
+ * In-house ECI bridge (libvvtts_core.so)v3
+ * One session per language(a dialect handle);voices are driven by backtick annotations.
  *
- * 所有 native 声明必须是 @JvmStatic（静态方法落在外层类上），
- * 否则 Kotlin 会把它编译进 Companion，JNI 符号名会变成
- * Java_com_xw_vvtts_core_VvttsCore_00024Companion_native*，C 桥接就找不到方法了。
+ * All native declarations must be @JvmStatic(static methods land on the outer class),
+ * 否则 Kotlin 会把它编译进 Companion,JNI 符号名会变成
+ * Java_com_xw_vvtts_core_VvttsCore_00024Companion_native*,C 桥接就找不到方法了.
  */
 class VvttsCore {
 
     companion object {
-        const val CHARSET_1252 = 0   // Windows-1252（西文）
-        const val CHARSET_GBK = 6    // 中文 GB18030
+        const val CHARSET_1252 = 0   // Windows-1252 (Western
+        const val CHARSET_GBK = 6    // Chinese GB18030
 
         init {
             System.loadLibrary("vvtts_core")
@@ -29,7 +29,7 @@ class VvttsCore {
         @JvmStatic external fun nativeShutdown(handle: Long)
         @JvmStatic external fun nativeStop(handle: Long)
 
-        /** 为指定 dialect 创建 session（重复调用会重建） */
+       /** Create a session for the given dialect(repeated calls rebuild it) */
         @JvmStatic
         fun openEngine(configDir: String?, libDir: String?, dialect: Int): Long {
             return try {
@@ -40,7 +40,7 @@ class VvttsCore {
             }
         }
 
-        /** 合成。textBytes 已编码。返回 PCM short 数组。 */
+       /** Synthesize.textBytes is pre-encoded.Returns a PCM short array. */
         @JvmStatic
         fun synth(handle: Long, dialect: Int, text: ByteArray, charsetId: Int, outPath: String?): ShortArray? {
             return try {
@@ -51,7 +51,7 @@ class VvttsCore {
             }
         }
 
-        /** ECI 语音参数（voice=0 当前活动语音） */
+       /** ECI voice params(voice=0 is the active voice) */
         @JvmStatic
         fun setVoiceParam(handle: Long, voice: Int, param: Int, value: Int): Int {
             return try {
@@ -70,7 +70,7 @@ class VvttsCore {
             }
         }
 
-        /** 引擎参数（2=音调 5=音量 7=语速） */
+       /** Engine params(2=pitch 5=volume 7=speed) */
         @JvmStatic
         fun setParam(handle: Long, param: Int, value: Int): Int {
             return try {
@@ -80,7 +80,7 @@ class VvttsCore {
             }
         }
 
-        /** 切换标准 voice */
+       /** Switch to a standard voice */
         @JvmStatic
         fun setStandardVoice(handle: Long, voiceNumber: Int): Int {
             return try {
@@ -109,5 +109,5 @@ class VvttsCore {
         }
     }
 
-    /** 无状态桥接类（保留默认构造以兼容旧 new VvttsCore() 调用点） */
+       /** Stateless bridge class(default constructor kept for compat with old new VvtttsCore() call sites) */
 }
