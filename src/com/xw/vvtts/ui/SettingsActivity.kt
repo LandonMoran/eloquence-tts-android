@@ -539,7 +539,7 @@ class SettingsActivity : Activity() {
                     builder.setMessage(getString(R.string.dict_clear_confirm))
                     builder.setPositiveButton(getString(R.string.dict_clear)) { _, _ ->
                         voiceConfig!!.clearDict()
-                        Toast.makeText(this,, getString(R.string.dict_cleared), Toast.LENGTH_SHORT.show()
+                        Toast.makeText(this, getString(R.string.dict_cleared), Toast.LENGTH_SHORT.show()
                     }
                     builder.setNegativeButton(getString(R.string.cancel), null)
                     builder.show()

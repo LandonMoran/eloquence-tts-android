@@ -173,6 +173,7 @@ class VvTtsService : TextToSpeechService() {
             }
         }
 
+        var started = false
         try {
             if (text == null || text.isEmpty()) {
                 return  // finally emits the start+done pair for an empty utterance
@@ -188,7 +189,6 @@ class VvTtsService : TextToSpeechService() {
             // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
 
-            var started = false
 
             if (engine == null || !engine!!.isInitialized()) {
                 return  // finally emits the start+done pair for an uninitialized engine
