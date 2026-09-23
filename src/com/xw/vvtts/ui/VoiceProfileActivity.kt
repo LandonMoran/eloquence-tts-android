@@ -38,17 +38,18 @@ class VoiceProfileActivity : Activity() {
             val idx = i + 1
             val row = TextView(this)
             var label = VoiceProfile.PRESET_NAMES[i]
-            val isCur = idx == curPreset
+                        val isCur = idx == curPreset
             row.text = if (isCur) "● $label" else label
             row.textSize = 20f
             row.setPadding(0, dp(16), 0, dp(16))
             row.isClickable = true
+            row.contentDescription = label
             if (isCur) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    row.setStateDescription("selected")
-                } else {
-                    row.contentDescription = "$label, selected"
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            row.setStateDescription("selected")
+            } else {
+            row.contentDescription = "$label, selected"
+            }
             }
 
             // Tap: select and return
