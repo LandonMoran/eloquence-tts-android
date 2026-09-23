@@ -12,6 +12,7 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
+import kotlin.math.roundToInt
 import android.widget.Toast
 import com.xw.vvtts.utils.VoiceProfile
 
@@ -67,5 +68,7 @@ class VoiceProfileActivity : Activity() {
         scroll.addView(root)
         setContentView(scroll)
     }
+
+    private fun dp(px: Int): Int = (px * resources.displayMetrics.density).toInt()
 
 }

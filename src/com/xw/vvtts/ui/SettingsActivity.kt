@@ -13,6 +13,8 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -82,7 +84,7 @@ class SettingsActivity : Activity() {
                     getString(R.string.tab_detection),
                     getString(R.string.tab_tools),
                 )
-                for ((i in tabIds.indices)) {
+                for (i in tabIds.indices) {
                     val rb = RadioButton(this)
                     rb.id = tabIds[i]
                     rb.text = tabLabels[i]
@@ -113,7 +115,7 @@ class SettingsActivity : Activity() {
                 panelTools.setPadding(0, dp(8),0,0)
                 val allPanels = arrayOf(panelVoice, panelSpeech, panelReading, panelDetection, panelTools)
                 tabGroup.setOnCheckedChangeListener { _, checkedId ->
-                    for ((i in allPanels.indices)) {
+                    for (i in allPanels.indices) {
                         allPanels[i].visibility = if (tabIds[i] == checkedId) View.VISIBLE else View.GONE
                 val activeIndex = allPanels.indices.firstOrNull { tabIds[it] == checkedId }
                 if (activeIndex != null) {
