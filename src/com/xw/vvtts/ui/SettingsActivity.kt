@@ -87,7 +87,8 @@ class SettingsActivity : Activity() {
                 for (i in tabIds.indices) {
                     val rb = RadioButton(this)
                     rb.id = tabIds[i]
-                    rb.text = tabLabels[i]
+                    rb.text = if (i == 3) getString(R.string.tab_detection_short) else tabLabels[i]
+                    rb.contentDescription = tabLabels[i]
                     rb.textSize =  14f
                     rb.minHeight = dp(48)
                     rb.setPadding(dp(8), dp(4), dp(8), dp(4))
@@ -894,6 +895,7 @@ class SettingsActivity : Activity() {
     private fun addSectionHeader(root: LinearLayout, labelRes: Int) {
         val tv = TextView(this)
         tv.text = getString(labelRes)
+        tv.setAccessibilityHeading(true)
         tv.setAllCaps(true)
         tv.textSize = 12f
         tv.setLetterSpacing(0.08f)

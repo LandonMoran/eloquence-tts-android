@@ -141,6 +141,7 @@
     <string name="tab_speech">Speech</string>
     <string name="tab_reading">Reading</string>
     <string name="tab_detection">Detection</string>
+    <string name="tab_detection_short">Detect</string>
     <string name="tab_tools">Tools</string>
 
     <!-- About -->
