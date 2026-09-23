@@ -61,8 +61,8 @@ jobs:
       - name: Generate keystore
         run: |
           keytool -genkeypair -v \
-            -keystore vvttts.jks -storepass android123 -keypass android123 \
-            -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore vvtts.jks -storepass android123 -keypass android123 \
+            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
       - name: Build native bridge (x86_64)
@@ -75,7 +75,7 @@ jobs:
           export ANDROID_SDK="$HOME/android-sdk"
           bash build.sh
         env:
-          KEYSTORE: vvttts.jks
+          KEYSTORE: vvtts.jks
           KS_PASS: android123
           KEY_PASS: android123
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
@@ -84,6 +84,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vvttts-apk
-          path: vvttts_signed.apk
+          name: vvtts-apk
+          path: vvtts_signed.apk
           if-no-files-found: warn

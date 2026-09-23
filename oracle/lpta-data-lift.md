@@ -36,10 +36,10 @@ The Apple-lifted **linux-x86_64 chs.so** (/root/.scratch_cjk/apple-eloquence-elf
 1. **Locate bases per build**:  derrive addresses from lea/adrp pairs (+const operand( in the chs.so functions + the lpta payloads ( oracle/ghidra/lpta/ — rules_chs.ops.json has the consts base 0x98eb4 for ARM64(**never reuse cross-build offsets: x86_64 differs** — verify per build(.
 2. **Write ELF-aware lifters** (globals/sets/consts( modeled on elflink.py: walk the typed records in .m2e_data (pointer→distance regions copied at startup by src/delta/delta_low.c(,emit C arrays (or hand-compile the tables andreplace the stubs(.
 3. **Integrate**:  rebuild libevv-enus-chs.a, re-run the phoneme probe (EVV_LANG=0x60000,+GB18030 chars( with RULE_TRACE=2 — accept phonemes when rule executions appear (enus trace shows thousands of delta_call_* events;chs currently shows ZERO(.
-4. **Synth gate**:  samples>0 from the waveform path;then run the app-side checks (whitelist 0x60000 in vvttts_core.c charset GB18030 in the JNI, Kotlin zh-CN gate(.
+4. **Synth gate**:  samples>0 from the waveform path;then run the app-side checks (whitelist 0x60000 in vvtts_core.c charset GB18030 in the JNI, Kotlin zh-CN gate(.
 
 ## Cross-checks
 
-- The rom's direct output (tele chs_lookup( — an unbounded-walk bug was fixed earlier (output cap( — verify pinyin sanity with t2c.txt (reference/vvttts-6.1-chs/t2c.txt(.
+- The rom's direct output (tele chs_lookup( — an unbounded-walk bug was fixed earlier (output cap( — verify pinyin sanity with t2c.txt (reference/vvtts-6.1-chs/t2c.txt(.
 - enus control stays green: "hello"→`[.2hE.1lo]`(11 chars( — same binary,always re-run as control(.
 - The DeltaProc_* stubs ARE the correct shape for this family (must return  ️0 per eloquence-engine-integration( — not themselves the gap.

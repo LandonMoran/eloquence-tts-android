@@ -18,7 +18,7 @@
 
 | Payload | Size | On-disk in APK (est.) | Trim target |
 |---|---|---|---|
-| `lib/arm64-v8a/libvvttts_core.so` (118 MB raw tables) | 118 MB | ~52 MB (2.3:1 stored) | **~26 MB raw → ~12 MB on-disk** (zlib) |
+| `lib/arm64-v8a/libvvtts_core.so` (118 MB raw tables) | 118 MB | ~52 MB (2.3:1 stored) | **~26 MB raw → ~12 MB on-disk** (zlib) |
 | `classes*.dex` (4 files) | 25.9 MB | ~13 MB | **~2.5 MB dex → ~1.3 MB on-disk** |
 | `language-models/` (10 langs, 38 files JSON) | 25.3 MB | ~10.4 MB | **~8 MB raw → ~3.5 MB on-disk** |
 | `res/`, manifest, assets | — | ~0.5 MB | minor |
@@ -105,10 +105,10 @@ Expected: dex ≈ 2–3 MB; arm64 APK ≈ 48–50 MB; arm32 ≈ 46–48 MB; univ
 - Possibly: delete unused res (audit first)
 
 **Step 1.** Maximum deflate on the assembly step:
-Change line 107 from `zip -r ../vvttts_unsigned.apk ...` to `zip -9 -r ...` (same archive, max compression; ~0.5–2 MB on the 60 MB payload, zero runtime cost).
+Change line 107 from `zip -r ../vvtts_unsigned.apk ...` to `zip -9 -r ...` (same archive, max compression; ~0.5–2 MB on the 60 MB payload, zero runtime cost).
 
 **Step 2.** Resource audit for dead weight:
-Run `aapt dump resources vvttts_signed.apk | grep -c "string/"` and cross-check `res/` tree against strings referenced in `src/` (scriptable: grep `R.string.<x>` and `@string/<x>` usage vs values files).
+Run `aapt dump resources vvtts_signed.apk | grep -c "string/"` and cross-check `res/` tree against strings referenced in `src/` (scriptable: grep `R.string.<x>` and `@string/<x>` usage vs values files).
 Decision rule: `values-zh-rCN/` + `values-zh-rTW/` stay (Chinese UI is a feature — user-maintained). Remove **only** genuinely unreferenced drawables/strings; when in doubt, keep (resource bugs break TalkBack menus, not just visuals).
 
 **Step 3.** `extractNativeLibs` audit (sub-agent candidate, "manifest-audit" card):
@@ -211,7 +211,7 @@ Check `AndroidManifest.xml`'s `application` tag: if `android:extractNativeLibs="
 
 **Why:** size targets were set on the assumption that libs ship ~2.3:1-compressed. Measurement of the post-P2 artifact showed this was already beaten by Phase 2's zip -9 and that in-core deflate cannot compound with it.
 
-**Evidence (measured on vvttts-arm64-v8a.apk @ a45f0b4+P2+P3):**
+**Evidence (measured on vvtts-arm64-v8a.apk @ a45f0b4+P2+P3):**
 - lib member compressed at **2.72:1** (raw 117,775,952 → 43,335,111 B) — deflate level effectively banked
 - `.rodata` = 65.6 MB of real data (256 distinct bytes); zlib9 → 28.1 MB (0.408)
 - full double-deflate simulation: member 43,335,111 → 43,161,092 B (**−174 KB, +0.4%**)
@@ -253,7 +253,7 @@ Rate limits are real and measured: parallel child batches instant-429. **Max 2 c
 ### Sub-agent task cards (dispatch = copy the card into `delegate_task` context verbatim)
 
 **Card: size-report** (Phase 0, prep) — flash-tier safe.
-Goal: append the size-report block to end of `build.sh` at repo /root/eloquence-re/eloquence-android (absloute paths in the file are fine), matching this exact awk over `unzip -l vvtts_signed.apk`: sum `classes*.dex`, `lib/`, `language-models/` entries and print `dex=N lib=N models=N total=N` plus `APK_ON_DISK=N`. Do NOT modify any other line. Output: the diff and the printed report for a locally-built `vvttts_signed.apk` if one exists at repo root, else the final bash block. Report: yes/stale/no.
+Goal: append the size-report block to end of `build.sh` at repo /root/eloquence-re/eloquence-android (absloute paths in the file are fine), matching this exact awk over `unzip -l vvtts_signed.apk`: sum `classes*.dex`, `lib/`, `language-models/` entries and print `dex=N lib=N models=N total=N` plus `APK_ON_DISK=N`. Do NOT modify any other line. Output: the diff and the printed report for a locally-built `vvtts_signed.apk` if one exists at repo root, else the final bash block. Report: yes/stale/no.
 
 **Card: manifest-audit** (Phase 2, prep) — flash-tier safe.
 Goal: read /root/eloquence-re/eloquence-android/AndroidManifest.xml; report (1) current `android:extractNativeLibs` value or absence, (2) `targetSdkVersion`/`minSdkVersion`, (3) whether anything in the app (BroadcastReceiver/Service docs, TTS engine setup) would plausibly require unpacked `.so` files — search src/ for `System.loadLibrary`, `getApplicationInfo().nativeLibraryDir`, exec of native paths. Output: findings list + recommendation with rationale. No code changes.
@@ -262,10 +262,10 @@ Goal: read /root/eloquence-re/eloquence-android/AndroidManifest.xml; report (1) 
 Goal: write /root/eloquence-re/eloquence-android/tools/model_pack.py per Phase 3 Step 1 spec: read `language-models/<lang>/*.json` (format: JSON maps of `"ngram" → "<freq>"` strings), emit one packed binary per language — magic `VVN1`, lang tag, count, offset to sorted UTF-8 length-prefixed token table, then varint counts. Must include `--verify` (round-trip key-set equality vs input JSON, exit 1 on mismatch) and `--lang` filter for minimal mode. Run it on the real language-models dir; assert output totals ≤ 45% of input bytes. Output: tool path + per-language input→output byte table.
 
 **Card: lab-variant-builds** (Phase 0/2 prep, + every phase) — flash-tier safe (yaml + one line in build_native.sh).
-Goal: in /root/eloquence-re/eloquence-android add CI jobs so every run artifacts: `vvttts-x86_64.apk` (test-only; never listed as shipping) and the existing arm64/arm32/universal. Reuse the existing `ABI=x86_64 bash build_native.sh`+`build.sh` pattern already proven by the x86_64 smoke jobs. Output: build.yml diff + job names.
+Goal: in /root/eloquence-re/eloquence-android add CI jobs so every run artifacts: `vvtts-x86_64.apk` (test-only; never listed as shipping) and the existing arm64/arm32/universal. Reuse the existing `ABI=x86_64 bash build_native.sh`+`build.sh` pattern already proven by the x86_64 smoke jobs. Output: build.yml diff + job names.
 
 **Card: arm32-lab-workflow** (Phase 0/2 prep) — flash-tier safe.
-Goal: in /root/shevery-emu-lab add a second workflow `arm32-session.yml` copied from `emu-session` (emu.yml) but with `arch: armeabi-v7a` and `api-level: 25`, plus a `mode: park` equivalent (park only — the shevery test script must NOT run; vvttts drives it externally via adb). Name it so the lab README's "manual runs only" stance is preserved. Output: workflow file diff.
+Goal: in /root/shevery-emu-lab add a second workflow `arm32-session.yml` copied from `emu-session` (emu.yml) but with `arch: armeabi-v7a` and `api-level: 25`, plus a `mode: park` equivalent (park only — the shevery test script must NOT run; vvtts drives it externally via adb). Name it so the lab README's "manual runs only" stance is preserved. Output: workflow file diff.
 
 **Card: gen_emoji.py** (Phase 5, prep) — flash-tier safe.
 Goal: write /root/eloquence-re/eloquence-android/tools/gen_emoji.py that reads a CLDR emoji-test.txt (path given as arg) and emits a Kotlin `HashMap<String,String>` literal matching the current hand-rolled table's structure in EmojiExpander.kt (read that file's table section first). The generator must also emit `--diff` mode comparing generated names to the existing file's names (report mismatches, change nothing). Output: tool + mismatch report (expected: zero or documented).
@@ -288,17 +288,17 @@ Prep track starts immediately (P0→P2 enablers, all parallel within the 2-child
 
 ## Validation plan — 32-bit AND 64-bit (the "validate it entirely" requirement)
 
-Every phase ships BOTH `vvttts-armeabi-v7a.apk` and `vvttts-arm64-v8a.apk` (+ universal; + x86_64 test variant). Per phase, run the checks in this order — the parent owns V1/V3/V4; V2 is where the ladder's parallel children and the emu-lab come in.
+Every phase ships BOTH `vvtts-armeabi-v7a.apk` and `vvtts-arm64-v8a.apk` (+ universal; + x86_64 test variant). Per phase, run the checks in this order — the parent owns V1/V3/V4; V2 is where the ladder's parallel children and the emu-lab come in.
 
 **V1 — Static ABI verification (CI-fail gate, automated, every build):**
 ```bash
-unzip -p vvttts-armeabi-v7a.apk lib/armeabi-v7a/libvvttts_core.so > /tmp/a32.so
-unzip -p vvttts-arm64-v8a.apk  lib/arm64-v8a/libvvttts_core.so  > /tmp/a64.so
+unzip -p vvtts-armeabi-v7a.apk lib/armeabi-v7a/libvvtts_core.so > /tmp/a32.so
+unzip -p vvtts-arm64-v8a.apk  lib/arm64-v8a/libvvtts_core.so  > /tmp/a64.so
 readelf -h /tmp/a32.so | grep -E "Class|Machine"   # ELF32 / ARM
 readelf -h /tmp/a64.so | grep -E "Class|Machine"   # ELF64 / AArch64
-unzip -t vvttts-armeabi-v7a.apk && unzip -t vvttts-arm64-v8a.apk
-apksigner verify --print-certs vvttts-armeabi-v7a.apk; apksigner verify --print-certs vvttts-arm64-v8a.apk
-aapt dump badging vvttts-armeabi-v7a.apk | grep native-code   # lists armeabi-v7a
+unzip -t vvtts-armeabi-v7a.apk && unzip -t vvtts-arm64-v8a.apk
+apksigner verify --print-certs vvtts-armeabi-v7a.apk; apksigner verify --print-certs vvtts-arm64-v8a.apk
+aapt dump badging vvtts-armeabi-v7a.apk | grep native-code   # lists armeabi-v7a
 ```
 Expected: 32-bit APK contains ONLY `armeabi-v7a` (ELF32/ARM); 64-bit contains ONLY `arm64-v8a` (ELF64/AArch64); both signed and verified. Promote to a CI job in Phase 0/2 prep ("V1 job").
 
@@ -309,13 +309,13 @@ gh workflow run emu-session -f api_level=35 -f target=google_apis_playstore -f m
 ```
 Park mode installs nothing — push APKs in from outside: `adb -H <ip> install -r <local-apk>`, `pm grant` runtime perms, start synthesis, `logcat` sweep for `FATAL EXCEPTION|Fatal signal|SIGSEGV|backtrace:`, confirm app stays foreground. Same crash-repro/boot-receiver discipline as ci-emulator-lab.
 - **Which APK runs on which image (hard rule):** lab images are `x86_64`. Our shipped APKs are ARM-only — ARM-only APKs on x86_64 images ghost-install (`adb install` says Success, `pm path` empty, "REPLACED but missing application info") or fail with `INSTALL_FAILED_NO_MATCHING_ABIS`. Three lab lanes:
-  1. **x86_64 behavior lane (every commit):** the test-only `vvttts-x86_64.apk` (approved by user, 2026-09-21, testing only — Shevery never needed it because its APKs ship all four ABIs; vvttts ships ARM-only and x86 runs only x86). Exercises every dex/Java/Kotlin path, JNI bridge, TTS service lifecycle in a real Android runtime.
-  2. **arm32 lane (true 32-bit ARM, CI-side):** the `arm32-session.yml` lab workflow (`arch: armeabi-v7a`, `api-level: 25` — the last arm32 image line) + a **test-only flexed build** `--min-api 25` (shipped APK stays 28). This boots the *actual* `armeabi-v7a` `libvvttts_core.so` — genuine 32-bit ARM machine code in CI. User decision (2026-09-21): *"do whatever you have to do to make arm32 work"* — this is the path; if API-25 boots prove flaky/slow on the x86_64 host, fall back to the device lane (V3).
+  1. **x86_64 behavior lane (every commit):** the test-only `vvtts-x86_64.apk` (approved by user, 2026-09-21, testing only — Shevery never needed it because its APKs ship all four ABIs; vvtts ships ARM-only and x86 runs only x86). Exercises every dex/Java/Kotlin path, JNI bridge, TTS service lifecycle in a real Android runtime.
+  2. **arm32 lane (true 32-bit ARM, CI-side):** the `arm32-session.yml` lab workflow (`arch: armeabi-v7a`, `api-level: 25` — the last arm32 image line) + a **test-only flexed build** `--min-api 25` (shipped APK stays 28). This boots the *actual* `armeabi-v7a` `libvvtts_core.so` — genuine 32-bit ARM machine code in CI. User decision (2026-09-21): *"do whatever you have to do to make arm32 work"* — this is the path; if API-25 boots prove flaky/slow on the x86_64 host, fall back to the device lane (V3).
   3. **arm64:** no emulator path exists (no linux/aarch64 emulator binary, no arm64-v8a image on x86_64 hosts) — Pixel device is the arm64 runtime lane, full stop.
 
 **V3 — On-device runtime (ground truth, both ABIs):**
-- Install `vvttts-arm64-v8a.apk` on Pixel; speak English + Chinese + mixed; verify auto-detect, voice switching, settings changes.
-- Install `vvttts-armeabi-v7a.apk` on a 32-bit ARM-capable device (brother's old phone) — the definitive 32-bit gate; the arm32 lab emulator (V2.2) is the CI-side complement.
+- Install `vvtts-arm64-v8a.apk` on Pixel; speak English + Chinese + mixed; verify auto-detect, voice switching, settings changes.
+- Install `vvtts-armeabi-v7a.apk` on a 32-bit ARM-capable device (brother's old phone) — the definitive 32-bit gate; the arm32 lab emulator (V2.2) is the CI-side complement.
 - **Synthesis golden compare:** before/after each phase, dump the same sentence to the same audio file on the same device, compare byte-for-byte (voice tables must be bit-identical; only compression of *storage* may change, never *output*).
 
 **V4 — Host oracle smoke (already in CI):** `chs-smoke` on the arm64 runner links openevv + chs tables directly and validates synthesis logic + audio math — catches table corruption from Phase 4 before any device install. Extended with the compression round-trip gate (Phase 4 Step 2).
@@ -355,7 +355,7 @@ Park mode installs nothing — push APKs in from outside: `adb -H <ip> install -
 1. **Model languages:** keep all 10 (feature parity) or ship en+zh(+es) minimal via `MODELS=minimal` build flag? (I recommend: default all, flag for minimal — already the plan's default.)
 2. **Phase 6 R8:** worth the risk for −1 to −3 MB after Phase 1? (I recommend: skip unless we need the last bytes — default-skip.)
 3. **Delivery target — DECIDED 2026-09-22 (re-baselined, §Re-baseline):** ~20–28 MB unreachable without dropping content; arm64 ≈ 55–56 MB accepted (P1–P3 + strip + JSON-prune). Phase 4 shelved as zip-redundant; Phase 7 (per-language libs) remains the sub-15 MB research path.
-4. **Lab test variants — DECIDED (user, 2026-09-21):** test-only `ABI=x86_64` APK in the CI matrix, never a shipping artifact. (Shevery comparison: its APKs ship all four ABIs — x86 image runs them natively; vvttts ships ARM-only → ghost-install without the variant.)
+4. **Lab test variants — DECIDED (user, 2026-09-21):** test-only `ABI=x86_64` APK in the CI matrix, never a shipping artifact. (Shevery comparison: its APKs ship all four ABIs — x86 image runs them natively; vvtts ships ARM-only → ghost-install without the variant.)
 5. **arm32 testing — DECIDED (user, 2026-09-21):** *"do whatever you have to do to make arm32 work."* Implemented as: test-only `--min-api 25` build + `arm32-session.yml` lab workflow (api 25, armeabi-v7a) + brother's phone as backstop. Shipped APK stays `--min-api 28`.
 
 ## Execution order (laddered)

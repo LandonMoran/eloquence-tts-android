@@ -98,7 +98,7 @@ case "$ABI" in
 esac
 for need in $ABIS; do
   if [ ! -f "native-libs/$need/libvvtts_core.so" ]; then
-    echo "libvvttts_core.so missing ($need) -- running build_native.sh first..."
+    echo "libvvtts_core.so missing ($need) -- running build_native.sh first..."
     ABI="$need" bash build_native.sh || exit $?
   fi
 done

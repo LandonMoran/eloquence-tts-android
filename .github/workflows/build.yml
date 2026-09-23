@@ -66,8 +66,8 @@ jobs:
       - name: Generate keystore
         run: |
           keytool -genkeypair -v \
-            -keystore vvttts.jks -storepass android123 -keypass android123 \
-            -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore vvtts.jks -storepass android123 -keypass android123 \
+            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
       - name: Build native bridge (arm64-v8a + armeabi-v7a + x86_64; openevv + JNI core)
@@ -81,21 +81,21 @@ jobs:
 
       - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
         run: |
-          rm -f vvttts-arm64-v8a.apk vvttts-armeabi-v7a.apk vvttts-universal.apk vvttts-test-x86_64.apk
+          rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk
           echo "=== Build arm64-v8a (phones) ==="
-          ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvttts-arm64-v8a.apk
+          ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvtts-arm64-v8a.apk
           echo "=== Build armeabi-v7a (32-bit devices/emulators) ==="
           # TEST_MIN_API is a test-only override (default 28); MIN_API=25 lets an
           # API-25 arm32 emulator install this APK.
-          ABI=armeabi-v7a MIN_API="${TEST_MIN_API:-28}" bash build.sh && cp vvtts_signed.apk vvttts-armeabi-v7a.apk
+          ABI=armeabi-v7a MIN_API="${TEST_MIN_API:-28}" bash build.sh && cp vvtts_signed.apk vvtts-armeabi-v7a.apk
           echo "=== Build universal (both ABIs) ==="
-          ABI=universal bash build.sh && cp vvtts_signed.apk vvttts-universal.apk
+          ABI=universal bash build.sh && cp vvtts_signed.apk vvtts-universal.apk
           echo "=== Build x86_64 (TEST-ONLY: emulator lab smoke; not a shipping artifact) ==="
-          ABI=x86_64 bash build.sh && cp vvtts_signed.apk vvttts-test-x86_64.apk
-          ls -lh vvttts-*.apk
+          ABI=x86_64 bash build.sh && cp vvtts_signed.apk vvtts-test-x86_64.apk
+          ls -lh vvtts-*.apk
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
-          KEYSTORE: vvttts.jks
+          KEYSTORE: vvtts.jks
           KS_PASS: android123
           KEY_PASS: android123
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
@@ -103,18 +103,18 @@ jobs:
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: vvttts-signed-apk
+          name: vvtts-signed-apk
           path: |
-            vvttts-arm64-v8a.apk
-            vvttts-armeabi-v7a.apk
-            vvttts-universal.apk
+            vvtts-arm64-v8a.apk
+            vvtts-armeabi-v7a.apk
+            vvtts-universal.apk
           if-no-files-found: error
 
       - name: Upload TEST-ONLY x86_64 APK (emulator lab)
         uses: actions/upload-artifact@v4
         with:
-          name: vvttts-test-x86_64-apk
-          path: vvttts-test-x86_64.apk
+          name: vvtts-test-x86_64-apk
+          path: vvtts-test-x86_64.apk
           if-no-files-found: error
 
   chs-smoke:
