@@ -413,7 +413,7 @@ class EloquenceEngine(context: Context) {
                         // matching the CSV speed in the 8-param injection above; previously eciSampleRate
                         // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
-                        // Output rate fixed at the device-native 11025;the engine itself changes speed without pitch shift.От
+                        // Output rate fixed at the device-native 11025;the engine itself changes speed without pitch shift.
                         val speedVal = Math.round(50.0f * uiRate / 100.0f)
                             .toInt().coerceIn(5, 250)   // eciSpeed: 0..250 (engine ceiling
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
@@ -440,6 +440,15 @@ class EloquenceEngine(context: Context) {
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
             val outFile = File(appContext.cacheDir, "core_pcm_out")
+            // Second param write right before synthesis — an addText/internal reset on this
+            // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
+            for (p in 0..7) {
+                val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
+                val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+            }
+            VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
+                        VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
+            VvttsCore.setVoiceParam(handle, 0, 7, voice.vol)   // eciVolume
             var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
