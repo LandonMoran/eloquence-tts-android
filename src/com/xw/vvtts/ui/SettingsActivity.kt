@@ -198,7 +198,7 @@ class SettingsActivity : Activity() {
         // Pick a sample + dialect matching the current language setting
         val text: String
         val dialect: Int
-        if (voiceConfig!!.isAutoDetect) {
+        if (LanguageDetector.isDetectionEnabled()) {
             text = "Hello, this is a speech synthesis test."
                         dialect = EloquenceEngine.DIALECT_EN_US
         } else {

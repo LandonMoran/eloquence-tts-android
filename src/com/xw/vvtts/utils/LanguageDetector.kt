@@ -404,6 +404,20 @@ class LanguageDetector {
         * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
         * if the detected language isn't in the whitelist,,fall back to the default language(or English). */
         private fun detectLatin(text: String, fallbackDialect: Int): Int {
+            // Short runs (names, loanwords, fragments( almost always belong to
+                        // the user's base language. Don't let Lingua flip the voice mid-sentence:
+                        // trust the pinned default(if Latin(, else the previous segment's dialect
+                        // (else English. Real phrases(>=10 chars( still get detected.
+
+
+            if (text.length <	10) {
+                val dl = resolveDefaultLanguage()
+                if (isLatinDialect(dl)) return dl
+                return if (isLatinDialect(fallbackDialect)) fallbackDialect else englishDialect
+
+
+
+            }
             val ld = getLingua()
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)

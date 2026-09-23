@@ -33,14 +33,14 @@ class VoiceConfig(context: Context) {
     val isAutoDetect: Boolean
         get() = prefs.getBoolean(KEY_AUTO_DETECT, true)
 
-    fun setVoice(v: String) { prefs.edit().putString(KEY_VOICE, v).commit() }
-    fun setRate(r: Int) { prefs.edit().putInt(KEY_RATE, r).commit() }
-    fun setPitch(p: Int) { prefs.edit().putInt(KEY_PITCH, p).commit() }
-    fun setVolume(v: Int) { prefs.edit().putInt(KEY_VOLUME, v).commit() }
-    fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).commit() }
-    fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).commit() }
+    fun setVoice(v: String) { prefs.edit().putString(KEY_VOICE, v).apply() }
+    fun setRate(r: Int) { prefs.edit().putInt(KEY_RATE, r).apply() }
+    fun setPitch(p: Int) { prefs.edit().putInt(KEY_PITCH, p).apply() }
+    fun setVolume(v: Int) { prefs.edit().putInt(KEY_VOLUME, v).apply() }
+    fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).apply() }
+    fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).apply() }
 
-    fun setPunctEnabled(b: Boolean) { prefs.edit().putBoolean(KEY_PUNCT, b).commit() }
+    fun setPunctEnabled(b: Boolean) { prefs.edit().putBoolean(KEY_PUNCT, b).apply() }
     val punctEnabled: Boolean
         get() = prefs.getBoolean(KEY_PUNCT, false)
 
@@ -69,7 +69,7 @@ class VoiceConfig(context: Context) {
             kept.add(l)
         }
         kept.add(w + "|" + s)
-        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).commit()
+        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).apply()
     }
 
     fun removeDictEntry(word: String) {
@@ -80,10 +80,10 @@ class VoiceConfig(context: Context) {
             if (l.substringBefore('|').equals(word, ignoreCase = true)) continue
             kept.add(l)
         }
-        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).commit()
+        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).apply()
     }
 
-    fun clearDict() { prefs.edit().remove(KEY_DICT).commit() }
+    fun clearDict() { prefs.edit().remove(KEY_DICT).apply() }
     companion object {
         private const val PREFS = "vvtts_prefs"
         const val KEY_VOICE = "voice"

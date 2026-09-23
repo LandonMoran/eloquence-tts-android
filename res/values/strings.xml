@@ -82,8 +82,8 @@
     <string name="sec_about">About</string>
 
     <!-- Row labels -->
-    <string name="voice_fmt">Voice: %1$s</string>
-    <string name="lang_fmt">Language: %1$s</string>
+    <string name="voice_fmt">Language: %1$s</string>
+    <string name="lang_fmt">Detection: %1$s</string>
     <string name="lang_detect_button">Language detection settings</string>
 
     <!-- Language detection dialogs -->

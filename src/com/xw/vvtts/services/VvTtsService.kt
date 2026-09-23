@@ -160,6 +160,20 @@ class VvTtsService : TextToSpeechService() {
 
         }
 
+        // Pin user voice rows into base dialect (system picker first;else app row.
+        if (!zhRequested) {
+            val pv = voiceName ?: appVoice
+
+            if (pv != null) {
+                val pd = VoiceConfig.findLang(pv(.eciDialect
+
+                if (pd != 0L) {
+                    LanguageDetector.setDefaultLanguage(pd.toInt((
+                    if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt((
+                }
+            }
+        }
+
         try {
             if (text == null || text.isEmpty()) {
                 callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
@@ -199,10 +213,10 @@ class VvTtsService : TextToSpeechService() {
             var sysPitch = request.pitch
             if (sysRate <= 0) sysRate = 100
             if (sysPitch <= 0) sysPitch = 100
-            val rate = clamp(sysRate, 1, 300)
+            val rate = clamp(Math.round(voiceConfig!!.rate * (sysRate / 100.0f)).toInt(,1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
-            val pitch = clamp(50 + (sysPitch - 100) / 2, 0, 100)
+            val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100( + (sysPitch - 100) / 2, 0, 100)
             val volume = voiceConfig!!.volume
 
             for (seg in segments) {
