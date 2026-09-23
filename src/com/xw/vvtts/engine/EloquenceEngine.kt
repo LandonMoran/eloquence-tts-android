@@ -379,11 +379,29 @@ class EloquenceEngine(context: Context) {
             // Inject this voice's 8 ECI voice params (gender=0 head=1 pitchBase=2
             // pitchFluc=3 rough=4 breath=5 speed=6 vol=7.
             val vp = voiceProfile
+            var pitchLogged = false
+            var speedLogged = false
+            var volLogged = false
             for (p in 0..7) {
             // Custom overrides first; otherwise KonaVoice defaults
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
-                VvttsCore.setVoiceParam(handle, 0, p, value)
-            // Fail silent: occasional ret<0 from setVoiceParam doesn't affect synthesis; no logging to avoid spam
+                val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+                // Diagnostic-only logging (remove after root cause found): failures always;
+                // successes once per param, so a dead channel shows in logcat without spam.
+
+                if (ret < 0) {
+                    Log.w("VvTts", "voice param #%d=%d -> ret %d (FAILURE)", p, value, ret)
+                } else if (p==2 && !pitchLogged) {
+
+                    Log.i("VvTts", "voice param #2 pitch=%d -> ret %d (OK)", value, ret)
+                    pitchLogged = true
+                } else if (p==6 && !speedLogged) {
+                    Log.i("VvTts", "voice param #6 speed=%d -> ret %d (OK)", value, ret)
+                    speedLogged = true
+                } else if (p==7 && !volLogged) {
+                    Log.i("VvTts", "voice param #7 vol=%d -> ret %d (OK)", value, ret)
+                    volLogged = true
+                }
             }
 
             // User UI params
