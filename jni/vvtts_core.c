@@ -201,7 +201,6 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     }
 
     eciClearInput(s->hECI);
-    et_insertIndex(s->hECI, 4242);   /* upstream cli probe's index */
     et_addText(s->hECI, buf);
     s->synthBusy = 1;
     et_synthesize(s->hECI);
