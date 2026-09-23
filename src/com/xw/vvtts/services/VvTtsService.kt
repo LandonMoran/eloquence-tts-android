@@ -133,7 +133,7 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         var text: String? = request.text
-        Log.i("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
+        Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 

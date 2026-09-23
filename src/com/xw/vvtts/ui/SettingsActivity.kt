@@ -674,8 +674,9 @@ class SettingsActivity : Activity() {
                     if (which == 0) {
                         LanguageDetector.setDetectionEnabled(true)
                         // Auto: the spoken-voice locale follows the detected text;
-                        // clear any stale zh voice pin (else a previous "Voice: Chinese" pick would force every utterance to Chinese).
-                        voiceConfig!!.setVoice("en-US")
+                        // clear a stale zh voice pin (else a previous "Voice: Chinese" pick would force every utterance to Chinese),
+                        // but only when the user's own pick is zh — never silently discard a non-zh voice.
+                        if (voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
                         voiceConfig!!.setAutoDetect(true)
                     } else {
                         LanguageDetector.setDetectionEnabled(false)
