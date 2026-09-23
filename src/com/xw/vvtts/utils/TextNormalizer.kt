@@ -261,10 +261,12 @@ class TextNormalizer {
             // preceded by a digit(multi-part date like 2024-03-15)
             if (start > 0) {
                 val c = input[start - 1]
-            // preceded by a digit(multi-part date like 2024-03-15)
-                    return true
-                }
-            }
+                                if (c == '年' || c == '月' || c == '日' || c == '点' || c == '分' || c == '秒'
+                                    || c == ':' || c == '：' || c == '/' || c == '-'
+                                ) {
+                                    return true
+                                }
+                            }
             return false
         }
 
