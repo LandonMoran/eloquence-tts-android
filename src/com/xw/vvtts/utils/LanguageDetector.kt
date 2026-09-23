@@ -195,9 +195,9 @@ class LanguageDetector {
             // fresh install would throw every init into the // catch above.
             // Top up neutrally; downstream gating (detectLatin) re-checks the
             // real whitelist per segment, so fillers never leak through.
-            if (filtered.size() < 2) {
+            if (filtered.size < 2) {
                 if (!filtered.contains(Language.ENGLISH)) filtered.add(Language.ENGLISH)
-                if (filtered.size() < 2) filtered.add(Language.GERMAN)
+                if (filtered.size < 2) filtered.add(Language.GERMAN)
             }
             return filtered
         }
