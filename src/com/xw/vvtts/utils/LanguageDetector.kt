@@ -89,10 +89,6 @@ class LanguageDetector {
         fun getFrenchDialect() = frenchDialect
 
         fun setEnabledLanguages(langs: Set<String>?) {
-<<<<<<< HEAD
-            enabledLanguages = if (langs == null || langs.isEmpty()) HashSet() else HashSet(langs)
-            // rebuild the Lingua detector immediately(the language whitelist changed)
-=======
             val newSet = if (langs == null || langs.isEmpty()) HashSet() else HashSet(langs)
             // Skip the rebuild when the whitelist did not change: reusing the same set
             // on every utterance used to null the detector and rebuild Lingua inline on
@@ -103,7 +99,6 @@ class LanguageDetector {
             }
             enabledLanguages = newSet
             // 立即重建 Lingua 检测器（语言白名单变了）
->>>>>>> 9b38c1c (utils: same-set Lingua guard, emoji scan gate, async prefs)
             resetLingua()
         }
 

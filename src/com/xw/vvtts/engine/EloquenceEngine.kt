@@ -6,6 +6,7 @@ import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.KonaVoice
 import com.xw.vvtts.utils.VoiceConfig
+import com.xw.vvtts.utils.TextNormalizer
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
 import java.io.FileWriter
@@ -205,6 +206,15 @@ class EloquenceEngine(context: Context) {
             }
         }
 
+        /** Normalize numerals/symbols for CJK (Chinese readings); other dialects pass
+         *  through unchanged —the Lingua/segment layer already handled their quirks. */
+        private fun preprocess(text: String, dialect: Int): String {
+            return when (dialect) {
+                DIALECT_ZH_CN, DIALECT_ZH_TW -> TextNormalizer.normalizeForChinese(text)
+                else -> text
+            }
+        }
+
         @JvmStatic
         fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
             var volume = volume
@@ -311,7 +321,7 @@ class EloquenceEngine(context: Context) {
             Log.e(TAG, "write eci.ini failed", e)
             return 0L
         }
-        val handle = VvtttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
+        val handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
         Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
         if (handle ==  0L) return 0L
         coreHandles[dialect] = handle
@@ -397,9 +407,8 @@ class EloquenceEngine(context: Context) {
                 pendingEciVoice = voice.eciVoiceNumber
             }
 
-            val pv = VoiceProfile.paramsVersion
             val vp = voiceProfile
-            val sig = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber + "|" + pv
+            val sig = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber
             val sameAsLast = sig == lastParamSig
             lastParamSig = sig
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
