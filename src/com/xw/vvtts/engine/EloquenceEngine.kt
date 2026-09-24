@@ -384,6 +384,10 @@ class EloquenceEngine(context: Context) {
             val sig = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber + "|" + pv
             val sameAsLast = sig == lastParamSig
             lastParamSig = sig
+            val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
+            val speedVal = Math.round(50.0f * uiRate /  100.0f).
+                .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
+
             if (!sameAsLast) {
             // Inject this voice's 8 ECI voice params (gender=0 head=1 pitchBase=2
             // pitchFluc=3 rough=4 breath=5 speed=6 vol=7.
@@ -414,7 +418,6 @@ class EloquenceEngine(context: Context) {
 
             // User UI params
             // Pitch: UI 0-100 -> Apple pitchBase (±30 around the voice's own pitchBase
-            val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
 
             // Speed: eciSpeed voice param (voice param 6, range 0..250, 50=normal,
@@ -422,8 +425,6 @@ class EloquenceEngine(context: Context) {
                         // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
                         // Output rate fixed at the device-native 11025;the engine itself changes speed without pitch shift.
-                        val speedVal = Math.round(50.0f * uiRate / 100.0f)
-                            .toInt().coerceIn(5, 250)   // eciSpeed: 0..250 (engine ceiling
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
                         VvttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 -> fixed  11025 Hz
                         lastSynthRate = 11025
