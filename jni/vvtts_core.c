@@ -82,7 +82,8 @@ static void vv_rsp_build(void) {
                      * t/L2 in [-1,1]. */
                     float t = ((float)k +  0.5f - L2 + ((float)p +  0.5f) / (float)VV_RSP_PHASES);
                     float s = t / L2;
-                    float w = vv_rsp_bessel_i0(VV_RSP_BETA * (float)sqrt(1.0f - s * s)) / vv_rsp_bessel_i0(VV_RSP_BETA);
+                                        if (s >  1.0f) s =  1.0f; else if (s < -1.0f) s = -1.0f;
+                                        float w = vv_rsp_bessel_i0(VV_RSP_BETA * (float)sqrt(1.0f - s * s)) / vv_rsp_bessel_i0(VV_RSP_BETA);
                     float sinc = (t ==  0.0f) ? (float)(2.0 * 3.14159265358979323846 * fc) :
                                           (float)(sin(2.0 * 3.14159265358979323846 * fc * t) / t);
                     vv_rsp_coeff[p][k] = sinc * w;
@@ -119,7 +120,7 @@ static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *out
             /* h[p][k] pairs with input sample at offset (k - 32( from the
              * center (in[i]:: the coefficient table was built symmetric, so
              * the sweep below covers that exact stereo window. */
-            acc += vv_rsp_coeff[p][k] * (float)src[k];
+            acc += vv_rsp_coeff[p][k] * (float)src[k - VV_RSP_HALF];
         }
         /* Round-to-nearest with 16-bit clipping. */
         float v = acc;
