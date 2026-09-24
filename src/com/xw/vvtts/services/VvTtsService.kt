@@ -1,6 +1,10 @@
 package com.xw.vvtts.services
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.media.AudioFormat
+import android.os.UserManager
+import android.os.SystemClock
 import android.speech.tts.SynthesisCallback
 import android.speech.tts.SynthesisRequest
 import android.speech.tts.TextToSpeech
@@ -27,12 +31,20 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onCreate() {
         super.onCreate()
-        voiceConfig = VoiceConfig(this)
-        voiceProfile = VoiceProfile(this)
-        engine = EloquenceEngine(this)
+        // Direct Boot: speak on the lock screen ( before first unlock(.
+        // Settings live in credential-encrypted storage until the user unlocks, so
+        // mirror them into device-protected storage whenever we start unlocked
+        // a locked start before the first unlock uses defaults, like evvdroid does. The
+        // engine writes only eci.ini to filesDir/eloquence/, going to the same
+        // device-protected area keeps it writable while locked ( voice banks are in the .so ).
+        val device = createDeviceProtectedStorageContext()
+        if (getSystemService(UserManager::class.java).isUserUnlocked()) mirrorPrefsToDevice(device)
+        voiceConfig = VoiceConfig(device)
+        voiceProfile = VoiceProfile(device)
+        engine = EloquenceEngine(device)
         val ok = engine!!.initialize()
-        // Restore the language-detection settings
-        restoreLanguageSettings()
+        // Restore the language-detection settings from device-protected storage
+        restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
         // Preload Lingua (background thread)
         LanguageDetector.preloadLingua()
         // Warm the engine handle for the user's fixed dialect so the first
@@ -109,7 +121,7 @@ class VvTtsService : TextToSpeechService() {
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
         voices.add(Voice("zh-CN", Locale("zh", "CN"),
             Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
-        // Only advertise dialects actually linked in this build (build_native.sh LANGS)。
+        // Only advertise dialects actually linked in this build (build_native.sh LANGS)
         return voices
     }
 
@@ -142,14 +154,14 @@ class VvTtsService : TextToSpeechService() {
 
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
-                // that utterance;the app's own detection/default stays untouched。
+                // that utterance;the app's own detection/default stays untouched
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedLangs = LanguageDetector.getEnabledLanguages()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
         // A zh voice from the *system picker* always pins zh (explicit user
-        // choice(;the app's own "Voice" row only pins zh when detection is OFF —
+        // choice(;the app's own "Voice" row only pins zh when detection is OFF
         // with Auto ON the spoken-voice locale must follow the detected text,
         // otherwise choosing "Auto detect" after a zh voice pick would read
         // every language as Chinese (the reported bug).
@@ -184,6 +196,7 @@ class VvTtsService : TextToSpeechService() {
         }
 
         var started = false
+        stopping = false
         try {
             if (text == null || text.isEmpty()) {
                 return  // finally emits the start+done pair for an empty utterance
@@ -214,13 +227,14 @@ class VvTtsService : TextToSpeechService() {
                         var sysPitch = request.pitch
                         if (sysRate <=  0) sysRate =  100
                         if (sysPitch <=  0) sysPitch =  100
-                        
+
             val rate = clamp(Math.round(sysRate.toFloat()).toInt(),1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
             val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0, 100)
             val volume = voiceConfig!!.volume
 
+            val pace = Pace(engine!!.getCoreSampleRate())
             for (seg in segments) {
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
@@ -239,25 +253,30 @@ class VvTtsService : TextToSpeechService() {
                     }
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
+                    // Pace the handoff: never run more than 300 ms of audio ahead of
+                    // playback  otherwise swipes/stops drown in the framework's queue
                     var offset = 0
                     while (offset < bytes.size) {
+                        if (stopping) break
                         val len = Math.min(max, bytes.size - offset)
                         callback.audioAvailable(bytes, offset, len)
                         offset += len
+                        pace.handed(len)
+                        hold(pace)
                     }
                 }
             }
         } catch (e: Throwable) {
             Log.e(TAG, "onSynthesizeText failed", e)
         } finally {
-                    // Revert the per-utterance override (preserve app-pref state)。
+                    // Revert the per-utterance override (preserve app-pref state)
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setEnabledLanguages(savedLangs)
                     LanguageDetector.setFixedDialect(savedFixed)
                     try {
                         // Playback contract: start() must precede done((),the framework throws
-                        // otherwise. One pair per utterance — every path funnels here, so
-                        // all silent/empty/early returns get the pair exactly once。
+                        // otherwise. One pair per utterance  every path funnels here, so
+                        // all silent/empty/early returns get the pair exactly once
                         if (!started) {
                             callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
                         }
@@ -269,7 +288,7 @@ class VvTtsService : TextToSpeechService() {
 
     private fun isCjkDialect(dialect: Int): Boolean {
         // TextNormalizer's symbol/number readings are Mandarin (it is
-        // documented "for Chinese (Simplified/Traditional)"), so apply it to zh only — feeding
+        // documented "for Chinese (Simplified/Traditional)"), so apply it to zh only  feeding
         // Chinese readings to ja/ko voices would be wrong.
         return dialect == EloquenceEngine.DIALECT_ZH_CN
                 || dialect == EloquenceEngine.DIALECT_ZH_TW
@@ -289,25 +308,97 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
-    override fun onStop() {
-        if (engine != null) engine!!.stop()
-    }
+    @Volatile private var stopping = false
 
-    // Restore language-detection settings from SharedPreferences
-    private fun restoreLanguageSettings() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
-        LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-        LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
-        LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
-        LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
-        LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
-        LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
-        LanguageDetector.setEnabledLanguages(prefs.getStringSet("enabled_langs", null))
-    }
+        override fun onStop() {
+            stopping = true
+            if (engine != null) engine!!.stop()
+        }
 
-    companion object {
-        private const val TAG = "VvTtsService"
-        private const val PREFS_NAME = "vvtts_lang_settings"
+        // Restore language-detection settings from SharedPreferences (device-protected
+        // storage when the user is locked; mirrored copy otherwise(.
+        private fun restoreLanguageSettings(prefs: SharedPreferences) {
+            LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
+            LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
+            LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
+            LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
+            LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
+            LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
+            LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
+            LanguageDetector.setEnabledLanguages(prefs.getStringSet("enabled_langs", null))
+        }
+
+        // === Direct Boot (lock-screen( helpers === Mirror the 3 settings files from
+        // credential-encrypted to device-protected storage. Called only while unlocked;
+        // the device copy is what a locked start reads ( before first unlock(.
+        private fun mirrorPrefsToDevice(device: Context) {
+            val names = arrayOf(
+                VOICE_CONFIG_PREFS,     // voice/rate/pitch/volume/dsp/auto-detect/punct/user dict
+                VOICE_PROFILE_PREFS,    // preset + per-preset param overrides
+                PREFS_NAME                  // LanguageDetector state
+            )
+            for (name in names) {
+                try {
+                    mirrorSharedPreferences(
+                        getSharedPreferences(name, 0),
+                        device.getSharedPreferences(name, 0)
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "cannot mirror prefs $name", e)
+                }
+            }
+        }
+
+        private fun mirrorSharedPreferences(from: SharedPreferences,to: SharedPreferences) {
+            val all =from.getAll() ?: return
+            val e = to.edit()
+            e.clear()
+            for ((k, v) in all) {
+                when (v) {
+                    is String -> e.putString(k, v)
+                    is Boolean -> e.putBoolean(k, v)
+                    is Int -> e.putInt(k, v)
+                    is Long -> e.putLong(k, v)
+                    is Float -> e.putFloat(k, v)
+                    is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
+                    else -> {}
+                }
+            }
+            e.apply()
+        }
+
+        // === Pacing ===
+        /** Track how much audio (in ms( has been handed to the framework versus how
+         *  much wall time has passed; hold() keeps the lead under PACE_LEAD_MS so a
+         *  swipe/stop never drowns in queued speech.
+         */
+        private class Pace(private val sampleRate: Int) {
+            private val startMs: Long = SystemClock.elapsedRealtime()
+            private var handedMs: Long = 0
+            fun handed(bytes: Int) { handedMs += bytes / 2L * 1000L / sampleRate }
+            fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
+        }
+
+        private fun hold(pace: Pace) {
+            var over = pace.aheadMs() - PACE_LEAD_MS
+            while (over > 0L && !stopping) {
+                try {
+                    Thread.sleep(minOf(over, 20L))
+                } catch (interrupted: InterruptedException) {
+                    break
+                }
+                over = pace.aheadMs() - PACE_LEAD_MS
+            }
+        }
+
+        companion object {
+            private const val TAG = "VvTtsService"
+            private const val PREFS_NAME = "vvtts_lang_settings"
+            // SharedPreferences files mirrored to device-protected storage for lock-screen starts.
+
+            private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
+            private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
+            // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
+            private const val PACE_LEAD_MS =300L
+        }
     }
-}

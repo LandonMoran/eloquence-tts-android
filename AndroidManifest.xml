@@ -12,11 +12,16 @@
         android:extractNativeLibs="true"
         android:theme="@style/Theme.Vvtts">
 
+        <!-- directBootAware: the engine can start and speak on the lock screen
+             ( before first unlock(. Settings are mirrored to device-protected storage
+             by the service each time it starts unlocked; the first-ever locked start
+             uses defaults. -->
         <service
             android:name=".services.VvTtsService"
             android:label="Eloquence TTS"
             android:exported="true"
-            android:stopWithTask="false">
+            android:stopWithTask="false"
+            android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.TTS_SERVICE" />
                 <category android:name="android.intent.category.DEFAULT" />
