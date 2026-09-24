@@ -77,10 +77,10 @@ static void vv_rsp_build(void) {
         float sum =  0.0f;
         for (int k =  0; k < VV_RSP_TAPS; k++) {
                     /* fractional position of this tap within the prototype:  taps
-                     * sit at t = (k + 0.5 - L2 + (p +    0.5)/4), so phase p
-                     * advances the output grid by p/4 sample.  Window spans
+                     * sit at t = (k - L2) - (p/4), so phase p advances the output
+                     * grid by p/4 sample.  Window spans
                      * t/L2 in [-1,1]. */
-                    float t = ((float)k +  0.5f - L2 + ((float)p +  0.5f) / (float)VV_RSP_PHASES);
+                    float t = ((float)k - L2) - ((float)p / (float)VV_RSP_PHASES);
                     float s = t / L2;
                                         if (s >  1.0f) s =  1.0f; else if (s < -1.0f) s = -1.0f;
                                         float w = vv_rsp_bessel_i0(VV_RSP_BETA * (float)sqrt(1.0f - s * s)) / vv_rsp_bessel_i0(VV_RSP_BETA);
