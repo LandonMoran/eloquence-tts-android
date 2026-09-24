@@ -34,6 +34,10 @@ class SettingsActivity : Activity() {
     private var engine: EloquenceEngine? = null
     private var pitchVal: TextView? = null
     private var volumeVal: TextView? = null
+    private val charParamIds = intArrayOf(VoiceProfile.PARAM_HEAD_SIZE, VoiceProfile.PARAM_ROUGHNESS, VoiceProfile.PARAM_BREATHINESS, VoiceProfile.PARAM_PITCH_FLUC)
+    private val charLabelRes = intArrayOf(R.string.voice_head, R.string.voice_roughness, R.string.voice_breathiness, R.string.voice_inflection)
+    private val charBars = arrayOfNulls<SeekBar>(charParamIds.size)
+    private val charVals = arrayOfNulls<TextView>(charParamIds.size)
     private var langBtn: Button? = null
     private var voiceBtn: Button? = null
     private var presetBtn: Button? = null
@@ -140,6 +144,9 @@ class SettingsActivity : Activity() {
                 langBtn = langBtnLocal
                 langBtnLocal.setOnClickListener { showLanguageDialog() }
                 refreshLangButton(langBtnLocal)
+                // ---- Voice character: head size/roughness/breathiness/inflection (IBMTTS-style) ----
+                addSectionHeader(panelVoice, R.string.sec_voice_char)
+                addVoiceCharSliders(panelVoice)
                 addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
                 // ---- Speech tab: pitch/volume ----
                 addSectionHeader(panelSpeech, R.string.sec_speech)
@@ -184,7 +191,7 @@ class SettingsActivity : Activity() {
                 tabGroup.check(tabIds[0])
             }
 
-    private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, cb: (Int) -> Unit): TextView {
+    private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, cb: (Int) -> Unit, barOut: ((SeekBar) -> Unit)? = null): TextView {
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL
         card.background = getDrawable(R.drawable.bg_slider)
@@ -216,7 +223,34 @@ class SettingsActivity : Activity() {
             override fun onStopTrackingTouch(b: SeekBar) {}
         })
         card.addView(bar)
+        barOut?.invoke(bar)
         return tv
+    }
+
+    private fun addVoiceCharSliders(root: LinearLayout) {
+        val vp = voiceProfile ?: return
+        val preset = vp.preset
+        val min = 0
+        val max = 100
+        for (i in charLabelRes.indices) {
+            val p = charParamIds[i]
+            val label = getString(charLabelRes[i])
+            val cb: (Int) -> Unit = { v ->
+                vp.setParam(preset, p, v)
+                charVals[i]?.text = getString(R.string.voice_param_fmt, label, v)
+            }
+            charVals[i] = addSeekBar(root, label, vp.getParam(preset, p), min, max, cb) { charBars[i] = it }
+        }
+    }
+
+    private fun refreshVoiceCharSliders() {
+        val vp = voiceProfile ?: return
+        val preset = vp.preset
+        for (i in charParamIds.indices) {
+            val b = charBars[i] ?: continue
+            b.progress = vp.getParam(preset, charParamIds[i])
+            charVals[i]?.text = getString(R.string.voice_param_fmt, getString(charLabelRes[i]), b.progress)
+        }
     }
 
     private fun testSpeech() {
@@ -613,6 +647,7 @@ class SettingsActivity : Activity() {
         punctBtn?.let { refreshPunctButton(it) }
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
+        refreshVoiceCharSliders()
         Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
     }
 
@@ -621,6 +656,8 @@ class SettingsActivity : Activity() {
         if (resultCode != RESULT_OK) return
         when (requestCode) {
             REQ_PROFILE -> {
+                presetBtn?.let { refreshPresetButton(it) }
+                refreshVoiceCharSliders()
                 presetBtn?.let { refreshPresetButton(it) }
             }
             REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)

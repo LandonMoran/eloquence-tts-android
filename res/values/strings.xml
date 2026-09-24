@@ -15,6 +15,11 @@
     <string name="rate_fmt">Rate: %1$d%%</string>
     <string name="pitch_fmt">Pitch: %1$d%%</string>
     <string name="volume_fmt">Volume: %1$d%%</string>
+    <string name="voice_param_fmt">%1$s: %2$d%%</string>
+    <string name="voice_head">Head size</string>
+    <string name="voice_roughness">Roughness</string>
+    <string name="voice_breathiness">Breathiness</string>
+    <string name="voice_inflection">Inflection</string>
     <string name="lang_auto_detect">Auto detect</string>
     <string name="cancel">Cancel</string>
 
@@ -70,6 +75,7 @@
 
     <!-- M3 section headers -->
     <string name="sec_voice">Voice</string>
+    <string name="sec_voice_char">Voice character</string>
     <string name="sec_speech">Speech</string>
     <string name="sec_reading">Reading</string>
     <string name="sec_langdetect">Language detection</string>
