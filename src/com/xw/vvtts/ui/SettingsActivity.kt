@@ -191,7 +191,7 @@ class SettingsActivity : Activity() {
                 tabGroup.check(tabIds[0])
             }
 
-    private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, cb: (Int) -> Unit, barOut: ((SeekBar) -> Unit)? = null): TextView {
+    private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL
         card.background = getDrawable(R.drawable.bg_slider)
@@ -239,7 +239,7 @@ class SettingsActivity : Activity() {
                 vp.setParam(preset, p, v)
                 charVals[i]?.text = getString(R.string.voice_param_fmt, label, v)
             }
-            charVals[i] = addSeekBar(root, label, vp.getParam(preset, p), min, max, cb) { charBars[i] = it }
+            charVals[i] = addSeekBar(root, label, vp.getParam(preset, p), min, max, { charBars[i] = it }, cb)
         }
     }
 
