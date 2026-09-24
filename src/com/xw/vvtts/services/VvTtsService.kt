@@ -35,6 +35,9 @@ class VvTtsService : TextToSpeechService() {
         restoreLanguageSettings()
         // Preload Lingua (background thread)
         LanguageDetector.preloadLingua()
+        // Warm the engine handle for the user's fixed dialect so the first
+        // utterance skips the native LPC load (biggest hover-to-speech delay(.
+        engine!!.warmupDialect(LanguageDetector.getFixedDialect())
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 

@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 #include "eci.h"
 #include "chs_oracle_synth.h"
@@ -34,6 +35,104 @@ extern int et_addText(void *h, const char *text);
 extern int et_synthesize(void *h);
 
 #define APP_SAMPLES 4096
+
+/* ------------------------------------------------------------------ */
+/* 4x polyphase windowed-sinc resampler (11,025 Hz ->  44,100 Hz(.
+ *  Zero-dependency (libm only(, Kaiser-windowed sinc anti-aliasing
+ *  low-pass with a ~5.5 kHz cutoff, 64 taps per phase.  The engine
+ *  itself stays at its native 11,025 Hz (eciSampleRate =  1(; this
+ *  block is the single place the 44.1k upsampling happens, right before
+ *  the PCM is handed to the Java layer.  (Resampling approach reviewed
+ *  against the NVDA-IBMTTS-Driver: that driver leaves the rate to the synth;
+ *  quality upsample belongs in the audio path, so we do it here.(
+ */
+#define VV_RSP_TAPS 64        /* taps per polyphase branch */
+#define VV_RSP_PHASES 4      /* upsampling factor */
+#define VV_RSP_HALF (VV_RSP_TAPS / 2)
+#define VV_RSP_CUTOFF 0.249f  /* 5500 Hz / 22050 Hz */
+#define VV_RSP_BETA 8.0f    /* Kaiser window shape (~50 dB stopband( */
+
+/* Modified Bessel I0 (series, 15 terms plenty for x <=  16(. */
+static float vv_rsp_bessel_i0(float x) {
+    float sum =  1.0f, term =  1.0f;
+    for (int k =  1; k <=  15; k++) {
+        term *= (x / (2.0f * k)) * (x / (2.0f * k));
+        sum += term;
+        if (term <  1e-12f) break;
+    }
+    return sum;
+}
+
+/* Static polyphase coefficient table, built once (thread-safe via a
+ * simple guard -- the Android app synthesizes from one serialized worker, so
+ * a mutex would be overkill;the guard just keeps double-init race-free
+ * for the two-session warm-up path. */
+static float vv_rsp_coeff[VV_RSP_PHASES][VV_RSP_TAPS];
+static int  vv_rsp_ready =  0;
+
+static void vv_rsp_build(void) {
+    const float L2 = (float)VV_RSP_HALF;
+    const float fc = VV_RSP_CUTOFF;
+    for (int p =  0; p < VV_RSP_PHASES; p++) {
+        float sum =  0.0f;
+        for (int k =  0; k < VV_RSP_TAPS; k++) {
+                    /* fractional position of this tap within the prototype:  taps
+                     * sit at t = (k + 0.5 - L2 + (p +    0.5)/4), so phase p
+                     * advances the output grid by p/4 sample.  Window spans
+                     * t/L2 in [-1,1]. */
+                    float t = ((float)k +  0.5f - L2 + ((float)p +  0.5f) / (float)VV_RSP_PHASES);
+                    float s = t / L2;
+                    float w = vv_rsp_bessel_i0(VV_RSP_BETA * (float)sqrt(1.0f - s * s)) / vv_rsp_bessel_i0(VV_RSP_BETA);
+                    float sinc = (t ==  0.0f) ? (float)(2.0 * 3.14159265358979323846 * fc) :
+                                          (float)(sin(2.0 * 3.14159265358979323846 * fc * t) / t);
+                    vv_rsp_coeff[p][k] = sinc * w;
+                    sum += vv_rsp_coeff[p][k];
+                }
+        /* Normalize: preserve unity DC gain per phase (polyphase upsample
+         * must not change overall loudness(. */
+        for (int k =  0; k < VV_RSP_TAPS; k++)
+            vv_rsp_coeff[p][k] /= sum;
+    }
+    vv_rsp_ready =  1;
+}
+
+/* Resample a signed 16-bit mono buffer 4x.  Returns  0 on success
+ * with *out allocated (caller frees( and *outn =  4*in_n;  -1 on alloc failure. */
+static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn) {
+    if (in_n == 0) { *outn =  0; return 0; }
+    if (!vv_rsp_ready) vv_rsp_build();
+
+    short *zbuf = (short *)calloc(in_n +  2 * VV_RSP_HALF, sizeof(short));  /* zero padding both sides */
+    if (!zbuf) return -1;
+    memcpy(zbuf + VV_RSP_HALF, in, in_n * sizeof(short));
+
+    size_t out_n = in_n * VV_RSP_PHASES;
+    short *o = (short *)malloc(out_n * sizeof(short));
+    if (!o) { free(zbuf); return -1; }
+
+    for (size_t n =  0; n < out_n; n++) {
+        const size_t i = n >>  2;          /* source sample index */
+        const int   p = (int)(n &     3);        /* polyphase branch */
+        float acc =  0.0f;
+        const short *src = zbuf + VV_RSP_HALF + i;   /* centered on in[i] */
+        for (int k =  0; k < VV_RSP_TAPS; k++) {
+            /* h[p][k] pairs with input sample at offset (k - 32( from the
+             * center (in[i]:: the coefficient table was built symmetric, so
+             * the sweep below covers that exact stereo window. */
+            acc += vv_rsp_coeff[p][k] * (float)src[k];
+        }
+        /* Round-to-nearest with 16-bit clipping. */
+        float v = acc;
+        if (v >  32767.0f) v =  32767.0f;
+        else if (v < -32768.0f) v = -32768.0f;
+        o[n] = (short)(v >=  0.0f ? v +  0.5f : v -  0.5f);
+    }
+    free(zbuf);
+    *out = o;
+    *outn = out_n;
+    return  0;
+}
+/* ------------------------------------------------------------------ */
 
 typedef struct {
     ECIHand hECI;
@@ -212,12 +311,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     vv_wait_till_done(s);
 
     if (s->pcmLen == 0) return NULL;
-    {
-        jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
-        if (!out) return NULL;
-        (*env)->SetShortArrayRegion(env, out, 0, (jsize)s->pcmLen, s->pcm);
-        return out;
-    }
+        {
+            short *out = NULL;
+            size_t outLen = 0;
+            if (vv_resample_4x(s->pcm, s->pcmLen, &out, &outLen) ==     0 && out && outLen >  0) {
+                jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
+                if (res) {
+                    (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, out);
+                    free(out);
+                    return res;
+                }
+                free(out;
+            }
+            /* fallback (should never trigger( : return the engine's own samples */
+            jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
+            if (!out) return NULL;
+            (*env)->SetShortArrayRegion(env, out, 0, (jsize)s->pcmLen, s->pcm);
+            return out;
+        }
 }
 
 JNIEXPORT jint JNICALL

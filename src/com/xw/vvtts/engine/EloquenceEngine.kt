@@ -180,10 +180,13 @@ class EloquenceEngine(context: Context) {
             0x60000L,                       // chs
         )
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
-        // Engine's real output rate: the en library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
-        const val ENGINE_SAMPLE_RATE = 11025
-        // Output rate = engine-native  11025 (sounds most natural in practice; no resampling(
-        const val SAMPLE_RATE = 11025
+        // Engine's real output rate:  the enu library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
+                const val ENGINE_SAMPLE_RATE = 11025
+                // Playback rate:   the JNI layer resamples the engine's 11.025k PCM
+                // natively to  44.1k (4x polyphase windowed-sinc FIR( before returning it,
+                // so we tell Android AudioTrack the truth here.  ENGINE_SAMPLE_RATE stays untouched.
+
+                const val SAMPLE_RATE = 44100
 
         private val CHINESE_CHARSET: Charset = Charset.forName("GB18030")
         private val ENGLISH_CHARSET: Charset = Charset.forName("windows-1252")
@@ -285,9 +288,45 @@ class EloquenceEngine(context: Context) {
     private val coreHandles = ConcurrentHashMap<Int, Long>()
     // Serial lock for param injection + synthesis: prevents concurrent threads stomping each other's setVoiceParam/synth calls
     private val paramSynthLock = ReentrantLock()
-    private var lastSynthRate = 11025  // sample rate of the most recent output (parsed from the WAV header
+    private var lastSynthRate =  44100  // output rate of the most recent synthesized audio (44.1k after resample(
     fun getCoreSampleRate(): Int = lastSynthRate
 
+    }
+
+    /** Open + cache the engine handle for a dialect (no synthesis(.  Doing this
+     *  once inthe background after onCreate removes the LPC voice-table load from
+     *  the critical path of the first utterance (the single biggest "hover to
+     *  speech" latency component(.
+     */
+    private fun ensureHandle(dialect: Int): Long {
+        val cached = coreHandles[dialect] ?: 0L
+        if (cached !=  0L) return cached
+        val info: ApplicationInfo = appContext.applicationInfo
+        val libDir = File(info.nativeLibraryDir)
+        val cfgDir = File(appContext.filesDir, "eloquence")
+        try {
+            FileWriter(File(cfgDir, "eci.ini")).use { fw ->
+                fw.write(buildEloquenceConfig(libDir))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "write eci.ini failed", e)
+            return 0L
+        }
+        val handle = VvtttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
+        Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
+        if (handle ==  0L) return 0L
+        coreHandles[dialect] = handle
+        return handle
+    }
+
+    /** Warm the engine handle for a dialect on the serial worker, so the
+     *  first real utterance with that dialect finds its LPC tables already resident.
+
+     *  No synthesis happens here — just the native handle open. */
+    fun warmupDialect(dialect: Int) {
+        if (dialect <  0) return
+        synthExecutor.execute { ensureHandle(dialect) }
+    }
     /** Currently selected voice preset (1-8( and custom-mode flag */
     @Volatile private var voicePreset = 1
     @Volatile private var voiceCustom = false
@@ -338,26 +377,10 @@ class EloquenceEngine(context: Context) {
             if (core == null) core = VvttsCore()
 
             // session lazy-loading (cached per dialect(
-            var handle = coreHandles[dialect] ?: 0L
-            if (handle == 0L) {
-                val info: ApplicationInfo = appContext.applicationInfo
-                val libDir = File(info.nativeLibraryDir)
-                val cfgDir = File(appContext.filesDir, "eloquence")
-                try {
-                    FileWriter(File(cfgDir, "eci.ini")).use { fw ->
-                        fw.write(buildEloquenceConfig(libDir))
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "write eci.ini failed", e)
-                    return@synthWithTimeout null
-                }
-                handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
-                Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
-                if (handle == 0L) return@synthWithTimeout null
-                coreHandles[dialect] = handle
-            }
+            val handle = ensureHandle(dialect)
+            if (handle ==  0L) return@synthWithTimeout null
 
-            // === Voice row copy + full param tuning — Apple Kona CSV is the authoritative source.
+        // === Voice row copy + full param tuning — Apple Kona CSV is the authoritative source.
             // The copy below must precede the param writes: params tune the copied row but never pick
             // WHICH voice (engine default=Reed without the copy; CLI probe corr 0.02 Reed vs Sandy).
             val voice: KonaVoice.Voice = KonaVoice.byPreset(presetId)
@@ -420,10 +443,10 @@ class EloquenceEngine(context: Context) {
                         // matching the CSV speed in the 8-param injection above; previously eciSampleRate
                         // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
-                        // Output rate fixed at the device-native 11025;the engine itself changes speed without pitch shift.
+                        // Engine outputs native 11025;the JNI layer upsamplest it to 44.1k for playback.
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-                        VvttsCore.setParam(handle, 5, 1)   // eciSampleRate=1 -> fixed  11025 Hz
-                        lastSynthRate = 11025
+                        VvttsCore.setParam(handle,  ​​​5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
+                                                lastSynthRate = 44100  // post-resample playback rate
 
 
             // Volume: CSV preset volume; no second applyVolume; set the voice param first
