@@ -385,7 +385,7 @@ class EloquenceEngine(context: Context) {
             val sameAsLast = sig == lastParamSig
             lastParamSig = sig
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
-            val speedVal = Math.round(50.0f * uiRate /  100.0f).
+            val speedVal = Math.round(50.0f * uiRate /  100.0f)
                 .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
 
             if (!sameAsLast) {
