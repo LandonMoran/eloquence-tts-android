@@ -7,8 +7,7 @@
  * The Kotlin contract (VvttsCore.kt / EloquenceEngine.kt) is preserved
  * byte for byte:
  *   - eight natives, same signatures
- *   - PCM signed  16-bit mono at  44,100 Hz ( eciSampleRate value  5: engine's
-  *     better voice at rates above  11,025 — no post-resample needed)
+ *   - PCM signed 16-bit mono at 11,025 Hz (eciSampleRate value 1)
  *   - dialect ids are IBM ECILanguageDialect constants (0x10000 = en-US)
  *   - voice parameters 0..7 (gender, head, pitch base, fluctuation,
  *     roughness, breathiness, speed, volume) applied to voice 0, the
@@ -253,8 +252,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
     eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk);  /* callback first: engine
                                                            * refuses a buffer until it has
                                                            * somewhere to report samples */
-    eciSetParam(s->hECI, eciSampleRate, 5); /* 44,100 Hz native; the engine's better voice */
-    /* at rates above  11,025 — no post-resample needed. */
+    eciSetParam(s->hECI, eciSampleRate, 1); /* 11,025 Hz, the app's rate */
     return (jlong)(intptr_t)s;
 }
 
@@ -314,14 +312,25 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     vv_wait_till_done(s);
 
     if (s->pcmLen == 0) return NULL;
-        /* Engine now renders 44,100 Hz natively (rate code 5(: return its
-         * own samples unchanged.  The 4x polyphase resampler above was only for
-         * the old 11,025 Hz mode and is kept for a possible future fallback. */
-        jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
-        if (!out) return NULL;
-        (*env)->SetShortArrayRegion(env, out, 0, (jsize)s->pcmLen, s->pcm);
-        return out;
-    }
+        {
+            short *rs = NULL;
+                        size_t outLen = 0;
+                        if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) ==    0 && rs && outLen >  0) {
+                            jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
+                            if (res) {
+                                (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, rs);
+                                free(rs);
+                                return res;
+                            }
+                            free(rs);
+                        }
+            /* fallback (should never trigger( : return the engine's own samples */
+            jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
+            if (!out) return NULL;
+            (*env)->SetShortArrayRegion(env, out, 0, (jsize)s->pcmLen, s->pcm);
+            return out;
+        }
+}
 
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
