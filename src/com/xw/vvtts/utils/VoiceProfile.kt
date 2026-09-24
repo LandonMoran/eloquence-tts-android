@@ -20,7 +20,7 @@ class VoiceProfile(context: Context) {
         var v = n
         if (v < 1) v = 1
         if (v > 8) v = 8
-        prefs.edit().putInt(KEY_PRESET, v).commit()
+        prefs.edit().putInt(KEY_PRESET, v).apply()
     }
 
     /** Whether the given param has a custom override for this preset */
@@ -37,7 +37,7 @@ class VoiceProfile(context: Context) {
 
     /** Set a custom override for a preset param */
     fun setParam(preset: Int, param: Int, value: Int) {
-        prefs.edit().putInt(overrideKey(preset, param), value).commit()
+        prefs.edit().putInt(overrideKey(preset, param), value).apply()
     }
 
     /** Restore a preset's defaults (delete all its custom overrides) */
@@ -46,7 +46,7 @@ class VoiceProfile(context: Context) {
         for (p in 0 until 8) {
             e.remove(overrideKey(preset, p))
         }
-        e.commit()
+        e.apply()
     }
 
     companion object {
