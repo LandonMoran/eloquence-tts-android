@@ -612,14 +612,14 @@ class EloquenceEngine(context: Context) {
         val future = try {
             synthExecutor.submit<ShortArray?> { block() }
         } catch (e: RejectedExecutionException) {
-            Log.e(TAG, "TTS_HANG: worker rejected — rotating", e(
+            Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
             synthExecutor.submit<ShortArray?> { block() }
         }
         return try {
-            future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS(
+            future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS)
         } catch (e: TimeoutException) {
-            Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e(
+            Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e)
             var first = true
             for ((t, st)in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
@@ -631,7 +631,7 @@ class EloquenceEngine(context: Context) {
             Thread.currentThread().interrupt()
             null
         } catch (e: ExecutionException) {
-            Log.e(TAG, "synthesis threw", e(
+            Log.e(TAG, "synthesis threw", e)
             null
         }
     }
@@ -642,7 +642,7 @@ class EloquenceEngine(context: Context) {
         try {
             synthExecutor.shutdownNow()
         } catch (e: Exception) {
-            Log.e(TAG, "rotate: shutdown failed", e(
+            Log.e(TAG, "rotate: shutdown failed", e)
         }
         synthExecutor = Executors.newSingleThreadExecutor()
         coreHandles.clear()
