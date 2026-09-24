@@ -289,8 +289,6 @@ class EloquenceEngine(context: Context) {
 
         // ===== In-house bridge (the only synthesis path) =====
     private val coreHandles = ConcurrentHashMap<Int, Long>()
-    // Serial lock for param injection + synthesis: prevents concurrent threads stomping each other's setVoiceParam/synth calls
-    private val paramSynthLock = ReentrantLock()
     private var lastSynthRate =  44100  // output rate of the most recent synthesized audio (44.1k after resample(
     fun getCoreSampleRate(): Int = lastSynthRate
 
