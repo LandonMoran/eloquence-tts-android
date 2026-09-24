@@ -458,9 +458,9 @@ class EloquenceEngine(context: Context) {
             }
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-            VvtttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
+            VvttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
                         }
-                        var pcm = VvtttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
+                        var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)
