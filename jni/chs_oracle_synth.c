@@ -31,11 +31,14 @@ static size_t gb_advance(const unsigned char *s, size_t n, size_t i, uint32_t *k
     if (b1 < 0x80) { *key = b1; return 1; }
     if (b1 >= 0x81 && b1 <= 0xFE && i + 1 < n) {
         unsigned char b2 = s[i + 1];
-        if (b2 >= 0x30 && b2 <= 0x39 && i + 3 < n) {
+        if (b2 >= 0x30 && b2 <= 0x39 && i + 4 <= n) {
             /* GB18030 four-byte extension: 81-FE 30-39 81-FE 30-39 */
-            *key = ((uint32_t)b1 << 24) | ((uint32_t)b2 << 16)
-                 | ((uint32_t)s[i + 2] << 8) | (uint32_t)s[i + 3];
-            return 4;
+            unsigned char b3 = s[i + 2], b4 = s[i + 3];
+            if (b3 >= 0x81 && b3 <= 0xFE && b4 >= 0x30 && b4 <= 0x39) {
+                *key = ((uint32_t)b1 << 24) | ((uint32_t)b2 << 16)
+                     | ((uint32_t)b3 << 8) | (uint32_t)b4;
+                return 4;
+            }
         }
         if (b2 >= 0x40 && b2 <= 0xFE && b2 != 0x7F) {
             *key = ((uint32_t)b1 << 8) | (uint32_t)b2;
