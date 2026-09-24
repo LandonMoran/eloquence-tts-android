@@ -32,7 +32,6 @@ class SettingsActivity : Activity() {
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
     private var engine: EloquenceEngine? = null
-    private var rateVal: TextView? = null
     private var pitchVal: TextView? = null
     private var volumeVal: TextView? = null
     private var langBtn: Button? = null
@@ -142,12 +141,8 @@ class SettingsActivity : Activity() {
                 langBtnLocal.setOnClickListener { showLanguageDialog() }
                 refreshLangButton(langBtnLocal)
                 addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
-                // ---- Speech tab: rate/pitch/volume ----
+                // ---- Speech tab: pitch/volume ----
                 addSectionHeader(panelSpeech, R.string.sec_speech)
-                rateVal = addSeekBar(panelSpeech, getString(R.string.rate), voiceConfig!!.rate,1,300) { v ->
-                    voiceConfig!!.setRate(v)
-                    rateVal!!.text = getString(R.string.rate_fmt, v)
-                };
                 pitchVal = addSeekBar(panelSpeech, getString(R.string.pitch), voiceConfig!!.pitch,0,100) { v ->
                     voiceConfig!!.setPitch(v)
                     pitchVal!!.text = getString(R.string.pitch_fmt, v)
@@ -251,7 +246,7 @@ class SettingsActivity : Activity() {
             Toast.makeText(this, getString(R.string.preview_in_english), Toast.LENGTH_LONG).show()
             val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
-                voiceConfig!!.pitch, voiceConfig!!.rate)
+                voiceConfig!!.pitch, 100)
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, engine!!.getCoreSampleRate())
                 Toast.makeText(this, getString(R.string.spoken_en), Toast.LENGTH_SHORT).show()
@@ -262,7 +257,7 @@ class SettingsActivity : Activity() {
         }
         val pcm = engine!!.synthesizeCore(text, dialect,
             voiceConfig!!.volume, preset,
-            voiceConfig!!.pitch, voiceConfig!!.rate)
+            voiceConfig!!.pitch, 100)
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, engine!!.getCoreSampleRate())
             Toast.makeText(this, getString(R.string.synth_ok), Toast.LENGTH_SHORT).show()
@@ -616,7 +611,6 @@ class SettingsActivity : Activity() {
         voiceBtn?.let { refreshVoiceButton(it) }
         presetBtn?.let { refreshPresetButton(it) }
         punctBtn?.let { refreshPunctButton(it) }
-        rateVal?.text = getString(R.string.rate_fmt, voiceConfig!!.rate)
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
         Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
