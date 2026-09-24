@@ -34,6 +34,10 @@ class VoiceConfig(context: Context) {
     fun setRate(r: Int) { prefs.edit().putInt(KEY_RATE, r).apply() }
     fun setPitch(p: Int) { prefs.edit().putInt(KEY_PITCH, p).apply() }
     fun setVolume(v: Int) { prefs.edit().putInt(KEY_VOLUME, v).apply() }
+<<<<<<< HEAD
+=======
+    fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).apply() }
+>>>>>>> 9b38c1c (utils: same-set Lingua guard, emoji scan gate, async prefs)
     fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).apply() }
 
     fun setPunctEnabled(b: Boolean) { prefs.edit().putBoolean(KEY_PUNCT, b).apply() }

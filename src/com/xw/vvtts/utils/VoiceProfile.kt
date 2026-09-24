@@ -20,7 +20,7 @@ class VoiceProfile(context: Context) {
         var v = n
         if (v < 1) v = 1
         if (v > 8) v = 8
-        prefs.edit().putInt(KEY_PRESET, v).commit()
+        prefs.edit().putInt(KEY_PRESET, v).apply()
     }
 
     /** Whether the given param has a custom override for this preset */
@@ -37,8 +37,7 @@ class VoiceProfile(context: Context) {
 
     /** Set a custom override for a preset param */
     fun setParam(preset: Int, param: Int, value: Int) {
-        prefs.edit().putInt(overrideKey(preset, param), value).commit()
-        paramsVersion++
+        prefs.edit().putInt(overrideKey(preset, param), value).apply()
     }
 
     /** Restore a preset's defaults (delete all its custom overrides) */
@@ -47,14 +46,12 @@ class VoiceProfile(context: Context) {
         for (p in 0 until 8) {
             e.remove(overrideKey(preset, p))
         }
-        e.commit()
-        paramsVersion++
+        e.apply()
     }
 
     companion object {
         private const val PREFS = "vvtts_voice_profile"
         private const val KEY_PRESET = "preset"   // Currently selected preset role 1-8
-        @Volatile var paramsVersion = 0
 
         // ECI voice param canonical ids (eci.h)
         const val PARAM_GENDER = 0        // Gender:  0=male  1=female (pick one)

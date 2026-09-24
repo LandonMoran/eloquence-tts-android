@@ -3813,6 +3813,11 @@ class EmojiExpander {
         private val SORTED_KEYS: List<String> = NAMES.keys.sortedByDescending { it.length }
 
         /** Strip bare emoji components (no-name codepoints used inside sequences). */
+        /** First code point of every emoji key — lets expand() skip the ~3600-key scan
+         *  for the overwhelming majority of positions (plain text). Cheap O(1) gate. */
+        private val KEY_START_CPS: java.util.HashSet<Int> =
+            java.util.HashSet<Int>().apply { SORTED_KEYS.forEach { add(it.codePointAt(0)) } }
+
         private fun isEmojiComponent(cp: Int): Boolean {
             return cp == 0x200D || cp == 0xFE0F || cp == 0xFE0E
                 || (cp in 0x1F3FB..0x1F3FF)
@@ -3827,21 +3832,23 @@ class EmojiExpander {
             var i = 0
             var lastWasName = false
             while (i < input.length) {
+                val cp = input.codePointAt(i)
                 var matched = false
-                for (k in SORTED_KEYS) {
-                    if (input.startsWith(k, i)) {
-                        val name = NAMES[k] ?: break
-                        if (lastWasName) sb.append(' ')
-                        else if (sb.length > 0 && !Character.isWhitespace(sb[sb.length - 1])) sb.append(' ')
-                        sb.append(name)
-                        lastWasName = true
-                        i += k.length
-                        matched = true
-                        break
+                if (KEY_START_CPS.contains(cp)) {
+                    for (k in SORTED_KEYS) {
+                        if (input.startsWith(k, i)) {
+                            val name = NAMES[k] ?: break
+                            if (lastWasName) sb.append(' ')
+                            else if (sb.length > 0 && !Character.isWhitespace(sb[sb.length - 1])) sb.append(' ')
+                            sb.append(name)
+                            lastWasName = true
+                            i += k.length
+                            matched = true
+                            break
+                        }
                     }
                 }
                 if (matched) continue
-                val cp = input.codePointAt(i)
                 i += Character.charCount(cp)
                 if (isEmojiComponent(cp)) continue
                 sb.appendCodePoint(cp)
