@@ -13,9 +13,14 @@ import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
-import java.util.HashMap
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Future
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
@@ -25,7 +30,9 @@ class EloquenceEngine(context: Context) {
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
     private var initialized = false
-    private val synthLock = ReentrantLock()
+    @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    @Volatile private var hangDetected = false
+    private val HANG_TIMEOUT_S = 30L
     @Volatile private var stopped = false
     @Volatile private var pendingVoice: Int? = null
     @Volatile private var pendingSapi = ""
@@ -215,14 +222,6 @@ class EloquenceEngine(context: Context) {
     }
 
 
-    /** Preprocess text before synthesis: user dictionary + punctuation mode. */
-    private fun preprocess(text: String, dialect: Int): String {
-        val cfg = VoiceConfig(appContext)
-        var t = applyDict(text, cfg.dictEntries())
-        if (cfg.punctEnabled && dialect != DIALECT_ZH_CN) t = expandPunct(t)
-        return t
-    }
-
     private fun applyDict(text: String, entries: List<Pair<String, String>>): String {
         var t = text
         for ((w, r) in entries) {
@@ -283,8 +282,8 @@ class EloquenceEngine(context: Context) {
     fun getSampleRate(): Int = SAMPLE_RATE
 
         // ===== In-house bridge (the only synthesis path) =====
-    private val coreHandles = HashMap<Int, Long>()
-        // Serial lock for param injection + synthesis: prevents concurrent threads stomping each other's setVoiceParam/synth calls
+    private val coreHandles = ConcurrentHashMap<Int, Long>()
+    // Serial lock for param injection + synthesis: prevents concurrent threads stomping each other's setVoiceParam/synth calls
     private val paramSynthLock = ReentrantLock()
     private var lastSynthRate = 11025  // sample rate of the most recent output (parsed from the WAV header
     fun getCoreSampleRate(): Int = lastSynthRate
@@ -318,26 +317,23 @@ class EloquenceEngine(context: Context) {
      * Synthesis runs on the in-house bridge (full Apple engine, all 14 languages supported().
      * Voice is driven by presetId (1-8 Apple presets(, going through eciSetStandardVoice2.
      */
-    @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int): ShortArray? {
         return synthesizeCore(text, dialect, volume, presetId, 50)
     }
 
-    @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int): ShortArray? {
         // Default speed 100% (neutral(
         return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
     }
 
-    @Synchronized
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? {
-        return paramSynthLock.withLock {
+        return synthWithTimeout {
         // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
             //the native side would reject them; we intercept so the TTS service gets a clean null
             //(Android auto-fallbacks to other engines(, keeping every path away from the crashy eciNewEx.
             if (!isShippedDialect(dialect)) {
                 Log.e(TAG, "dialect not in this build: 0x" + Integer.toHexString(dialect))
-                return@withLock null
+                return@synthWithTimeout null
             }
             if (core == null) core = VvttsCore()
 
@@ -353,11 +349,11 @@ class EloquenceEngine(context: Context) {
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "write eci.ini failed", e)
-                    return@withLock null
+                    return@synthWithTimeout null
                 }
                 handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
                 Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
-                if (handle == 0L) return@withLock null
+                if (handle == 0L) return@synthWithTimeout null
                 coreHandles[dialect] = handle
             }
 
@@ -445,7 +441,7 @@ class EloquenceEngine(context: Context) {
                 bb.get(encoded)
             } catch (e: Exception) {
                 Log.e(TAG, "encode failed for " + Integer.toHexString(dialect), e)
-                return@withLock null
+                return@synthWithTimeout null
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
             val outFile = File(appContext.cacheDir, "core_pcm_out")
@@ -583,5 +579,51 @@ class EloquenceEngine(context: Context) {
             8 -> "\\v=7\\"   // Grandma
             else -> ""
         }
+    }
+
+
+    // Runs a synthesis body on the single worker thread. If it has not finished
+    // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
+    // so THIS request fails fast — a frozen native call cannot take down the whole TTS.
+    private fun synthWithTimeout(block: () -> ShortArray?(:(: ShortArray? {
+        val future = try {
+            synthExecutor.submit<ShortArray?> { block() }
+        } catch (e: RejectedExecutionException) {
+            Log.e(TAG, "TTS_HANG: worker rejected — rotating", e(
+            rotateEngine()
+            synthExecutor.submit<ShortArray?> { block() }
+        }
+        return try {
+            future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS(
+        } catch (e: TimeoutException) {
+            Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e(
+            var first = true
+            for ((t, st) in Thread.getAllStackTraces()) {
+                if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
+                Log.e(TAG, "    " + t.name + ": " + st.joinToString(" | "))
+            }
+            rotateEngine()
+            null
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            null
+        } catch (e: ExecutionException) {
+            Log.e(TAG, "synthesis threw", e(
+            null
+        }
+    }
+
+    // The single worker froze (can't interrupt native code(: retire it, start a fresh
+    // executor + fresh native handles so subsequent requests work again immediatel
+    private fun rotateEngine() {
+        try {
+            synthExecutor.shutdownNow()
+        } catch (e: Exception) {
+            Log.e(TAG, "rotate: shutdown failed", e(
+        }
+        synthExecutor = Executors.newSingleThreadExecutor()
+        coreHandles.clear()
+        lastParamSig = null
+        hangDetected = true
     }
 }
