@@ -445,7 +445,7 @@ class EloquenceEngine(context: Context) {
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
                         // Engine outputs native 11025;the JNI layer upsamplest it to 44.1k for playback.
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-                        VvttsCore.setParam(handle,  ​​​5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
+                        VvttsCore.setParam(handle,  5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
                                                 lastSynthRate = 44100  // post-resample playback rate
 
 
@@ -608,7 +608,7 @@ class EloquenceEngine(context: Context) {
     // Runs a synthesis body on the single worker thread. If it has not finished
     // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
     // so THIS request fails fast — a frozen native call cannot take down the whole TTS.
-    private fun synthWithTimeout(block: () -> ShortArray?(:(: ShortArray? {
+    private fun synthWithTimeout(block: () -> ShortArray?): ShortArray? {
         val future = try {
             synthExecutor.submit<ShortArray?> { block() }
         } catch (e: RejectedExecutionException) {
@@ -621,7 +621,7 @@ class EloquenceEngine(context: Context) {
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e(
             var first = true
-            for ((t, st) in Thread.getAllStackTraces()) {
+            for (t, st) in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
                 Log.e(TAG, "    " + t.name + ": " + st.joinToString(" | "))
             }
