@@ -42,6 +42,8 @@ extern int setRealWorldVoiceParam(char *voice, int which, int value);
 extern int getRealWorldVoiceParam(ECIVoice v, int which);
 extern void setRealWorldParamsFromECIParams(char *voice, int which);
 
+extern int vc_setVoiceParam(OldInst *h, int voiceno, int which, int value);
+
 extern void evv_port_start(void);
 extern void evvRunStaticInitialisers(void);
 
@@ -133,10 +135,12 @@ static char *voice_slot(OldInst *h, int voice)
 
 ECIAPI int ECICALL eciSetVoiceParam(ECIHand handle, int voice, int param, int value)
 {
-    char *slot = voice_slot((OldInst *)handle, voice);
-    if (!slot)
-        return -1;
-    return setRealWorldVoiceParam(slot, param, value);
+    /* Delegate to the engine's canonical setter, which writes BOTH the
+     * engine-unit voice words the param-diff actually sends (+0x20..0x3c()
+     * and the human-unit shadow fields. The standalone shim below only
+     * touched the shadow fields, so ev_sendChangedActiveVoice saw no
+     * change and every slider value was silently dropped. */
+    return vc_setVoiceParam((OldInst *)handle, voice, param, value);
 }
 
 ECIAPI int ECICALL eciGetVoiceParam(ECIHand handle, int voice, int param)

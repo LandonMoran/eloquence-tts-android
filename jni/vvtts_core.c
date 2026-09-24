@@ -201,6 +201,11 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     }
 
     eciClearInput(s->hECI);
+    /* The CLI probe's canonical order: an empty insert (index 4242( pushes
+     * the current voice/environment params into the engine and is REQUIRED for
+     * synthesis itself -- removing it (commit 380ddce( broke all speech(
+     * and for the params eciSetVoiceParam just wrote to reach the engine. */
+    et_insertIndex(s->hECI, 4242);
     et_addText(s->hECI, buf);
     s->synthBusy = 1;
     et_synthesize(s->hECI);
