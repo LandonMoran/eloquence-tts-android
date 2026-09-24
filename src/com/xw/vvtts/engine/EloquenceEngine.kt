@@ -621,7 +621,7 @@ class EloquenceEngine(context: Context) {
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e(
             var first = true
-            for (t, st) in Thread.getAllStackTraces()) {
+            for ((t, st)in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
                 Log.e(TAG, "    " + t.name + ": " + st.joinToString(" | "))
             }
