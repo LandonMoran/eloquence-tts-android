@@ -49,7 +49,7 @@ extern int et_synthesize(void *h);
 #define VV_RSP_TAPS 64        /* taps per polyphase branch */
 #define VV_RSP_PHASES 4      /* upsampling factor */
 #define VV_RSP_HALF (VV_RSP_TAPS / 2)
-#define VV_RSP_CUTOFF 0.249f  /* 5500 Hz / 22050 Hz */
+#define VV_RSP_CUTOFF 0.498f  /* ~5500 Hz / 11025 Hz (cycles per input sample; sinc t is in input-sample units) */
 #define VV_RSP_BETA 8.0f    /* Kaiser window shape (~50 dB stopband( */
 
 /* Modified Bessel I0 (series, 15 terms plenty for x <=  16(. */
