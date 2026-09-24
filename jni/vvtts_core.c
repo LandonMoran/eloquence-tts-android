@@ -312,17 +312,17 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
 
     if (s->pcmLen == 0) return NULL;
         {
-            short *out = NULL;
-            size_t outLen = 0;
-            if (vv_resample_4x(s->pcm, s->pcmLen, &out, &outLen) ==     0 && out && outLen >  0) {
-                jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
-                if (res) {
-                    (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, out);
-                    free(out);
-                    return res;
-                }
-                free(out;
-            }
+            short *rs = NULL;
+                        size_t outLen = 0;
+                        if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) ==    0 && rs && outLen >  0) {
+                            jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
+                            if (res) {
+                                (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, rs);
+                                free(rs);
+                                return res;
+                            }
+                            free(rs);
+                        }
             /* fallback (should never trigger( : return the engine's own samples */
             jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
             if (!out) return NULL;
