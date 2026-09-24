@@ -117,6 +117,9 @@ class EloquenceEngine(context: Context) {
             FileWriter(File(configDir, "eci.ini")).use { fw -> fw.write(config) }
             initialized = true
             Log.i(TAG, "Eloquence engine (apple-eloquence-elf) ready, 14 languages")
+            // Warm the default (US English) voice in the background: preloads the LPC voice
+            // tables so the FIRST hover/swipe utterance starts speaking immediately.
+            warmupDialect(SHIPPED_DIALECTS.first().toInt())
             return true
         } catch (e: Exception) {
             Log.e(TAG, "init failed", e)
@@ -290,8 +293,6 @@ class EloquenceEngine(context: Context) {
     private val paramSynthLock = ReentrantLock()
     private var lastSynthRate =  44100  // output rate of the most recent synthesized audio (44.1k after resample(
     fun getCoreSampleRate(): Int = lastSynthRate
-
-    }
 
     /** Open + cache the engine handle for a dialect (no synthesis(.  Doing this
      *  once inthe background after onCreate removes the LPC voice-table load from
