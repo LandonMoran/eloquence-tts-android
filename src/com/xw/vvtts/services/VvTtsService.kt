@@ -214,10 +214,7 @@ class VvTtsService : TextToSpeechService() {
                         var sysPitch = request.pitch
                         if (sysRate <=  0) sysRate =  100
                         if (sysPitch <=  0) sysPitch =  100
-                        // TEMP spoken diagnostics: every synthesis speaks the raw system rate/pitch
-                        // so a blind listener can hear whether Android's request values actually follow
-                        // TalkBack/the system sliders (and whether that platform channel is the dead one).
-                        text = "Sys rate:  " + sysRate + ". Sys pitch:  " + sysPitch + ". " + text
+                        
             val rate = clamp(Math.round(voiceConfig!!.rate * (sysRate / 100.0f)).toInt(),1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).

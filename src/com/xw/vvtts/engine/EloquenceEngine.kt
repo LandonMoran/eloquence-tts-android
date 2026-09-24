@@ -38,6 +38,9 @@ class EloquenceEngine(context: Context) {
     @Volatile private var pendingEciDialect = DIALECT_ZH_CN
     @Volatile private var warmedUp = false
     @Volatile private var pendingSapiMark = ""
+    // Fingerprint of the last-applied param set; repeated utterances (TalkBack
+    // swipe bursts) skip the ~19-call native param re-injection entirely.
+    private var lastParamSig: String? = null
 
     /** Voice-profile source: custom overrides win during synthesis */
     fun setVoiceProfile(vp: VoiceProfile?) {
@@ -376,9 +379,14 @@ class EloquenceEngine(context: Context) {
                 pendingEciVoice = voice.eciVoiceNumber
             }
 
+            val pv = VoiceProfile.paramsVersion
+            val vp = voiceProfile
+            val sig = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber + "|" + pv
+            val sameAsLast = sig == lastParamSig
+            lastParamSig = sig
+            if (!sameAsLast) {
             // Inject this voice's 8 ECI voice params (gender=0 head=1 pitchBase=2
             // pitchFluc=3 rough=4 breath=5 speed=6 vol=7.
-            val vp = voiceProfile
             var pitchLogged = false
             var speedLogged = false
             var volLogged = false
@@ -422,8 +430,8 @@ class EloquenceEngine(context: Context) {
 
 
             // Volume: CSV preset volume; no second applyVolume; set the voice param first
-            VvttsCore.setVoiceParam(handle, 0, 7, voice.vol)   // eciVolume
-
+            VvttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
+                        }
             // Encoding
             val cs = charsetForDialect(dialect)
             val encoded: ByteArray
@@ -440,6 +448,7 @@ class EloquenceEngine(context: Context) {
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
             val outFile = File(appContext.cacheDir, "core_pcm_out")
+            if (!sameAsLast) {
             // Second param write right before synthesis — an addText/internal reset on this
             // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
             for (p in 0..7) {
@@ -448,8 +457,9 @@ class EloquenceEngine(context: Context) {
             }
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-            VvttsCore.setVoiceParam(handle, 0, 7, voice.vol)   // eciVolume
-            var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
+            VvtttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
+                        }
+                        var pcm = VvtttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)

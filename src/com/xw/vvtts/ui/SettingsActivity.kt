@@ -242,9 +242,7 @@ class SettingsActivity : Activity() {
             text = sampleTextFor(lang.code)
             dialect = bcpToDialect(lang.code)
         }
-        // TEMP test-button diagnostics: speak the raw prefs values so a blind
-        // listener can hear whether the sliders actually reach the synthesis path.
-        val narration = "Sys rate: " + voiceConfig!!.rate + ". Sys pitch: " + voiceConfig!!.pitch + ". " + text
+        
         // If this build lacks the language module (e.g. zh-TW), synthesis is
                 // impossible: fall back to English and say so. Hard rule: never feed
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
@@ -262,7 +260,7 @@ class SettingsActivity : Activity() {
             }
             return
         }
-        val pcm = engine!!.synthesizeCore(narration, dialect,
+        val pcm = engine!!.synthesizeCore(text, dialect,
             voiceConfig!!.volume, preset,
             voiceConfig!!.pitch, voiceConfig!!.rate)
         if (pcm != null && pcm.size > 0) {
