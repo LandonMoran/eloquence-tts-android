@@ -203,19 +203,16 @@ class VvTtsService : TextToSpeechService() {
 
             val preset = if (voiceProfile != null) voiceProfile!!.preset else 1
             // Android passes speech rate/pitch as PERCENTS where 100 = normal
-            // (SynthesisRequest.getSpeechRate()/getPitch()). The framework
-            // already folds the user's system TTS setting into these values,
-            // and the engine's own scale is likewise 100 = neutral
-            // (rate 1-300, pitch 0-100 with 50 neutral), so pass the
-            // request through directly: TalkBack's speed/pitch sliders now
-            // map 1:1 onto the engine (old code multiplied 100x100=10000,
-            // which clamped to max speed and ignored the sliders).
+            // (SynthesisRequest.getSpeechRate()/getPitch()). System TTS rate is THE
+            // single source of truth (in-app rate slider was removed to avoid offset
+            // between app % and system %);engine scale is 100 = neutral, so pass the
+            // request rate through directly: TalkBack's speed slider now maps 1:1.
             var sysRate = request.speechRate
                         var sysPitch = request.pitch
                         if (sysRate <=  0) sysRate =  100
                         if (sysPitch <=  0) sysPitch =  100
                         
-            val rate = clamp(Math.round(voiceConfig!!.rate * (sysRate / 100.0f)).toInt(),1,300)
+            val rate = clamp(Math.round(sysRate.toFloat()).toInt(),1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
             val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0, 100)
