@@ -297,7 +297,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
          * too fast (chipmunk/high-pitched( and comes out as garbled noise. */
         short *rs = NULL;
         size_t outLen = 0;
-        if (vv_resample_4x(pcm, samples, &rs, &outLen( ==
+        if (vv_resample_4x(pcm, samples, &rs, &outLen) ==
                 0 && rs && outLen >  0) {
             free(pcm);
             pcm = rs;
