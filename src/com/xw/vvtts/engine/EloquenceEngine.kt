@@ -26,6 +26,7 @@ import com.xw.vvtts.utils.CrashCodeDefender
 
 class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
+    private val storageContext: Context = context.createDeviceProtectedStorageContext()
 
     private var voiceProfile: VoiceProfile? = null
     private var core: VvttsCore? = null          // In-house bridge (multi-language
@@ -113,7 +114,7 @@ class EloquenceEngine(context: Context) {
                 Log.e(TAG, "nativeLibraryDir is null")
                 return false
             }
-            val configDir = File(appContext.filesDir, "eloquence")
+            val configDir = File(storageContext.filesDir, "eloquence")
             if (!configDir.exists()) configDir.mkdirs()
             val config = buildEloquenceConfig(File(libDir))
             FileWriter(File(configDir, "eci.ini")).use { fw -> fw.write(config) }
@@ -313,7 +314,7 @@ class EloquenceEngine(context: Context) {
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
         val libDir = File(info.nativeLibraryDir)
-        val cfgDir = File(appContext.filesDir, "eloquence")
+        val cfgDir = File(storageContext.filesDir, "eloquence")
         try {
             FileWriter(File(cfgDir, "eci.ini")).use { fw ->
                 fw.write(buildEloquenceConfig(libDir))
@@ -480,7 +481,7 @@ class EloquenceEngine(context: Context) {
                 return@synthWithTimeout null
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
-            val outFile = File(appContext.cacheDir, "core_pcm_out")
+            val outFile = File(storageContext.cacheDir, "core_pcm_out")
             if (!sameAsLast) {
             // Second param write right before synthesis — an addText/internal reset on this
             // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
