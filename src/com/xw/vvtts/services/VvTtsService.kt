@@ -75,6 +75,13 @@ class VvTtsService : TextToSpeechService() {
         )
     }
 
+    override fun onGetLanguages(): List<String> {
+        // Same ISO 639-1 set as onGetLanguage()
+        // The Android TTS settings 'Language' row reads this list; its default is empty,
+        // which is why the picker had nothing to show.
+        return listOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh")
+    }
+
     override fun onGetDefaultVoiceNameFor(language: String, country: String, variant: String): String {
         val lang = (language ?: "").lowercase()
         val c = (country ?: "").uppercase()
