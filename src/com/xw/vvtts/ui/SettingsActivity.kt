@@ -126,12 +126,7 @@ class SettingsActivity : Activity() {
                 tabGroup.setOnCheckedChangeListener { _, checkedId ->
                     for (i in allPanels.indices) {
                         allPanels[i].visibility = if (tabIds[i] == checkedId) View.VISIBLE else View.GONE
-                val activeIndex = allPanels.indices.firstOrNull { tabIds[it] == checkedId }
-                if (activeIndex != null) {
-                    val names = arrayOf("Voice settings", "Speech settings", "Reading settings", "Detection settings", "Tools")
-                    allPanels[activeIndex].announceForAccessibility(names[activeIndex])
                 }
-                    }
                 }
                 // ---- Voice tab: preset voice + spoken voice + test ----
                 addSectionHeader(panelVoice, R.string.sec_voice)
