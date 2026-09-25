@@ -290,6 +290,19 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *pcm = NULL;
         size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
         if (samples == 0) return NULL;
+        /* Oracle clips are captured at the engine's native 11.025 kHz (the
+         * same rate eci.ini fixed the en-us path at(.  Playback always runs
+         * at 44.1 kHz (SAMPLE_RATE(, so zh must take the same 4x
+         * upsampling as the engine branch below -- else Chinese plays 4x
+         * too fast (chipmunk/high-pitched( and comes out as garbled noise. */
+        short *rs = NULL;
+        size_t outLen = 0;
+        if (vv_resample_4x(pcm, samples, &rs, &outLen( ==
+                0 && rs && outLen >  0) {
+            free(pcm);
+            pcm = rs;
+            samples = outLen;
+        }
         free(s->pcm);
         s->pcm = pcm;
         s->pcmLen = samples;
