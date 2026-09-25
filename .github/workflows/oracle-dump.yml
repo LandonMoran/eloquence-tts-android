@@ -132,6 +132,7 @@ jobs:
           en_nz=$(DUMP_WORKDIR="$PWD/work_en" DUMP_ONESHOT=1 /tmp/dump_engine 0x10000 < /tmp/en2.txt | awk -F'\t' '/pcm/{if ($2>0) nz++} END{print nz+0}')
           if [ "$en_nz" = "0" ]; then
             echo "WARN: english control silent on this host (zh still may speak; continuing)"
+          fi
 
       - name: Dump zh-CN (dialect 0x60000)
         run: |
