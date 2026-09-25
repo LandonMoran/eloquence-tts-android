@@ -42,6 +42,7 @@ class VvTtsService : TextToSpeechService() {
         voiceConfig = VoiceConfig(device)
         voiceProfile = VoiceProfile(device)
         engine = EloquenceEngine(device)
+        engine!!.setVoiceProfile(voiceProfile(
         val ok = engine!!.initialize()
         // Restore the language-detection settings from device-protected storage
         restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))

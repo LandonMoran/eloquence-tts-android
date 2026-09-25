@@ -408,7 +408,11 @@ class EloquenceEngine(context: Context) {
             }
 
             val vp = voiceProfile
-            val sig = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber
+            val sigBase = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber
+            // Voice-character overrides (head/fluc/rough/breath) bust the the voice-param cache too:
+            // dragging a char slider leaves the sig unchanged and the engine skips param re-injection ( dead sliders(.
+            val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
+            val sig = sigBase + "|" + sigChar
             val sameAsLast = sig == lastParamSig
             lastParamSig = sig
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
