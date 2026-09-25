@@ -61,9 +61,13 @@ class SettingsActivity : Activity() {
         if ("chinese" == autotest) {
             Handler(Looper.getMainLooper()).postDelayed({ testSpeech() }, 3000)
         } else if ("german" == autotest) {
-            // Legacy hook: compare three English voices (validates voice params)
-            Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
-        }
+                    // Legacy hook: compare three English voices (validates voice params)
+                    Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
+                } else if ("crash" == autotest) {
+                    val hkText = intent?.getStringExtra("crashtext")
+                        ?: "Hello, this is a speech synthesis test."
+                    Handler(Looper.getMainLooper()).postDelayed({ testCrash(hkText) }, 3000)
+                }
         // Apply the current role config automatically
         // ---- Tab bar (RadioGroup so TalkBack announces "radio button, checked") ----
                 val outer = LinearLayout(this)
@@ -297,11 +301,25 @@ class SettingsActivity : Activity() {
             playPcm(pcm, engine!!.getCoreSampleRate())
             Toast.makeText(this, getString(R.string.synth_ok), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
-        }
-    }
+                    Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
+                }
+            }
 
-    /** Per-language sample texts */
+            /** Crash-repro hook: synthesize one exact string through the real path */
+            private fun testCrash(text: String) {
+                if (engine == null || !engine!!.isInitialized()) return
+                Log.i("CRASHHOOK", "start:" + text)
+                val pcm2 = try {
+                    engine!!.synthesizeCore(text, EloquenceEngine.DIALECT_EN_US,
+                        voiceConfig!!.volume, voiceProfile?.preset ?: 1, voiceConfig!!.pitch, 100)
+                } catch (t: Throwable) {
+                    Log.e("CRASHHOOK", "exception", t)
+                    null
+                }
+                Log.i("CRASHHOOK", if (pcm2 != null && pcm2.size > 0) "done:" + pcm2.size else "fail")
+            }
+
+            /** Per-language sample texts */
     private fun sampleTextFor(code: String): String {
         if (code == null) return "Hello, this is a speech test."
         if (code.startsWith("zh")) return "\u4f60\u597d\u3002"
