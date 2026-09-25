@@ -27,6 +27,8 @@ import kotlin.text.Charsets
  */
 object CrashCodeDefender {
 
+    private const val TAG = "CrashCodeDefender"
+
     @Volatile
     private var loaded: Boolean = false
     @Volatile
