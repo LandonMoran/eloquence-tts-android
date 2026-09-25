@@ -21,6 +21,7 @@
             android:label="Eloquence TTS"
             android:exported="true"
             android:stopWithTask="false"
+            android:permission="android.permission.BIND_TEXT_TO_SPEECH"
             android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.TTS_SERVICE" />
