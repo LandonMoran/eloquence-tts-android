@@ -51,7 +51,7 @@ class SettingsActivity : Activity() {
         voiceProfile = VoiceProfile(this)
         engine = EloquenceEngine(this)
         engine!!.initialize()
-        engine!!.setVoiceProfile(voiceProfile)
+        engine!!.setVoiceProfile(voiceProfile))
         // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
