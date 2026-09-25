@@ -28,6 +28,7 @@ class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
+    private var deviceCtx: Context? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -41,6 +42,8 @@ class VvTtsService : TextToSpeechService() {
         if (getSystemService(UserManager::class.java).isUserUnlocked()) mirrorPrefsToDevice(device)
         voiceConfig = VoiceConfig(device)
         voiceProfile = VoiceProfile(device)
+        deviceCtx = device
+        refreshSettings()
         engine = EloquenceEngine(device)
         engine!!.setVoiceProfile(voiceProfile)
         val ok = engine!!.initialize()
@@ -63,6 +66,25 @@ class VvTtsService : TextToSpeechService() {
         } catch (ignore: Throwable) {
         }
         super.onDestroy()
+    }
+
+
+    private fun refreshSettings() {
+        try {
+            val unlocked = getSystemService(UserManager::class.java).isUserUnlocked()
+            val active = if (unlocked) {
+                applicationContext
+            } else {
+                deviceCtx
+            } ?: return
+            voiceConfig = VoiceConfig(active)
+            voiceProfile = VoiceProfile(active)
+            restoreLanguageSettings(active.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+            val profile = voiceProfile
+            if (profile != null) engine?.setVoiceProfile(profile)
+        } catch (t: Throwable) {
+            Log.e(TAG, "refreshSettings failed", t)
+        }
     }
 
     override fun onGetLanguage(): Array<String> {
@@ -212,7 +234,8 @@ class VvTtsService : TextToSpeechService() {
                 return  // finally emits the start+done pair for an empty utterance
             }
 
-            // Auto-detect + chunk
+            refreshSettings()
+        // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
 
 

@@ -111,6 +111,7 @@ done
 # 3. Assemble the APK
 rm -rf tmp_apk vvtts_base.apk vvtts_unsigned.apk vvtts_aligned.apk vvtts_signed.apk
 mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/lib/x86_64 tmp_apk/assets
+[ -d assets ] && cp -r assets/. tmp_apk/assets/   # crash-code defender corpus (~48KB gz)
 
 # Copy all dex files(multidex)
 cp out_dex/classes*.dex tmp_apk/

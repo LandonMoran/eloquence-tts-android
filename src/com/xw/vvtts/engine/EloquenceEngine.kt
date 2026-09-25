@@ -22,6 +22,7 @@ import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import com.xw.vvtts.utils.CrashCodeDefender
 
 class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
@@ -471,7 +472,7 @@ class EloquenceEngine(context: Context) {
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(preprocess(text, dialect)))
+                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext, preprocess(text, dialect))))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {
