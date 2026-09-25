@@ -50,12 +50,14 @@ for l in $LANGS; do
   SUF="$SUF-${l#lang/}"
 done
 
-# 0. chs oracle table: regenerate the runtime C from the consolidated TSV so
-# the archive carries the captured PCM (the tree's committed copy is a small
-# placeholder).  Cheap (~seconds) and authoritative: never hand-edit it.
+# 0. chs oracle table: regenerate the runtime C from the consolidated TSV plus
+# the legacy C rows (fitter-only drops legacy audio; merge_build keeps both(.
+#Cheap (~seconds( and authoritative: never hand-edit it.
 if [ -f "oracle/table/zh-cn.consolidated.tsv" ] || ls oracle/table/*.consolidated.tsv >/dev/null 2>&1; then
-  # fitter takes the table DIR and globs every *.consolidated.tsv (parts)
-  python3 oracle/fitter.py oracle/table \
+  # merge_build takes the table DIR, globs every *.consolidated.tsv (parts),
+  # reads the old committed C as legacy (and writes the merged bank back.
+  python3 oracle/merge_build.py oracle/table \
+    native/openevv/lang/chs/oracle_chs.c \
     native/openevv/lang/chs/oracle_chs.c
 fi
 
