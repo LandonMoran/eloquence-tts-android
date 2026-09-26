@@ -41,6 +41,9 @@ class SettingsActivity : Activity() {
     private var langBtn: Button? = null
     private var voiceBtn: Button? = null
     private var presetBtn: Button? = null
+    private var presetRow: LinearLayout? = null
+    private var charSection: LinearLayout? = null
+    private var chineseGuard: LinearLayout? = null
     private var punctBtn: Button? = null
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
@@ -132,6 +135,7 @@ class SettingsActivity : Activity() {
                 addSectionHeader(panelVoice, R.string.sec_voice)
                 val presetBtnLocal = addRow(this, panelVoice)
                 presetBtn = presetBtnLocal
+                presetRow = presetBtnLocal
                 presetBtnLocal.setOnClickListener {
                     startActivityForResult(Intent(this, VoiceProfileActivity::class.java), REQ_PROFILE)
                 }
@@ -145,8 +149,14 @@ class SettingsActivity : Activity() {
                 langBtnLocal.setOnClickListener { showLanguageDialog() }
                 refreshLangButton(langBtnLocal)
                 // ---- Voice character: head size/roughness/breathiness/inflection (IBMTTS-style) ----
-                addSectionHeader(panelVoice, R.string.sec_voice_char)
-                addVoiceCharSliders(panelVoice)
+                val charSectionLocal = LinearLayout(this)
+                charSectionLocal.orientation = LinearLayout.VERTICAL
+                addSectionHeader(charSectionLocal, R.string.sec_voice_char)
+                addVoiceCharSliders(charSectionLocal)
+                panelVoice.addView(charSectionLocal)
+                charSection = charSectionLocal
+                addChineseVoiceGuard(panelVoice)
+                updateChineseGuard())
                 addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
                 // ---- Speech tab: pitch/volume ----
                 addSectionHeader(panelSpeech, R.string.sec_speech)
@@ -460,6 +470,7 @@ class SettingsActivity : Activity() {
             .setSingleChoiceItems(labels, checked) { _, which ->
                 voiceConfig!!.setVoice(codes[which])
                 refreshVoiceButton(voiceBtn!!)
+                updateChineseGuard()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -475,6 +486,43 @@ class SettingsActivity : Activity() {
         val p = voiceProfile?.preset ?: 1
         val name = VoiceProfile.PRESET_NAMES.getOrNull(p - 1) ?: "Reed"
         btn.text = getString(R.string.preset_voice_fmt, name)
+    }
+
+    private fun addChineseVoiceGuard(root: LinearLayout) {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setPadding(dp(20), dp(14), dp(20), dp(10))
+        card.background = getDrawable(R.drawable.bg_slider)
+
+        val tv = TextView(this)
+        tv.textSize =14f
+        tv.setText(getString(R.string.chinese_voice_guard))
+        card.addView(tv)
+
+
+        val open = Button(this)
+        open.text = getString(R.string.chinese_voice_guard_open)
+        open.setOnClickListener {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.chinese_voice_guard_url))))
+            } catch (e: Exception) {
+                Toast.makeText(this, R.string.chinese_voice_guard_open, Toast.LENGTH_SHORT.show()
+            }
+        }
+        card.addView(open)
+
+
+        root.addView(card)
+        chineseGuard = card
+    }
+
+    private fun updateChineseGuard() {
+        val chineseActive = voiceConfig?.voice?.lowercase()?.startsWith("zh") == true ||
+            LanguageDetector.getFixedDialect() == LanguageDetector.DIALECT_ZH_CN
+        presetRow?.visibility = if (chineseActive) View.GONE else View.VISIBLE
+
+        charSection?.visibility = if (chineseActive) View.GONE else View.VISIBLE
+        chineseGuard?.visibility = if (chineseActive) View.VISIBLE else View.GONE
     }
 
     private fun showPunctuationDialog() {
@@ -672,6 +720,7 @@ class SettingsActivity : Activity() {
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
         refreshVoiceCharSliders()
+        updateChineseGuard()
         Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
     }
 
@@ -742,6 +791,7 @@ class SettingsActivity : Activity() {
                     saveLanguageSettings()
                     refreshLangButton(langBtn!!)
                     voiceBtn?.let { refreshVoiceButton(it) }
+                    updateChineseGuard()
                     }
                     .setNegativeButton(getString(R.string.cancel), null)
                     .show()

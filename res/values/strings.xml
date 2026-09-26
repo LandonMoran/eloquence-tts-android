@@ -76,6 +76,9 @@
     <!-- M3 section headers -->
     <string name="sec_voice">Voice</string>
     <string name="sec_voice_char">Voice character</string>
+    <string name="chinese_voice_guard">Chinese uses a single recorded voice. Presets and voice-character controls ( breathiness, roughness, head size, inflection( do not apply to it. For full Chinese voice handling, please use the original project.</string>
+    <string name="chinese_voice_guard_open">Open original project</string>
+    <string name="chinese_voice_guard_url">https://github.com/GGbond2007/eloquence-tts-android</string>
     <string name="sec_speech">Speech</string>
     <string name="sec_reading">Reading</string>
     <string name="sec_langdetect">Language detection</string>
