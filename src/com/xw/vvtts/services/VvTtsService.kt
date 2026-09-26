@@ -338,12 +338,7 @@ class VvTtsService : TextToSpeechService() {
         private fun restoreLanguageSettings(prefs: SharedPreferences) {
             LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
             LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-            LanguageDetector.setChineseDialect(
-                // Only the zh-CN module is shipped; a legacy/pre-TW preference of
-                // zh-TW (0x60001) would silently route every Han segment into the
-                // unshipped engine stub path and produce nothing but silence.
-                LanguageDetector.DIALECT_ZH_CN
-            )
+            LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
             LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
             LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
             LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))

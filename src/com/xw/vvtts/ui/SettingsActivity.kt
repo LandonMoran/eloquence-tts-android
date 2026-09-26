@@ -938,12 +938,7 @@ class SettingsActivity : Activity() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
         LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-        LanguageDetector.setChineseDialect(
-            // Only the zh-CN module is shipped; clamp any zh-TW (0x60001) legacy
-            // preference to zh-CN so Han segments never route into the unshipped
-            // engine stub path (which produced total Chinese silence).
-            LanguageDetector.DIALECT_ZH_CN
-        )
+        LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
         LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
         LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
         LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
