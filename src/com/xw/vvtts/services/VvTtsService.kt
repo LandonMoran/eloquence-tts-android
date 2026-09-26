@@ -237,6 +237,9 @@ class VvTtsService : TextToSpeechService() {
             refreshSettings()
         // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
+            for (seg in segments) {
+                Log.i("VvTts", "seg dialect=" + Integer.toHexString(seg.dialect) + " len=" + seg.text.length)
+            }
 
 
             if (engine == null || !engine!!.isInitialized()) {

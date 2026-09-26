@@ -18,6 +18,7 @@
  */
 
 #include <jni.h>
+#include <android/log.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -287,8 +288,15 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
          * from the oracle bank instead -- raw PCM keyed by the GB18030 bytes
          * the app already sends (charsetId == CHARSET_GBK).  No engine call,
          * no synthesis thread; the session still owns the buffer. */
+        __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "synth len=%d charset=%d first=%02x%02x%02x%02x",
+                            (int)len, charsetId,
+                            len > 0 ? (unsigned char)((char *)buf)[0] : 0,
+                            len > 1 ? (unsigned char)((char *)buf)[1] : 0,
+                            len > 2 ? (unsigned char)((char *)buf)[2] : 0,
+                            len > 3 ? (unsigned char)((char *)buf)[3] : 0);
         short *pcm = NULL;
         size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
+        __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "build_pcm samples=%zu pcm=%p", samples, (void *)pcm);
         if (samples == 0) return NULL;
         /* Oracle clips are captured at the engine's native 11.025 kHz (the
          * same rate eci.ini fixed the en-us path at(.  Playback always runs
