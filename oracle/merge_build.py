@@ -124,6 +124,8 @@ def emit(out, rows):
     gpdata = bytearray()
     pxdata = bytearray()
     for cpv, (pcm, phb, gph, pxs) in items:
+        if len(gph) % 2:
+            gph = gph[:-1]  # drop stray trailing byte: PCM is 16-bit, odd lengths would misalign the sample stream
         keys.append("%d" % cpv)
         pcms.append(str(pcm))
         phoff.append(str(len(phdata)))

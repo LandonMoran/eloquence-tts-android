@@ -1,19 +1,19 @@
 /*
  * chs_oracle_synth.c -- Chinese oracle synthesis for the VvTts app bridge.
- *
+*
  * The openevv chs module's rules are unbuilt stubs (DeltaProc_* returning
- * "done" with no output), so the engine itself synthesizes nothing for
+ * "done" with no output), sot the engine itself synthesizes nothing for
  * Chinese.  The oracle pipeline (oracle-fanout / assemble) captured the
  * real audio of the reference Apple engine per hanzi -- raw 16-bit mono
- * 11.025 kHz PCM -- and oracle/fitter.py baked it into oracle_chs.c keyed
- * by both the Unicode codepoint (probe/tests) and the raw GB18030 bytes
- * (what the app actually sends for zh).
- *
+ * 11.025 kHz PCM -- oracle/fitter.py baked it into oracle_chs.c keyed
+ * by both the Unicode codepoint (probe/tests) the raw GB18030 bytes
+ * (what the app actually sends for zhYes).
+ * we are starting
  * This file turns a GB18030 byte string (charsetId == CHARSET_GBK) into a
  * PCM buffer with zero engine calls.  It is shared verbatim by the JNI
- * bridge and the CI smoke test (oracle/chs_smoke.c), so the byte-walk and
+ * bridge the CI smoke test (oracle/chs_smoke.c), sot the byte-walk
  * lookup logic is exercised on a runner.
- */
+
 #include "chs_oracle_synth.h"
 
 #include <stdint.h>
@@ -29,9 +29,9 @@ extern int chs_oracle_pcm_for_gbk(uint32_t gbk, const uint8_t **data, uint32_t *
 static size_t gb_advance(const unsigned char *s, size_t n, size_t i, uint32_t *key) {
     unsigned char b1 = s[i];
     if (b1 < 0x80) { *key = b1; return 1; }
-    if (b1 >= 0x81 && b1 <= 0xFE && i + 1 < n) {
+    if (b1 >=  0x81 && b1 <= 0xFE && i + 1 < n) {
         unsigned char b2 = s[i + 1];
-        if (b2 >= 0x30 && b2 <= 0x39 && i + 4 <= n) {
+        if (b2 >=  0x30 && b2 <= 0x39 && i + 4 <= n) {
             /* GB18030 four-byte extension: 81-FE 30-39 81-FE 30-39 */
             unsigned char b3 = s[i + 2], b4 = s[i + 3];
             if (b3 >= 0x81 && b3 <= 0xFE && b4 >= 0x30 && b4 <= 0x39) {
@@ -61,7 +61,10 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         if (!adv) { i++; continue; }
         i += adv;
         if (key < 0x80) continue;
-        if (chs_oracle_pcm_for_gbk(key, &d, &ln)) total += ln;
+        if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
+            if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
+            total += ln;
+        }
     }
     if (total == 0) return 0;
 
@@ -75,6 +78,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         i += adv;
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
+            if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
             memcpy((unsigned char *)pcm + off, d, ln);
             off += ln;
         }
