@@ -147,7 +147,7 @@ class SettingsActivity : Activity() {
                 voiceBtn = voiceBtnLocal
                 voiceBtnLocal.setOnClickListener { showVoiceDialog() };
                 refreshVoiceButton(voiceBtnLocal)
-                val langSwitchLocal = addSwitchRow(this, panelVoice, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
+                val langSwitchLocal = addSwitchRow(panelVoice, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
                                     LanguageDetector.setDetectionEnabled(on)
                                     voiceConfig!!.setAutoDetect(on)
                                     if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
@@ -468,7 +468,7 @@ class SettingsActivity : Activity() {
         tv.text = label
         tv.textSize = 16f
         tv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        tv.setPadding(0, dp(2),dp(2))
+        tv.setPadding(0, dp(2), 0, dp(2))
         val sw = Switch(this)
         sw.isChecked = checked
         sw.setOnCheckedChangeListener {  _,on -> onToggle(on) }
@@ -761,7 +761,7 @@ class SettingsActivity : Activity() {
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
         restoreLanguageSettings()
-        langBtn?.let { refreshLangButton(it) }
+        refreshLanguageUi()
         voiceBtn?.let { refreshVoiceButton(it) }
         presetBtn?.let { refreshPresetButton(it) }
         punctBtn?.let { refreshPunctButton(it) }
@@ -824,7 +824,7 @@ class SettingsActivity : Activity() {
         AlertDialog.Builder(this)
                     .setTitle(getString(R.string.language_dlg_title))
                     .setSingleChoiceItems(items, current ) { _,which -> picked = dialects[which] }
-                    .setPositiveButton(getString(R.string.ok)) {
+                    .setPositiveButton(getString(R.string.ok)) { _, _ ->
                         LanguageDetector.setDetectionEnabled(false)
                         LanguageDetector.setFixedDialect(picked)
                         voiceConfig!!.setAutoDetect(false)
