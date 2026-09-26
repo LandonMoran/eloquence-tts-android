@@ -13,6 +13,7 @@
  * PCM buffer with zero engine calls.  It is shared verbatim by the JNI
  * bridge the CI smoke test (oracle/chs_smoke.c), sot the byte-walk
  * lookup logic is exercised on a runner.
+ */
 
 #include "chs_oracle_synth.h"
 
