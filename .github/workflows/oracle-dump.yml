@@ -64,8 +64,8 @@ jobs:
           export DUMP_WORKDIR="$PWD/work_zh_cn"
           export DUMP_ONESHOT=1
           export DUMP_WANT_PHONEME=1
-          export DUMP_GENPHON=1
-          unset DUMP_PINYIN DUMP_TRACE
+          export DUMP_PCM=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
           python3 "$GITHUB_WORKSPACE/oracle/capture_gaps.py"
 
       - name: Isolate probe2 vs dump_engine
