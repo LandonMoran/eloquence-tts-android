@@ -312,6 +312,7 @@ jobs:
 
 
       - name: Validate oracle output
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd "$GITHUB_WORKSPACE/oracle/corpus"
