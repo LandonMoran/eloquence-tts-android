@@ -242,7 +242,10 @@ def coverage(items, strings):
         miss = []
         seen2 = set()
         for ch in s:
-            if ord(ch) not in keys:
+            cp = ord(ch)
+            if not (0x4E00 <= cp <= 0x9FFF):
+                continue
+            if cp not in keys:
                 if ch not in seen2:
                     seen2.add(ch)
                     miss.append(ch)
