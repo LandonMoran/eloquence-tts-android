@@ -76,7 +76,7 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
 LIBEVV="$(ls native/openevv/build/libevv*.a 2>/dev/null | head -1 )"
 if [ -z "$LIBEVV" ]; then
   echo "ERROR: openevv archive not built (no native/openevv/build/libevv*.a(" >&2
-  exit  ​1
+  exit  1
 fi
 
 # 2. JNI bridge + engine static-linked into one .so.  -fvisibility=hidden

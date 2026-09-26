@@ -13,7 +13,7 @@ import sys
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else "/root/eloquence-re/eloquence-android/oracle/table"
 OLD = sys.argv[2] if len(sys.argv) > 2 else "/root/eloquence-re/eloquence-android/native/openevv/lang/chs/oracle_chs.c"
-DST = sys.argv[3] if len(sys.argv) > 3 else "/root/.hermes/cache/scratch/pa/oracle_merged.c"
+DST = sys.argv[3] if len(sys.argv) > 3 else "./oracle_merged.c"
 
 def cp(s):
     return ord(s.split("\t", 1)[0])
@@ -236,7 +236,8 @@ def emit(out, rows):
     return items
 
 def coverage(items, strings):
-    keys = set(t[0] for t in items)
+    keys = set(t[0] for t  in items)
+    bad = False
     for s in strings:
         miss = []
         seen2 = set()
@@ -246,20 +247,32 @@ def coverage(items, strings):
                     seen2.add(ch)
                     miss.append(ch)
         tot = len(set(s))
-        print("cover %2d/%d  misses: %s" % (tot - len(miss), tot, "".join(miss) if miss else ""))
+        sv = len(miss)
+        if miss:
+            bad = True
+        miss_s = ""
+        if miss:
+            miss_s = "".join(miss)
+        print("cover %2d/%d misses: %s" % (tot - sv, tot, miss_s))
+    return bad
 
 def main():
     fresh = read_consolidated(SRC)
     legacy = read_old_c(OLD)
-    print("fresh rows: %d, legacy rows: %d" % (len(fresh), len(legacy)))
+    fn = len(fresh)
+    ln = len(legacy)
+    print("fresh rows: %d" % fn)
+    print("legacy rows: %d" % ln)
     rows = merge_sources(fresh, legacy)
     items = emit(None, rows)
     tests = ["最新悄咪咪收集的一百个群合集，附全网最有趣好用的机器人",
-              "最新悄悄咪咪收集的",
-              "一零零零零",
-              "零一二三四五六七八九",
-              "10000个群合集"]
-    coverage(items, tests)
+             "最新悄悄咪咪收集的",
+             "一零零零零",
+             "零一二三四五六七八九",
+             "10000个群合集"]
+    if coverage(items, tests):
+        print("FATAL: chs oracle table missing hanzi required by embedded tests; fix the data, do not ship.", file=sys.stderr)
+        return 1
     return 0
 
 if __name__ == "__main__":
