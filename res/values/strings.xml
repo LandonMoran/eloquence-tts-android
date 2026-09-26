@@ -21,7 +21,7 @@
     <string name="voice_roughness">Roughness</string>
     <string name="voice_breathiness">Breathiness</string>
     <string name="voice_inflection">Inflection</string>
-    <string name="lang_auto_detect">Auto detect (follows each message's language automatically)</string>
+    <string name="lang_auto_detect">Auto detect (follows the language of each message automatically)</string>
     <string name="cancel">Cancel</string>
 
     <!-- ETI control set (r6 accessibility pass) -->
