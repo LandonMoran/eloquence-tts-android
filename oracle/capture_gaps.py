@@ -27,24 +27,25 @@ with open(out, out_mode) as fh:
                 timeout=120,
             )
             rows = p.stdout.splitlines()
-            has = False
-            for r in rows:
-                parts = r.split(b"\t")
-                if len(parts) >= 3 and parts[0] == b"pcm":
-                    if parts[2]:
-                        has = True
-                        break
-            if has:
+            first = rows[0][:24].hex() if rows else b""
+            err = p.stderr[:24].hex()
+            print(
+                "  try %d: rc=%d out=%d err=%d first=%s err_first=%s"
+                % (attempt + 1, p.returncode, len(rows), len(p.stderr), first, err))
+            if rows:
                 fh.write(b"nl\t" + c + b"\n")
                 for r in rows:
                     fh.write(r + b"\n")
                 got.append(c)
                 ok = True
+                break
+        if not ok:
+
+            print("NO stdout for %r after 3 tries" % c)
 
 ok_count = len(got)
 total_count = len(chars)
 print("captured", ok_count, "of", total_count)
 if ok_count != total_count:
-
     sys.exit(1)
 sys.exit(0)
