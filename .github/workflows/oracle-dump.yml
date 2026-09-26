@@ -2,6 +2,11 @@ name: oracle-dump
 
 on:
   workflow_dispatch:
+    inputs:
+      hanzi_filter:
+        description: Only capture these hanzi (comma-separated UTF-8); skips the full sweeps. Empty = full dump.
+        required: false
+        type: string
   push:
     branches: [oracle-dev]
 
@@ -47,8 +52,44 @@ jobs:
           printf '[10.0]\nPath=./kor.so\nPath_Rom=./korrom.so\nVersion=6.1\n' > work_ko/eci.ini
           printf '[8.0]\nPath=./jpn.so\nPath_Rom=./jpnrom.so\nVersion=6.1\n' > work_ja/eci.ini
           echo prep-ok; ls work_zh_cn
+      - name: Capture requested hanzi only (filter mode)
+        if: ${{ inputs.hanzi_filter != '' }}
+        env:
+          HANZI_FILTER: ${{ inputs.hanzi_filter }}
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          export DUMP_WORKDIR="$PWD/work_zh_cn"
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          python3 - <<'PYEOF'
+          import os, subprocess
+          want = os.environ.get("HANZI_FILTER", "").replace(",", "").strip()
+          tsv = os.path.join(os.environ["GITHUB_WORKSPACE"], "oracle/corpus/zh-cn-gaps.tsv")
+          chars = [c.encode("gb18030") for c in want if c.strip()]
+          got = []
+          with open(tsv, "wb") as fh:
+              for c in chars:
+                  ok = False
+                  for attempt in range(3):
+                      if ok: break
+                      p = subprocess.run(["/tmp/dump_engine", "0x60000"], input=c + b"\n", capture_output=True)
+                      rows = p.stdout.splitlines()
+                      if any(r.startswith(b"pcm\t") and len(r.split(b"\t")) >= 3 and r.split(b"\t")[2] for r in rows):
+                          fh.write(b"nl\t" + c + b"\n")
+                          for r in rows:
+                              fh.write(r + b"\n")
+                          got.append(c)
+                          ok = True
+          print("captured: %d/%d chars" % (len(got(), len(chars)))
+          if len(got() != len(chars):
+              raise SystemExit(1)
+          PYEOF
 
-      - name: Isolate probe2 vs dump_engine (same layout, one CI run
+      - name: Isolate probe2 vs dump_engine
+        if: ${{ inputs.hanzi_filter == '' }} (same layout, one CI run
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -74,9 +115,11 @@ jobs:
           DUMP_WORKDIR="$PWD/work_zh_cn" DUMP_TRACE=1 /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tail -4
 
       - name: Generate corpora
+        if: ${{ inputs.hanzi_filter == '' }}
         run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
 
-      - name: Probe zh-CN under gdb (diagnostic
+      - name: Probe zh-CN under gdb
+        if: ${{ inputs.hanzi_filter == '' }} (diagnostic
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -91,7 +134,8 @@ jobs:
           taskset -c 0 gdb -q -batch -ex run --args /tmp/dump_engine 0x60000 < "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.txt" 2>&1 | tee /tmp/probe.tsv; if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "WARN probe partial rc=${PIPESTATUS[0]}"; fi
           head -14 /tmp/probe.tsv
 
-      - name: Encoding matrix (which text encoding feeds chs pinyin
+      - name: Encoding matrix
+        if: ${{ inputs.hanzi_filter == '' }} (which text encoding feeds chs pinyin
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -134,7 +178,8 @@ jobs:
             echo "WARN: english control silent on this host (zh still may speak; continuing)"
           fi
 
-      - name: Dump zh-CN (dialect 0x60000)
+      - name: Dump zh-CN (dialect
+        if: ${{ inputs.hanzi_filter == '' }} 0x60000)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -175,7 +220,8 @@ jobs:
           echo "--- zh-cn sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" || true
           echo "--- zh-cn hanzi rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv" || true
 
-      - name: Backfill zh-CN sweep gaps (warm engine, 3 retries)
+      - name: Backfill zh-CN sweep gaps
+        if: ${{ inputs.hanzi_filter == '' }} (warm engine, 3 retries)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -218,7 +264,8 @@ jobs:
               print("STILL MISSING:", b"".join(miss).decode("gb18030", "replace"))
           PYEOF
 
-      - name: Dump zh-TW (dialect 0x60001)
+      - name: Dump zh-TW (dialect
+        if: ${{ inputs.hanzi_filter == '' }} 0x60001)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -258,7 +305,8 @@ jobs:
           for f in /tmp/ht_[0-9][0-9]; do cat "$f.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
           echo "--- zh-tw sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" || true
 
-      - name: Dump ko (dialect 0xA0000)
+      - name: Dump ko (dialect
+        if: ${{ inputs.hanzi_filter == '' }} 0xA0000)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -284,7 +332,8 @@ jobs:
           cp /tmp/k2.tsv "$GITHUB_WORKSPACE/oracle/corpus/ko-sample-uhc.tsv"
           echo "--- ko sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv" || true
 
-      - name: Dump ja (dialect 0x80000)
+      - name: Dump ja (dialect
+        if: ${{ inputs.hanzi_filter == '' }} 0x80000)
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
