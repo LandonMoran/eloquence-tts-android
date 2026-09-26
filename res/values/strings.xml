@@ -6,7 +6,8 @@
     <!-- Settings -->
     <string name="title_main">Eloquence TTS</string>
     <string name="lang_header">Language</string>
-    <string name="lang_auto">Auto detect</string>
+    <string name="lang_auto">Language: Auto detect</string>
+    <string name="lang_fixed_fmt">Language: %1$s</string>
     <string name="voice_profile">Voice</string>
     <string name="rate">Rate</string>
     <string name="pitch">Pitch</string>

@@ -436,7 +436,7 @@ class SettingsActivity : Activity() {
             btn.text = getString(R.string.lang_auto)
         } else {
             val d = LanguageDetector.getFixedDialect()
-            btn.text = dialectName(d)
+            btn.text = getString(R.string.lang_fixed_fmt, dialectName(d))
         }
     }
 
