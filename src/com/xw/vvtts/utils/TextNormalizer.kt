@@ -114,12 +114,32 @@ class TextNormalizer {
             return m
         }
 
-        /** Normalization for Chinese(Simplified/Traditional):symbol readings + number readings + width normalization */
+        /** Normalization for Chinese(Simplified/Traditional). ORDER MATTERS:
+         *  1) width-normalize first (full-width digits/punct -> ASCII) so date/number
+         *     runs are recognizable, 2) number readings while '-'/'/'/':' boundaries
+         *     are still intact, 3) symbol readings last.  Running symbols first would
+         *     replace '-' with 减号 before hasDateTimeBoundaries ran, mangling every
+         *     date (2024-03-15 -> 二千零二十四减号三减号十五). */
         fun normalizeForChinese(input: String): String {
             if (input.isEmpty()) return input
-            var s = normalizeSymbols(input)
+            var s = normalizeWidth(input)
             s = normalizeNumberReading(s)
+            s = normalizeSymbols(s)
             return s
+        }
+
+        /** Full-width (U+FF01..U+FF5E) -> half-width ASCII; U+3000 ideographic space -> ' '. */
+        fun normalizeWidth(input: String): String {
+            val sb = StringBuilder(input.length)
+            for (i in input.indices) {
+                val c = input[i]
+                when {
+                    c == '\u3000' -> sb.append(' ')
+                    c.code in 0xFF01..0xFF5E -> sb.append((c.code - 0xFEE0).toChar())
+                    else -> sb.append(c)
+                }
+            }
+            return sb.toString()
         }
 
         /** Symbols -> Chinese readings */

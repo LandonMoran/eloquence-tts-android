@@ -33,5 +33,7 @@ native/openevv/lang/*/delta_rules*
 conv_fixed/
 grtts/
 apple-eloquence-elf/
-# local v4 signing bundles (build artifacts)
+# local v4 signing bundles ( build artifacts)
 apk-v4/
+__pycache__/
+*.pyc

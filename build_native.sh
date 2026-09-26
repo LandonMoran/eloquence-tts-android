@@ -50,12 +50,14 @@ for l in $LANGS; do
   SUF="$SUF-${l#lang/}"
 done
 
-# 0. chs oracle table: regenerate the runtime C from the consolidated TSV so
-# the archive carries the captured PCM (the tree's committed copy is a small
-# placeholder).  Cheap (~seconds) and authoritative: never hand-edit it.
+# 0. chs oracle table: regenerate the runtime C from the consolidated TSV plus
+# the legacy C rows (fitter-only drops legacy audio; merge_build keeps both(.
+#Cheap (~seconds( and authoritative: never hand-edit it.
 if [ -f "oracle/table/zh-cn.consolidated.tsv" ] || ls oracle/table/*.consolidated.tsv >/dev/null 2>&1; then
-  # fitter takes the table DIR and globs every *.consolidated.tsv (parts)
-  python3 oracle/fitter.py oracle/table \
+  # merge_build takes the table DIR, globs every *.consolidated.tsv (parts),
+  # reads the old committed C as legacy (and writes the merged bank back.
+  python3 oracle/merge_build.py oracle/table \
+    native/openevv/lang/chs/oracle_chs.c \
     native/openevv/lang/chs/oracle_chs.c
 fi
 
@@ -71,10 +73,10 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     CFLAGS=-fPIC \
     OBJDIR="build/obj-c/$ABI" \
     "build/libevv${SUF}.a"
-LIBEVV="$(ls native/openevv/build/libevv*.a 2>/dev/null | head -1 )"
-if [ -z "$LIBEVV" ]; then
-  echo "ERROR: openevv archive not built (no native/openevv/build/libevv*.a(" >&2
-  exit  ​1
+LIBEVV="native/openevv/build/libevv${SUF}.a"
+if [ ! -f "$LIBEVV" ]; then
+  echo "ERROR: openevv archive not built (missing $LIBEVV)" >&2
+  exit  1
 fi
 
 # 2. JNI bridge + engine static-linked into one .so.  -fvisibility=hidden
@@ -88,7 +90,7 @@ fi
         jni/eci_compat.c \
         jni/chs_oracle_synth.c \
         "$LIBEVV" \
-    -lm
+            -lm -llog
 
 # P1 re-baseline: symbol-strip（symtab/strtab ≈5.5 MB raw per ABI）— keeps
 # dynsym（JNI exports）so dlopen + the check below still work; ELF stays valid.

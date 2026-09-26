@@ -126,12 +126,7 @@ class SettingsActivity : Activity() {
                 tabGroup.setOnCheckedChangeListener { _, checkedId ->
                     for (i in allPanels.indices) {
                         allPanels[i].visibility = if (tabIds[i] == checkedId) View.VISIBLE else View.GONE
-                val activeIndex = allPanels.indices.firstOrNull { tabIds[it] == checkedId }
-                if (activeIndex != null) {
-                    val names = arrayOf("Voice settings", "Speech settings", "Reading settings", "Detection settings", "Tools")
-                    allPanels[activeIndex].announceForAccessibility(names[activeIndex])
                 }
-                    }
                 }
                 // ---- Voice tab: preset voice + spoken voice + test ----
                 addSectionHeader(panelVoice, R.string.sec_voice)
@@ -305,12 +300,22 @@ class SettingsActivity : Activity() {
                 }
             }
 
-            /** Crash-repro hook: synthesize one exact string through the real path */
+            /** Crash-repro hook: synthesize one exact string through the real path.
+             *  Dialect follows the text: any Chinese segment routes through the
+             *  real CHS oracle path (GB18030), everything else stays English. */
             private fun testCrash(text: String) {
                 if (engine == null || !engine!!.isInitialized()) return
                 Log.i("CRASHHOOK", "start:" + text)
+                var dialect = EloquenceEngine.DIALECT_EN_US
+                try {
+                    val zh = LanguageDetector.segment(text).firstOrNull { it.dialect == EloquenceEngine.DIALECT_ZH_CN }
+                    if (zh != null && EloquenceEngine.isShippedDialect(zh.dialect)) dialect = zh.dialect
+                } catch (t: Throwable) {
+                    Log.e("CRASHHOOK", "segment failed", t)
+                }
+                Log.i("CRASHHOOK", "dialect=" + Integer.toHexString(dialect))
                 val pcm2 = try {
-                    engine!!.synthesizeCore(text, EloquenceEngine.DIALECT_EN_US,
+                    engine!!.synthesizeCore(text, dialect,
                         voiceConfig!!.volume, voiceProfile?.preset ?: 1, voiceConfig!!.pitch, 100)
                 } catch (t: Throwable) {
                     Log.e("CRASHHOOK", "exception", t)
