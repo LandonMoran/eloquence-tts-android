@@ -175,6 +175,49 @@ jobs:
           echo "--- zh-cn sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-sample.tsv" || true
           echo "--- zh-cn hanzi rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv" || true
 
+      - name: Backfill zh-CN sweep gaps (warm engine, 3 retries)
+        run: |
+          set -o pipefail
+          cd apple-eloquence-elf-1.2.3-linux-aarch64
+          export LD_LIBRARY_PATH="$PWD/lib"
+          export DUMP_WORKDIR="$PWD/work_zh_cn"
+          export DUMP_ONESHOT=1
+          export DUMP_WANT_PHONEME=1
+          unset DUMP_PINYIN DUMP_TRACE DUMP_GENPHON
+          python3 - <<'PYEOF'
+          import os, subprocess
+          tsv = os.path.join(os.environ["GITHUB_WORKSPACE"], "oracle/corpus/zh-cn-hanzi.tsv")
+          need = [c.encode("gb18030") for c in "全网收悄百零八"]
+          have = set()
+          with open(tsv, "rb") as fh:
+              for line in fh.read().splitlines():
+                  parts = line.split(b"\t")
+                  if parts and parts[0] == b"nl" and len(parts) > 1:
+                      have.add(parts[1].rstrip(b"\r"))
+          miss = [c for c in need if c not in have]
+          print("backfill candidates:", len(miss))
+          got, still = [], []
+          for attempt in range(3):
+              if not miss:
+                  break
+              for c in list(miss):
+                  p = subprocess.run(["/tmp/dump_engine", "0x60000"],
+                                     input=c + b"\n", capture_output=True)
+                  rows = p.stdout.splitlines()
+                  audio = any(r.startswith(b"pcm\t") and len(r.split(b"\t")) >= 3 and r.split(b"\t")[2]
+                              for r in rows)
+                  if audio:
+                      with open(tsv, "ab") as fh:
+                          fh.write(b"nl\t" + c + b"\n")
+                          for r in rows:
+                              fh.write(r + b"\n")
+                      got.append(c)
+                      miss.remove(c)
+          print("backfilled: %d, remaining: %d" % (len(got), len(miss)))
+          if miss:
+              print("STILL MISSING:", b"".join(miss).decode("gb18030", "replace"))
+          PYEOF
+
       - name: Dump zh-TW (dialect 0x60001)
         run: |
           set -o pipefail

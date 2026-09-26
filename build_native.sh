@@ -73,9 +73,9 @@ make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv \
     CFLAGS=-fPIC \
     OBJDIR="build/obj-c/$ABI" \
     "build/libevv${SUF}.a"
-LIBEVV="$(ls native/openevv/build/libevv*.a 2>/dev/null | head -1 )"
-if [ -z "$LIBEVV" ]; then
-  echo "ERROR: openevv archive not built (no native/openevv/build/libevv*.a(" >&2
+LIBEVV="native/openevv/build/libevv${SUF}.a"
+if [ ! -f "$LIBEVV" ]; then
+  echo "ERROR: openevv archive not built (missing $LIBEVV)" >&2
   exit  1
 fi
 
@@ -90,7 +90,7 @@ fi
         jni/eci_compat.c \
         jni/chs_oracle_synth.c \
         "$LIBEVV" \
-    -lm
+            -lm -llog
 
 # P1 re-baseline: symbol-strip（symtab/strtab ≈5.5 MB raw per ABI）— keeps
 # dynsym（JNI exports）so dlopen + the check below still work; ELF stays valid.

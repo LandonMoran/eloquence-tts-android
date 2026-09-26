@@ -252,7 +252,10 @@ class LanguageDetector {
             var current = StringBuilder()
             var currentType = -1  // 0=Chinese, 1=kana, 2=Hangul, 3=Latin,  4=separator,,  5=digit
             var lastRealType = 3  //the last non-separator type (default Latin)
-            var lastDialect = englishDialect
+            // Leading digit/date runs flush with the RUN's dialect; start from the
+            // user's default language when set (e.g. zh) instead of hard English so a
+            // leading timestamp doesn't get voiced in the wrong language.
+            var lastDialect = resolveDefaultLanguage().takeIf { it >= 0 } ?: englishDialect
 
             for (i in text.indices) {
                 val c = text[i]

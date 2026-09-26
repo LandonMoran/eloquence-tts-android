@@ -14,7 +14,6 @@ import android.util.Log
 import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.utils.EmojiExpander
 import com.xw.vvtts.utils.LanguageDetector
-import com.xw.vvtts.utils.TextNormalizer
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.util.Locale
@@ -268,12 +267,10 @@ class VvTtsService : TextToSpeechService() {
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
-                // The Apple CJK libs skip plain digits and many symbols;the
-                // bundled TextNormalizer fixes exactly that for CJK segments.
-                // (For en/de/etc. the ECI libs already read digits fine.)
-                if (isCjkDialect(seg.dialect)) {
-                    segText = TextNormalizer.normalizeForChinese(segText)
-                }
+                // CJK normalization (width + number + symbol readings) happens once,
+                // inside EloquenceEngine.preprocess for zh segments. Do not repeat it
+                // here: a second pass after symbols were expanded defeats the
+                // date/time boundary detection (2024-03-15 -> mangled readings).
                 val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
                 if (pcm != null && pcm.size > 0) {
                     if (!started) {
@@ -315,14 +312,6 @@ class VvTtsService : TextToSpeechService() {
                 }
     }
 
-    private fun isCjkDialect(dialect: Int): Boolean {
-        // TextNormalizer's symbol/number readings are Mandarin (it is
-        // documented "for Chinese (Simplified/Traditional)"), so apply it to zh only  feeding
-        // Chinese readings to ja/ko voices would be wrong.
-        return dialect == EloquenceEngine.DIALECT_ZH_CN
-                || dialect == EloquenceEngine.DIALECT_ZH_TW
-    }
-
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
         return if (v < lo) lo else Math.min(v, hi)
     }
@@ -349,7 +338,12 @@ class VvTtsService : TextToSpeechService() {
         private fun restoreLanguageSettings(prefs: SharedPreferences) {
             LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
             LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-            LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
+            LanguageDetector.setChineseDialect(
+                // Only the zh-CN module is shipped; a legacy/pre-TW preference of
+                // zh-TW (0x60001) would silently route every Han segment into the
+                // unshipped engine stub path and produce nothing but silence.
+                LanguageDetector.DIALECT_ZH_CN
+            )
             LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
             LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
             LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
