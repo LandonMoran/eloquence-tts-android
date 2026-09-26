@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
@@ -39,7 +40,8 @@ class SettingsActivity : Activity() {
     private val charLabelRes = intArrayOf(R.string.voice_head, R.string.voice_roughness, R.string.voice_breathiness, R.string.voice_inflection)
     private val charBars = arrayOfNulls<SeekBar>(charParamIds.size)
     private val charVals = arrayOfNulls<TextView>(charParamIds.size)
-    private var langBtn: Button? = null
+    private var langSwitch: Switch? = null
+    private var langFixedBtn: Button? = null
     private var voiceBtn: Button? = null
     private var presetBtn: Button? = null
     private var presetRow: LinearLayout? = null
@@ -145,20 +147,31 @@ class SettingsActivity : Activity() {
                 voiceBtn = voiceBtnLocal
                 voiceBtnLocal.setOnClickListener { showVoiceDialog() };
                 refreshVoiceButton(voiceBtnLocal)
-                val langBtnLocal = addRow(this, panelVoice)
-                langBtn = langBtnLocal
-                langBtnLocal.setOnClickListener { showLanguageDialog() }
-                refreshLangButton(langBtnLocal)
-                // ---- Voice character: head size/roughness/breathiness/inflection (IBMTTS-style) ----
-                val charSectionLocal = LinearLayout(this)
-                charSectionLocal.orientation = LinearLayout.VERTICAL
-                addSectionHeader(charSectionLocal, R.string.sec_voice_char)
-                addVoiceCharSliders(charSectionLocal)
-                panelVoice.addView(charSectionLocal)
-                charSection = charSectionLocal
-                addChineseVoiceGuard(panelVoice)
-                updateChineseGuard()
-                addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
+                val langSwitchLocal = addSwitchRow(this, panelVoice, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
+                                    LanguageDetector.setDetectionEnabled(on)
+                                    voiceConfig!!.setAutoDetect(on)
+                                    if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
+                                    saveLanguageSettings()
+                                    refreshLanguageUi()
+                                    voiceBtn?.let { refreshVoiceButton(it) }
+                                    updateChineseGuard()
+                                }
+                                langSwitch = langSwitchLocal
+                                val langFixedBtnLocal = addRow(this, panelVoice)
+                                langFixedBtn = langFixedBtnLocal
+                                langFixedBtnLocal.setOnClickListener { showLanguageDialog() }
+                                addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
+                                refreshLanguageUi()
+                                // ---- Voice character: head size/roughness/breathiness/inflection (IBMTTS-style) ----
+                                val charSectionLocal = LinearLayout(this)
+                                charSectionLocal.orientation = LinearLayout.VERTICAL
+                                addSectionHeader(charSectionLocal, R.string.sec_voice_char)
+                                addVoiceCharSliders(charSectionLocal)
+                                addNoteRow(charSectionLocal, R.string.voice_char_note)
+                                panelVoice.addView(charSectionLocal)
+                                charSection = charSectionLocal
+                                addChineseVoiceGuard(panelVoice)
+                                updateChineseGuard()
                 // ---- Speech tab: pitch/volume ----
                 addSectionHeader(panelSpeech, R.string.sec_speech)
                 pitchVal = addSeekBar(panelSpeech, getString(R.string.pitch), voiceConfig!!.pitch,0,100) { v ->
@@ -431,13 +444,47 @@ class SettingsActivity : Activity() {
 
     private fun dp(px: Int): Int = (px * resources.displayMetrics.density).toInt()
 
-    private fun refreshLangButton(btn: Button) {
-        if (LanguageDetector.isDetectionEnabled()) {
-            btn.text = getString(R.string.lang_auto)
-        } else {
-            val d = LanguageDetector.getFixedDialect()
-            btn.text = getString(R.string.lang_fixed_fmt, dialectName(d))
+    private fun refreshLanguageUi() {
+        langSwitch?.isChecked = LanguageDetector.isDetectionEnabled()
+        val fixed = langFixedBtn
+        if (fixed != null) {
+            fixed.visibility = if (LanguageDetector.isDetectionEnabled()) View.GONE else View.VISIBLE
+            if (!LanguageDetector.isDetectionEnabled()) {
+                fixed.text = getString(R.string.lang_msg_fmt, dialectName(LanguageDetector.getFixedDialect()))
+            }
         }
+    }
+
+    private fun addSwitchRow(root: LinearLayout, label: String, checked: Boolean, onToggle: (Boolean) -> Unit): Switch {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = android.view.Gravity.CENTER_VERTICAL
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = dp(8); lp.bottomMargin = dp(8)
+        row.layoutParams = lp
+        val pad = dp(16)
+        row.setPadding(pad, dp(6), pad, dp(6))
+        val tv = TextView(this)
+        tv.text = label
+        tv.textSize = 16f
+        tv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        tv.setPadding(0, dp(2),dp(2))
+        val sw = Switch(this)
+        sw.isChecked = checked
+        sw.setOnCheckedChangeListener {  _,on -> onToggle(on) }
+        row.addView(tv)
+        row.addView(sw)
+        root.addView(row)
+        return sw
+    }
+
+    private fun addNoteRow(root: LinearLayout, labelRes: Int) {
+        val tv = TextView(this)
+        tv.setText(labelRes)
+        tv.textSize = 13f
+        tv.setTextColor(0xFF808080.toInt())
+        tv.setPadding(dp(16), dp(6), dp(16), dp(10))
+        root.addView(tv)
     }
 
     private fun dialectName(dialect: Int): String {
@@ -741,7 +788,6 @@ class SettingsActivity : Activity() {
 
     private fun showLanguageDialog() {
         val items = arrayOf(
-            getString(R.string.lang_auto_detect),
             "English (US)",
             "English (UK)",
             "German",
@@ -758,7 +804,6 @@ class SettingsActivity : Activity() {
             "Chinese (Mandarin)",
         )
         val dialects = intArrayOf(
-            -1, // auto
             LanguageDetector.DIALECT_EN_US,
             LanguageDetector.DIALECT_EN_GB,
             LanguageDetector.DIALECT_DE_DE,
@@ -774,26 +819,19 @@ class SettingsActivity : Activity() {
             LanguageDetector.DIALECT_FI_FI,
             LanguageDetector.DIALECT_ZH_CN,
         )
+        val current = LanguageDetector.getFixedDialect().let { d -> dialects.indexOf(d).coerceAtLeast(0) }
+        var picked = current
         AlertDialog.Builder(this)
                     .setTitle(getString(R.string.language_dlg_title))
-                    .setItems(items) { d,which ->
-                    if (which == 0) {
-                        LanguageDetector.setDetectionEnabled(true)
-                        // Auto: the spoken-voice locale follows the detected text;
-                        // clear a stale zh voice pin (else a previous "Voice: Chinese" pick would force every utterance to Chinese),
-                        // but only when the user's own pick is zh — never silently discard a non-zh voice.
-                        if (voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
-                        voiceConfig!!.setAutoDetect(true)
-                    } else {
+                    .setSingleChoiceItems(items, current ) { _,which -> picked = dialects[which] }
+                    .setPositiveButton(getString(R.string.ok)) {
                         LanguageDetector.setDetectionEnabled(false)
-                        LanguageDetector.setFixedDialect(dialects[which])
+                        LanguageDetector.setFixedDialect(picked)
                         voiceConfig!!.setAutoDetect(false)
-                    }
-                    saveLanguageSettings()
-                    refreshLangButton(langBtn!!)
-                    voiceBtn?.let { refreshVoiceButton(it) }
-                    updateChineseGuard()
-                    d.dismiss()
+                        saveLanguageSettings()
+                        refreshLanguageUi()
+                        voiceBtn?.let { refreshVoiceButton(it) }
+                        updateChineseGuard()
                     }
                     .setNegativeButton(getString(R.string.cancel), null)
                     .show()

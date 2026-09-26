@@ -6,8 +6,9 @@
     <!-- Settings -->
     <string name="title_main">Eloquence TTS</string>
     <string name="lang_header">Language</string>
-    <string name="lang_auto">Language: Auto detect</string>
-    <string name="lang_fixed_fmt">Language: %1$s</string>
+    <string name="lang_auto_switch">Auto-detect language per message</string>
+    <string name="lang_msg_fmt">Message Language: %1$s</string>
+    <string name="voice_char_note">Note: character adjustments sound strongest with the Reed preset.</string>
     <string name="voice_profile">Voice</string>
     <string name="rate">Rate</string>
     <string name="pitch">Pitch</string>
@@ -21,7 +22,6 @@
     <string name="voice_roughness">Roughness</string>
     <string name="voice_breathiness">Breathiness</string>
     <string name="voice_inflection">Inflection</string>
-    <string name="lang_auto_detect">Auto detect (follows the language of each message automatically)</string>
     <string name="cancel">Cancel</string>
 
     <!-- ETI control set (r6 accessibility pass) -->
@@ -144,7 +144,7 @@
     <string name="preview_in_english">Language not included in this build; previewing in English</string>
     <string name="spoken_en">Spoken (English)</string>
     <string name="voice_dlg_title">Voice</string>
-    <string name="language_dlg_title">Language</string>
+    <string name="language_dlg_title">Message Language</string>
 
     <!-- Tabs -->
     <string name="tab_voice">Voice</string>
