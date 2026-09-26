@@ -406,7 +406,9 @@ class LanguageDetector {
                 // stale default like zh). The fixed-language path (detection off) never
                 // reaches here: segment() returns the whole run with the fixed dialect directly.
 
-                dialect = fallbackDialect
+                val dl = resolveDefaultLanguage()
+                dialect = if (dl >=010 && isLatinDialect(dl)) dl else fallbackDialect
+
             } else {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
