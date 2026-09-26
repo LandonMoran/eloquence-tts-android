@@ -68,7 +68,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/oracle/capture_gaps.py"
 
       - name: Isolate probe2 vs dump_engine
-        if: ${{ inputs.hanzi_filter == '' }} (same layout, one CI run
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -95,10 +95,9 @@ jobs:
 
       - name: Generate corpora
         if: ${{ inputs.hanzi_filter == '' }}
-        run: python3 "$GITHUB_WORKSPACE/oracle/make_corpus.py"
 
       - name: Probe zh-CN under gdb
-        if: ${{ inputs.hanzi_filter == '' }} (diagnostic
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -114,7 +113,7 @@ jobs:
           head -14 /tmp/probe.tsv
 
       - name: Encoding matrix
-        if: ${{ inputs.hanzi_filter == '' }} (which text encoding feeds chs pinyin
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -158,7 +157,7 @@ jobs:
           fi
 
       - name: Dump zh-CN (dialect
-        if: ${{ inputs.hanzi_filter == '' }} 0x60000)
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -200,7 +199,7 @@ jobs:
           echo "--- zh-cn hanzi rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv" || true
 
       - name: Backfill zh-CN sweep gaps
-        if: ${{ inputs.hanzi_filter == '' }} (warm engine, 3 retries)
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
                   set -o pipefail
                   cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -215,7 +214,7 @@ jobs:
                   python3 "$GITHUB_WORKSPACE/oracle/capture_gaps.py"
 
       - name: Dump zh-TW (dialect
-        if: ${{ inputs.hanzi_filter == '' }} 0x60001)
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -256,7 +255,7 @@ jobs:
           echo "--- zh-tw sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-sample.tsv" || true
 
       - name: Dump ko (dialect
-        if: ${{ inputs.hanzi_filter == '' }} 0xA0000)
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
@@ -283,7 +282,7 @@ jobs:
           echo "--- ko sample rows ---"; grep -c '^pcm' "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv" || true
 
       - name: Dump ja (dialect
-        if: ${{ inputs.hanzi_filter == '' }} 0x80000)
+        if: ${{ inputs.hanzi_filter == '' }}
         run: |
           set -o pipefail
           cd apple-eloquence-elf-1.2.3-linux-aarch64
