@@ -776,7 +776,7 @@ class SettingsActivity : Activity() {
         )
         AlertDialog.Builder(this)
                     .setTitle(getString(R.string.language_dlg_title))
-                    .setItems(items) { _,which ->
+                    .setItems(items) { d,which ->
                     if (which == 0) {
                         LanguageDetector.setDetectionEnabled(true)
                         // Auto: the spoken-voice locale follows the detected text;
@@ -793,6 +793,7 @@ class SettingsActivity : Activity() {
                     refreshLangButton(langBtn!!)
                     voiceBtn?.let { refreshVoiceButton(it) }
                     updateChineseGuard()
+                    d.dismiss()
                     }
                     .setNegativeButton(getString(R.string.cancel), null)
                     .show()
