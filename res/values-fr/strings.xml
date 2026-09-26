@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="lang_header">Langue</string>
-    <string name="lang_auto">Détection automatique</string>
     <string name="voice_profile">Voix</string>
     <string name="rate">Vitesse</string>
     <string name="pitch">Hauteur</string>
