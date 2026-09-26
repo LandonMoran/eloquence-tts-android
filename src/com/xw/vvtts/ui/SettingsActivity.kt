@@ -3,6 +3,7 @@ package com.xw.vvtts.ui
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.net.Uri
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
@@ -135,7 +136,7 @@ class SettingsActivity : Activity() {
                 addSectionHeader(panelVoice, R.string.sec_voice)
                 val presetBtnLocal = addRow(this, panelVoice)
                 presetBtn = presetBtnLocal
-                presetRow = presetBtnLocal
+                presetRow = presetBtnLocal.parent as? LinearLayout
                 presetBtnLocal.setOnClickListener {
                     startActivityForResult(Intent(this, VoiceProfileActivity::class.java), REQ_PROFILE)
                 }
@@ -156,7 +157,7 @@ class SettingsActivity : Activity() {
                 panelVoice.addView(charSectionLocal)
                 charSection = charSectionLocal
                 addChineseVoiceGuard(panelVoice)
-                updateChineseGuard())
+                updateChineseGuard()
                 addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
                 // ---- Speech tab: pitch/volume ----
                 addSectionHeader(panelSpeech, R.string.sec_speech)
@@ -506,7 +507,7 @@ class SettingsActivity : Activity() {
             try {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.chinese_voice_guard_url))))
             } catch (e: Exception) {
-                Toast.makeText(this, R.string.chinese_voice_guard_open, Toast.LENGTH_SHORT.show()
+                Toast.makeText(this, R.string.chinese_voice_guard_open, Toast.LENGTH_SHORT).show()
             }
         }
         card.addView(open)

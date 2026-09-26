@@ -172,7 +172,7 @@ class TextNormalizer {
                     // check whether part of a date/time(avoid mangling 2024-03-15 / 14:30)
                     val isDateTime = hasDateTimeBoundaries(input, start, i)
                     if (isDateTime) {
-                        if (end < input.length && (input[end] == ':' || input[end] == '：')) {
+                        if (i < input.length && (input[i] == ':' || input[i] == '：')) {
                             // time read-out: 14:30 -> 十四点三十; consume colon so the
                             // oracle synth(which speaks hanzi only) never sees it
                             sb.append(convertNumber(digits))
