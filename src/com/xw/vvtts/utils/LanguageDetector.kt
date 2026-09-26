@@ -407,7 +407,7 @@ class LanguageDetector {
                 // reaches here: segment() returns the whole run with the fixed dialect directly.
 
                 val dl = resolveDefaultLanguage()
-                dialect = if (dl >=  ो0 && isLatinDialect(dl)) dl else fallbackDialect
+                dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fallbackDialect
 
             } else {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
