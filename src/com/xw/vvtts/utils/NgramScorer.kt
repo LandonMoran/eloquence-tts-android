@@ -30,6 +30,11 @@ object NgramScorer {
     @Synchronized
     fun load(context: Context) {
         if (ready) return
+        // Clear any partial state left by a failed earlier load, so a retry
+        // doesn't double-count entries for languages that already got data.
+        unigramMaps.fill(null)
+        bigramMaps.fill(null)
+        totals.fill(0f)
         try {
             val raw = context.assets.open("ngram_uni_bi.tsv.gz")
             BufferedReader(InputStreamReader(GZIPInputStream(raw), "UTF-8")).use { reader ->

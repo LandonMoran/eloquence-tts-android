@@ -218,6 +218,10 @@ class VvTtsService : TextToSpeechService() {
             deliveryExecutor.execute(Runnable { runSynthesis(request, callback) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
+            // Framework contract: every onSynthesizeText must terminate the
+            // callback. runSynthesis never runs on this path, so no start()/done()
+            // pair can fire — error() is the designated failure termination.
+            callback.error(TextToSpeech.ERROR_SYNTHESIS)
         }
     }
 
@@ -236,7 +240,6 @@ class VvTtsService : TextToSpeechService() {
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
         val savedDefault = LanguageDetector.getDefaultLanguage()
-        val savedLangs = LanguageDetector.getEnabledLanguages()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
