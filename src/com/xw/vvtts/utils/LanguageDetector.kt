@@ -434,6 +434,22 @@ class LanguageDetector {
 
 
             }
+            // Fast path:pure-ASCII runs are unmistakably English only when English
+            // is the pinned default (no diacritics means no script ambiguity,and the user
+            // already chose English(); Lingua's n-gram scoring is the biggest single
+            // per-segment cost on the delivery thread, so skip it for the commonest case
+            // (TalkBack/English UI text(). Mixed-script, accented, or non-English-default
+            // text still goes through Lingua as before.
+
+            if (isLanguageEnabled("en") && (resolveDefaultLanguage() == englishDialect)) {
+
+                var ascii = true
+                var i = text.length
+                while (--i >= 0) {
+                    if (text[i] > '\u007F') { ascii = false; break }
+                }
+                if (ascii) return englishDialect
+            }
             val ld = getLingua()
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)

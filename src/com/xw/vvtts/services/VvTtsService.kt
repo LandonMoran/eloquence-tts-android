@@ -30,6 +30,13 @@ class VvTtsService : TextToSpeechService() {
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
+    // Settings are mirrored once at startup and re-read only when something
+    // actually changed (UI edits land via the prefs listener(. Re-reading per
+    // utterance re-built VoiceConfig/VoiceProfile and re-applied language state
+    // (which could drop a per-utterance zh pin) on EVERY TalkBack swipe;
+    // the dirty gate removes that whole per-swipe cost.
+    @Volatile private var settingsDirty = true
+    private val onPrefsChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> settingsDirty = true }
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +52,10 @@ class VvTtsService : TextToSpeechService() {
         voiceProfile = VoiceProfile(device)
         deviceCtx = device
         refreshSettings()
+        device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE().registerOnSharedPreferenceChangeListener(onPrefsChanged)
+        if (getSystemService(UserManager::class.java).isUserUnlocked(()) {
+            applicationContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE()?.registerOnSharedPreferenceChangeListener(onPrefsChanged)
+        }
         engine = EloquenceEngine(device)
         engine!!.setVoiceProfile(voiceProfile)
         val ok = engine!!.initialize()
@@ -71,6 +82,7 @@ class VvTtsService : TextToSpeechService() {
 
 
     private fun refreshSettings() {
+        if (!settingsDirty) return
         try {
             val unlocked = getSystemService(UserManager::class.java).isUserUnlocked()
             val active = if (unlocked) {
@@ -83,6 +95,7 @@ class VvTtsService : TextToSpeechService() {
             restoreLanguageSettings(active.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
             val profile = voiceProfile
             if (profile != null) engine?.setVoiceProfile(profile)
+            settingsDirty = false
         } catch (t: Throwable) {
             Log.e(TAG, "refreshSettings failed", t)
         }
