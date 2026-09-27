@@ -335,6 +335,7 @@ class VvTtsService : TextToSpeechService() {
 
             val pace = Pace(engine!!.getCoreSampleRate())
             for (seg in segments) {
+                if (stopping) break
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")

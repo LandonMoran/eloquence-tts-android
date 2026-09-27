@@ -44,7 +44,11 @@ class EloquenceEngine(context: Context) {
     @Volatile private var sampleRateSet = false
     private var lastNativePitch = 0
     @Volatile private var pendingSpeedFactor = 1.0f
-    @Volatile private var pendingEciVoice = -1
+    // Voice-copy state is per-dialect: each dialect owns a cached handle, so a
+    // single global would skip setStandardVoice on a fresh handle that reuses the
+    // same eciVoiceNumber after a dialect switch, leaving the new dialect speaking
+    // the engine-default voice. Keyed by dialect (stable across shutdown/reopen).
+    private val pendingEciVoiceByDialect = ConcurrentHashMap<Int, Int>()
     @Volatile private var pendingEciDialect = DIALECT_ZH_CN
     @Volatile private var warmedUp = false
     @Volatile private var pendingSapiMark = ""
@@ -291,6 +295,7 @@ class EloquenceEngine(context: Context) {
             for (h in coreHandles.values) VvttsCore.shutdown(h)
             coreHandles.clear()
         }
+        pendingEciVoiceByDialect.clear()
         initialized = false
         core = null
     }
@@ -403,10 +408,10 @@ class EloquenceEngine(context: Context) {
             // every utterance speaks engine default=Reed; params tune but never pick the voice.
 
 
-            if (voice.eciVoiceNumber != pendingEciVoice) {
+            if (voice.eciVoiceNumber != pendingEciVoiceByDialect[dialect]) {
 
                 VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
-                pendingEciVoice = voice.eciVoiceNumber
+                pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
             }
 
             val vp = voiceProfile
