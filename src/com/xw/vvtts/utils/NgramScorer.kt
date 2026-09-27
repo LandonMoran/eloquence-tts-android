@@ -32,7 +32,7 @@ object NgramScorer {
         if (ready) return
         try {
             val raw = context.assets.open("ngram_uni_bi.tsv.gz")
-            BufferedReader(InputStreamReader(GZIPInputStream(raw, "UTF-8"))).use { reader ->
+            BufferedReader(InputStreamReader(GZIPInputStream(raw), "UTF-8")).use { reader ->
             while (true) {
                 val line = reader.readLine()?: break
                 val fields = line.split('\t')
