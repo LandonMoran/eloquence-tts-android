@@ -663,6 +663,16 @@ class EloquenceEngine(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "rotate: shutdown failed", e)
         }
+        // Best-effort: stop any in-flight render on the retired handles so a
+        // fresh open isn't competing with a zombie session. VvttsCore.stop is
+        // flag-based (non-blocking(, and this cross-thread usage mirrors stop().
+        // (The frozen worker's own native state can't be freed safely — that
+        // memory is released once per hang event, unavoidably.)
+        try {
+            for (h in coreHandles.values) VvttsCore.stop(h)
+        } catch (e: Exception) {
+            Log.e(TAG, "rotate: stop handles failed", e)
+        }
         synthExecutor = Executors.newSingleThreadExecutor()
         coreHandles.clear()
         lastParamSig = null
