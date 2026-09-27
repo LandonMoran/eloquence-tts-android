@@ -29,7 +29,7 @@ class EloquenceEngine(context: Context) {
     private val storageContext: Context = context.createDeviceProtectedStorageContext()
 
     private var voiceProfile: VoiceProfile? = null
-    private var core: VvttsCore? = null          // In-house bridge (multi-language
+    @Volatile private var core: VvttsCore? = null          // In-house bridge (multi-language
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
     private var initialized = false
@@ -676,6 +676,7 @@ class EloquenceEngine(context: Context) {
         synthExecutor = Executors.newSingleThreadExecutor()
         coreHandles.clear()
         lastParamSig = null
+        pendingEciVoiceByDialect.clear() // fresh handles start at engine-default voices; drop stale cache
         hangDetected = true
     }
 }

@@ -270,6 +270,7 @@ class VvTtsService : TextToSpeechService() {
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
+        refreshSettings()
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
@@ -317,7 +318,6 @@ class VvTtsService : TextToSpeechService() {
 
             // emoji expansion now happens per-segment, pitched to the segment's detected dialect
 
-            refreshSettings()
         // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
             for (seg in segments) {
