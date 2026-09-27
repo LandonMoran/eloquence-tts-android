@@ -250,7 +250,20 @@ class VvTtsService : TextToSpeechService() {
         // utterance (still draining on the single-thread executor( resume
         // after a TalkBack re-swipes, causing overlapping speech.
         stopping = false
-        Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
+        // An onStop() can race in between the queue-time generation snapshot
+        // (taken in onSynthesizeText()and this reset:it bumps generationand
+        // sets stopping = true. Re-check so a just-issued cancellation isn't
+        // cleared, which would let a stale utterance drain in full (ghost speech(.
+        // Restore the stop flag and drop the utterance via error() instead.
+        if (gen != generation) {
+            stopping = true
+            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {}
+            return
+        }
+        Log.d("VvTtsService", "synth voice='" + request.voiceName + "'" lang=" + request.language)
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 
@@ -335,7 +348,9 @@ class VvTtsService : TextToSpeechService() {
 
             val pace = Pace(engine!!.getCoreSampleRate())
             for (seg in segments) {
-                if (stopping) break
+                // Bail on either signal: stop() (framework( or a generation bump
+                // (a newer utterance superseded ours while we were mid-queue(.
+                if (stopping || gen != generation) break
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
