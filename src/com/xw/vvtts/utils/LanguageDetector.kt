@@ -101,6 +101,8 @@ class LanguageDetector {
         fun setFrenchDialect(dialect: Int) { frenchDialect = dialect; invalidateLatinCache() }
         fun getFrenchDialect() = frenchDialect
 
+        @Volatile private var transientEnabled: Set<String>? = null
+
         fun setEnabledLanguages(langs: Set<String>?) {
             val en = enabledLanguages
             if (langs == null || langs.isEmpty()) {
@@ -125,8 +127,16 @@ class LanguageDetector {
 
         fun getEnabledLanguages(): Set<String> = enabledLanguages
 
+        /** Per-utterance pin (e.g. zh from a picker row(,applied on top of the whitelist
+         * without rebuilding Lingua. Cleared from the finally block. */
+        fun setTransientEnabledLangs(langs: Set<String>?) {
+            transientEnabled = langs
+        }
+
         /** Whether a language code is in the detection whitelist */
         fun isLanguageEnabled(code: String): Boolean {
+            val te = transientEnabled
+            if (te != null && te.contains(code)) return true
             val en = enabledLanguages
             if (en == null) return false
             return en.contains(code)
@@ -454,14 +464,14 @@ class LanguageDetector {
                 when (text[i]) {
                     // Spanish: ñ/Ñ are unique among shipped languages
                     '\u00F1', '\u00D1' ->
-                        if (isLanguageEnabled("es")) return spanishDialect else return -1
+                        if (isLanguageEnabled("es")) return spanishDialect else continue
                     // German: ß is unique among shipped languages
                     '\u00DF' ->
-                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else return -1
+                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else continue
                     // Polish: Ąą Ęę Ćć Śś Źź Żż Ńń (ogonek/acutes) are Polish-only among shipped languages
                     '\u0105', '\u0104', '\u0119', '\u0118', '\u0107', '\u0106',
                     '\u015A', '\u015B', '\u0179', '\u017A', '\u017B', '\u017C', '\u0143', '\u0144' ->
-                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else return -1
+                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else continue
                 }
             }
             return -1
@@ -523,7 +533,8 @@ class LanguageDetector {
                 val hit = latinCache[text]
                 if (hit != null) return hit
             }
-            val ngramId = NgramScorer.detect(text, enabledLanguages)
+            val effEnabled = transientEnabled?.let { enabledLanguages + it } ?: enabledLanguages
+            val ngramId = NgramScorer.detect(text, effEnabled)
 
             if (ngramId >= 0) {
                 val dialect = when (ngramId) {

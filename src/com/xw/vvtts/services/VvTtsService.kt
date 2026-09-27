@@ -19,6 +19,7 @@ import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.util.Locale
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Eloquence TTS service (openevv port, single engine).
@@ -65,7 +66,7 @@ class VvTtsService : TextToSpeechService() {
         // engine writes only eci.ini to filesDir/eloquence/, going to the same
         // device-protected area keeps it writable while locked ( voice banks are in the .so ).
         val device = createDeviceProtectedStorageContext()
-        if (getSystemService(UserManager::class.java).isUserUnlocked()) mirrorPrefsToDevice(device)
+        if (getSystemService(UserManager::class.java)?.isUserUnlocked == true) mirrorPrefsToDevice(device)
         voiceConfig = VoiceConfig(device)
         voiceProfile = VoiceProfile(device)
         deviceCtx = device
@@ -92,6 +93,8 @@ class VvTtsService : TextToSpeechService() {
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
+        stopping = true
+        deliveryExecutor.shutdownNow()
         try {
             if (engine != null) engine!!.stop()
         } catch (ignore: Throwable) {
@@ -107,7 +110,7 @@ class VvTtsService : TextToSpeechService() {
         // stale clear afterthe read completes (lost-update race(.
         settingsDirty = false
         try {
-            val unlocked = getSystemService(UserManager::class.java).isUserUnlocked()
+            val unlocked = getSystemService(UserManager::class.java)?.isUserUnlocked == true
             val active = if (unlocked) {
                 applicationContext
             } else {
@@ -201,7 +204,7 @@ class VvTtsService : TextToSpeechService() {
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
         val hasVariant = variant != null && variant.isNotEmpty()
-        if (hasCountry || hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
+        if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
         if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
         return TextToSpeech.LANG_AVAILABLE
     }
@@ -211,12 +214,20 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
-        stopping = false
-        deliveryExecutor.execute(Runnable { runSynthesis(request, callback) } )
+        try {
+            deliveryExecutor.execute(Runnable { runSynthesis(request, callback( } )
+        } catch (e: RejectedExecutionException) {
+            Log.w(TAG, "service shutting down;dropping utterance", e)
+        }
     }
 
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback) {
         var text: String? = request.text
+        // The stop flag is cleared only here, once the utterance actually
+        // dequeues:clearing it in onSynthesizeText() would let previous
+        // utterance (still draining on the single-thread executor( resume
+        // after a TalkBack re-swipes, causing overlapping speech.
+        stopping = false
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
@@ -242,7 +253,7 @@ class VvTtsService : TextToSpeechService() {
             LanguageDetector.setDefaultLanguage(EloquenceEngine.DIALECT_ZH_CN)
 
 
-            LanguageDetector.setEnabledLanguages(LanguageDetector.getEnabledLanguages() + "zh")
+            LanguageDetector.setTransientEnabledLangs(LanguageDetector.getEnabledLanguages() + "zh")
 
 
             LanguageDetector.setFixedDialect(EloquenceEngine.DIALECT_ZH_CN)
@@ -344,7 +355,7 @@ class VvTtsService : TextToSpeechService() {
         } finally {
                     // Revert the per-utterance override (preserve app-pref state)
                     LanguageDetector.setDefaultLanguage(savedDefault)
-                    LanguageDetector.setEnabledLanguages(savedLangs)
+                    LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
                     try {
                         // Playback contract: start() must precede done((),the framework throws
