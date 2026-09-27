@@ -31,13 +31,31 @@ class VvTtsService : TextToSpeechService() {
     private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
     // Settings are mirrored once at startup and re-read only when something
-    // actually changed (UI edits land via the prefs listener(. Re-reading per
-    // utterance re-built VoiceConfig/VoiceProfile and re-applied language state
-    // (which could drop a per-utterance zh pin) on EVERY TalkBack swipe;
-    // the dirty gate removes that whole per-swipe cost.
+        // actually changed. UI edits land vis the prefs listener. Re-reading per
+        // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
+        // which could drop a per-utterance zh pin on EVERY TalkBack swipe; the
+        // dirty gate removes that whole per-swipe cost.
     @Volatile private var settingsDirty = true
     private val onPrefsChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> settingsDirty = true }
 
+    // The dirty gate only re-reads when a relevant prefs file actually changed.
+
+    // refreshSettings() re-reads three prefs files: voice config, voice profile,
+    // language state. Re-reading them on every swipe costs CPUand the
+    // language-state re-apply can drop a per-utterance zh pin, so register
+    // dirty listeners on all three from both the device-protected storage and
+    // the credential store, so any UI edit marks settings dirty exactly once.
+
+    private fun registerAllPrefsListeners(ctx: Context?) {
+        if (ctx == null) return
+        val names = arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)
+        for (n in names) {
+            try {
+                ctx.getSharedPreferences(n, Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(onPrefsChanged)
+            } catch (ignore: Throwable) {
+            }
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         // Direct Boot: speak on the lock screen ( before first unlock(.
@@ -52,10 +70,8 @@ class VvTtsService : TextToSpeechService() {
         voiceProfile = VoiceProfile(device)
         deviceCtx = device
         refreshSettings()
-        device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE().registerOnSharedPreferenceChangeListener(onPrefsChanged)
-        if (getSystemService(UserManager::class.java).isUserUnlocked(()) {
-            applicationContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE()?.registerOnSharedPreferenceChangeListener(onPrefsChanged)
-        }
+        registerAllPrefsListeners(device)
+        registerAllPrefsListeners(applicationContext!!
         engine = EloquenceEngine(device)
         engine!!.setVoiceProfile(voiceProfile)
         val ok = engine!!.initialize()
@@ -83,6 +99,10 @@ class VvTtsService : TextToSpeechService() {
 
     private fun refreshSettings() {
         if (!settingsDirty) return
+        // Clear BEFORE re-reading: a prefs write that lands during the read
+        // sets dirty=true again via the listener, so it must not be wiped by a
+        // stale clear afterthe read completes (lost-update race(.
+        settingsDirty = false
         try {
             val unlocked = getSystemService(UserManager::class.java).isUserUnlocked()
             val active = if (unlocked) {
@@ -95,8 +115,10 @@ class VvTtsService : TextToSpeechService() {
             restoreLanguageSettings(active.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
             val profile = voiceProfile
             if (profile != null) engine?.setVoiceProfile(profile)
-            settingsDirty = false
         } catch (t: Throwable) {
+            // Re-arm the dirty flag: we cleared it before reading, but the
+            // read failed, so the next utterance must retry.
+            settingsDirty = true
             Log.e(TAG, "refreshSettings failed", t)
         }
     }

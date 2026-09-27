@@ -441,7 +441,10 @@ class LanguageDetector {
             // (TalkBack/English UI text(). Mixed-script, accented, or non-English-default
             // text still goes through Lingua as before.
 
-            if (isLanguageEnabled("en") && (resolveDefaultLanguage() == englishDialect)) {
+            val enabledSet = LanguageDetector.getEnabledLanguages()
+            val otherLatin = enabledSet?.any { it != "en" && (it == "de" || it == "fr" || it == "es" || it == "it" || it == "pl" || it == "pt" || it == "fi") } ?: false
+
+            if (!otherLatin && isLanguageEnabled("en") && (resolveDefaultLanguage() == englishDialect)) {
 
                 var ascii = true
                 var i = text.length
