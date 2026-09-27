@@ -343,14 +343,19 @@ class VvTtsService : TextToSpeechService() {
                     val max = callback.maxBufferSize
                     // Pace the handoff: never run more than 300 ms of audio ahead of
                     // playback  otherwise swipes/stops drown in the framework's queue
-                    var offset = 0
-                    while (offset < bytes.size) {
-                        if (stopping) break
-                        val len = Math.min(max, bytes.size - offset)
-                        callback.audioAvailable(bytes, offset, len)
-                        offset += len
-                        pace.handed(len)
-                        hold(pace)
+                    // Guard: a 0/negative buffer-size report from the framework would
+                    // make `offset += len` never advance -> infinite loop. Skip
+                    // delivery (finally still terminates the pair cleanly).
+                    if (max > 0) {
+                        var offset = 0
+                        while (offset < bytes.size) {
+                            if (stopping) break
+                            val len = Math.min(max, bytes.size - offset)
+                            callback.audioAvailable(bytes, offset, len)
+                            offset += len
+                            pace.handed(len)
+                            hold(pace)
+                        }
                     }
                 }
             }
@@ -361,15 +366,34 @@ class VvTtsService : TextToSpeechService() {
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
-                    try {
-                        // Playback contract: start() must precede done((),the framework throws
-                        // otherwise. One pair per utterance  every path funnels here, so
-                        // all silent/empty/early returns get the pair exactly once
-                        if (!started) {
+                    if (!started) {
+                        // Playback contract: start() must precede done(), the framework
+                        // throws otherwise. One pair per utterance; every path funnels
+                        // here, so all silent/empty/early returns get the pair exactly
+                        // once. If start() itself fails, done() would also throw (it
+                        // requires a prior start), so error() is the contract's failure
+                        // termination -- otherwise the callback is left unterminated.
+                        try {
                             callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "callback.start failed; terminating with error()", e)
+                            try {
+                                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                            } catch (ignore: Throwable) {
+                            }
+                            return
                         }
+                    }
+                    try {
                         callback.done()
-                    } catch (ignore: Throwable) {
+                    } catch (e: Throwable) {
+                        // done() after a successful start must not leave a dangling
+                        // utterance: error() is the fallback termination.
+                        Log.e(TAG, "callback.done failed; terminating with error()", e)
+                        try {
+                            callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                        } catch (ignore: Throwable) {
+                        }
                     }
                 }
     }
