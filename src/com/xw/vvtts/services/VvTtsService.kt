@@ -257,13 +257,13 @@ class VvTtsService : TextToSpeechService() {
         // Restore the stop flag and drop the utterance via error() instead.
         if (gen != generation) {
             stopping = true
-            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation
+            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation)
             try {
                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
             } catch (ignore: Throwable) {}
             return
         }
-        Log.d("VvTtsService", "synth voice='" + request.voiceName + "'" lang=" + request.language)
+        Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 
