@@ -517,7 +517,12 @@ class LanguageDetector {
             // Primary path:in-RAM unigram/bigram tables from the shipped 66KB
             // asset. The 10% margin gate inside NgramScorer.detect() sends
             // ambiguous runs back here -- only then does Lingua's heavier n-gram
-            // scan run (and only its result is cached;the tables never allocate).
+            // scan run. Both paths share the same LRU cache:re-announcing a seen
+            // UI string short-circuits before either scan runs.
+            synchronized(latinCache) {
+                val hit = latinCache[text]
+                if (hit != null) return hit
+            }
             val ngramId = NgramScorer.detect(text, enabledLanguages)
 
             if (ngramId >= 0) {
@@ -532,7 +537,13 @@ class LanguageDetector {
                     7 -> DIALECT_PL_PL
                     else -> -1
                 }
-                if (dialect >= 0) return dialect
+                if (dialect >=0) {
+                    synchronized(latinCache) {
+                        if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
+                        latinCache[text] = dialect
+                    }
+                    return dialect
+                }
             }
             val ld = getLingua()
             if (ld == null) {
@@ -541,15 +552,8 @@ class LanguageDetector {
                 return if (isLatinDialect(dl)) dl else englishDialect
             }
 
-            // Recent Lingua decisions are repeats-safe:re-announcing the same UI
-            // string (label,nname,,word( used to re-run the whole n-gram scan.
-            // Skip it——the biggest per-swipe win for TalkBack. Only actual Lingua
-            // decisions are cached;fallback/ASCII/short-run paths are context-dependent
-            // and already cheap,so they never touch it.
-            synchronized(latinCache) {
-                val hit = latinCache[text]
-                if (hit != null) return hit
-            }
+            // Lingua still handles ambiguous text;its decisions land in the same
+            // cache as the n-gram path above.
 
             try {
                 val lang = ld.detectLanguageOf(text)

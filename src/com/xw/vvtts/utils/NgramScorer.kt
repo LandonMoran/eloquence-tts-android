@@ -22,8 +22,9 @@ object NgramScorer {
 
     private val LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pt", "fi", "pl")
 
-    private val unigramMaps = arrayOfNulls<HashMap<Int, Int>>(8)
-    private val bigramMaps = arrayOfNulls<HashMap<Int, Int>>(8)
+    private val unigramMaps = arrayOfNulls<HashMap<Int, Float>>(8)
+    private val bigramMaps = arrayOfNulls<HashMap<Int, Float>>(8)
+    private val totals = FloatArray(8)
     @Volatile private var ready = false
 
     @Synchronized
@@ -39,26 +40,37 @@ object NgramScorer {
                 val idx = LANG_CODES.indexOf(fields[0])
                 if (idx < 0) continue
                 val freq = fields[2].toIntOrNull() ?: 0
-                if (freq <= 0) continue
+                if (freq <=0) continue
+                totals[idx] += freq.toFloat()
                 val ngram = fields[3]
                 val key = keyOf(ngram)
                 if (key < 0) continue
                 val maps = if (fields[1] == "unigrams") unigramMaps else bigramMaps
                 val map = maps[idx]
                 if (map == null) {
-                    val fresh = HashMap<Int, Int>(64)
-                    fresh.put(key, freq)
+                    val fresh = HashMap<Int, Float>(64)
+                    fresh.put(key, freq.toFloat())
                     maps[idx] = fresh
                 } else {
-                    map.put(key, freq)
+                    map.put(key, freq.toFloat())
                 }
             }
             reader.close()
+            normalizeAll()
             ready = true
             Log.i(TAG, "n-gram tables loaded")
         } catch (e: Throwable) {
             Log.e(TAG, "n-gram tables load failed", e)
             ready = false
+        }
+    }
+
+    private fun normalizeAll() {
+        for (idx in 0..7) {
+            val t = totals[idx]
+            if (t <=0f) continue
+            unigramMaps[idx]?.let { m -> for ((k,v)in m) m[k] = v / t }
+            bigramMaps[idx]?.let { m -> for ((k,v)in m) m[k] = v / t }
         }
     }
 
