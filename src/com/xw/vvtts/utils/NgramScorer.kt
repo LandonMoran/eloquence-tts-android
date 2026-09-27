@@ -32,7 +32,7 @@ object NgramScorer {
         if (ready) return
         try {
             val raw = context.assets.open("ngram_uni_bi.tsv.gz")
-            val reader = BufferedReader(InputStreamReader(GZIPInputStream(raw, "UTF-8")))
+            BufferedReader(InputStreamReader(GZIPInputStream(raw, "UTF-8")))).use { reader ->
             while (true) {
                 val line = reader.readLine()?: break
                 val fields = line.split('\t')
@@ -55,7 +55,7 @@ object NgramScorer {
                     map.put(key, freq.toFloat())
                 }
             }
-            reader.close()
+            }
             normalizeAll()
             ready = true
             Log.i(TAG, "n-gram tables loaded")

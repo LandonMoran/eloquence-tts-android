@@ -141,7 +141,7 @@ class VvTtsService : TextToSpeechService() {
 
 
 
-    override fun onGetDefaultVoiceNameFor(language: String, country: String, variant: String): String {
+    override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         val lang = (language ?: "").lowercase()
         val c = (country ?: "").uppercase()
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
@@ -192,7 +192,7 @@ class VvTtsService : TextToSpeechService() {
         return voices
     }
 
-    override fun onIsLanguageAvailable(language: String, country: String, variant: String): Int {
+    override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
         val lang = language.lowercase()
         val supported = lang.startsWith("en") || lang.startsWith("de")
@@ -209,13 +209,13 @@ class VvTtsService : TextToSpeechService() {
         return TextToSpeech.LANG_AVAILABLE
     }
 
-    override fun onLoadLanguage(language: String, country: String, variant: String): Int {
+    override fun onLoadLanguage(language: String?, country: String?, variant: String?): Int {
         return onIsLanguageAvailable(language, country, variant)
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         try {
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback( )) })
+            deliveryExecutor.execute(Runnable { runSynthesis(request, callback) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
         }
