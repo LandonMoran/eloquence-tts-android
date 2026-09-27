@@ -18,6 +18,17 @@ class VoiceConfig(context: Context) {
     )
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    // Direct-boot mirror: settings written here must also land in device-protected
+    // storage so a locked start (before first unlock( reads the same values (the service's
+    // boot-time init reads that copy; without write-through the mirror goes stale until the
+    // next unlocked service start, which is what made the voice revert at lock-screen).
+    private val devicePrefs: SharedPreferences =
+        context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
+        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.apply()
+        val b = devicePrefs.edit(); block(b); b.apply()
+    }
 
     val voice: String
         get() = prefs.getString(KEY_VOICE, "en-US")!!
@@ -33,14 +44,14 @@ class VoiceConfig(context: Context) {
     val isAutoDetect: Boolean
         get() = prefs.getBoolean(KEY_AUTO_DETECT, true)
 
-    fun setVoice(v: String) { prefs.edit().putString(KEY_VOICE, v).apply() }
-    fun setRate(r: Int) { prefs.edit().putInt(KEY_RATE, r).apply() }
-    fun setPitch(p: Int) { prefs.edit().putInt(KEY_PITCH, p).apply() }
-    fun setVolume(v: Int) { prefs.edit().putInt(KEY_VOLUME, v).apply() }
-    fun setDspMode(m: Int) { prefs.edit().putInt(KEY_DSP_MODE, m).apply() }
-    fun setAutoDetect(b: Boolean) { prefs.edit().putBoolean(KEY_AUTO_DETECT, b).apply() }
+    fun setVoice(v: String) { writeBoth { it.putString(KEY_VOICE, v) } }
+    fun setRate(r: Int) { writeBoth { it.putInt(KEY_RATE, r) } }
+    fun setPitch(p: Int) { writeBoth { it.putInt(KEY_PITCH, p) } }
+    fun setVolume(v: Int) { writeBoth { it.putInt(KEY_VOLUME, v) } }
+    fun setDspMode(m: Int) { writeBoth { it.putInt(KEY_DSP_MODE, m) } }
+    fun setAutoDetect(b: Boolean) { writeBoth { it.putBoolean(KEY_AUTO_DETECT, b) } }
 
-    fun setPunctEnabled(b: Boolean) { prefs.edit().putBoolean(KEY_PUNCT, b).apply() }
+    fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT, b) } }
     val punctEnabled: Boolean
         get() = prefs.getBoolean(KEY_PUNCT, false)
 
@@ -69,10 +80,10 @@ class VoiceConfig(context: Context) {
             kept.add(l)
         }
         kept.add(w + "|" + s)
-        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).apply()
+        writeBoth { it.putString(KEY_DICT, kept.joinToString("\n")) }
     }
 
-    fun removeDictEntry(word: String) {
+    fun removeDictEntry(word: String)) {
         val cur = prefs.getString(KEY_DICT, "") ?: ""
         val kept = ArrayList<String>()
         for (l in cur.split("\n")) {
@@ -80,10 +91,10 @@ class VoiceConfig(context: Context) {
             if (l.substringBefore('|').equals(word, ignoreCase = true)) continue
             kept.add(l)
         }
-        prefs.edit().putString(KEY_DICT, kept.joinToString("\n")).apply()
+        writeBoth { it.putString(KEY_DICT, kept.joinToString("\n")) }
     }
 
-    fun clearDict() { prefs.edit().remove(KEY_DICT).apply() }
+    fun clearDict() { writeBoth { it.remove(KEY_DICT) } }
     companion object {
         private const val PREFS = "vvtts_prefs"
         const val KEY_VOICE = "voice"

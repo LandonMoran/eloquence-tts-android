@@ -12,6 +12,16 @@ import android.content.SharedPreferences
 class VoiceProfile(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    // Write-through to device-protected storage as well: the lock-screen
+    // start reads that copy, and without the mirror the preset here would
+    // revert to an older value after a reboot (exactly the Sandy/Reed flip.
+    private val devicePrefs: SharedPreferences =
+        context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit)) {
+        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.apply()
+        val b = devicePrefs.edit(); block(b); b.apply()
+    }
 
     val preset: Int
         get() = prefs.getInt(KEY_PRESET, 1)
@@ -20,7 +30,7 @@ class VoiceProfile(context: Context) {
         var v = n
         if (v < 1) v = 1
         if (v > 8) v = 8
-        prefs.edit().putInt(KEY_PRESET, v).apply()
+        writeBoth { it.putInt(KEY_PRESET, v) } }
     }
 
     /** Whether the given param has a custom override for this preset */
@@ -37,16 +47,16 @@ class VoiceProfile(context: Context) {
 
     /** Set a custom override for a preset param */
     fun setParam(preset: Int, param: Int, value: Int) {
-        prefs.edit().putInt(overrideKey(preset, param), value).apply()
+        writeBoth { it.putInt(overrideKey(preset, param), value) } }
     }
 
     /** Restore a preset's defaults (delete all its custom overrides) */
     fun resetPreset(preset: Int) {
-        val e = prefs.edit()
-        for (p in 0 until 8) {
-            e.remove(overrideKey(preset, p))
+        writeBoth { e ->
+            for (p in 0 until 8) {
+                e.remove(overrideKey(preset, p))
+            }
         }
-        e.apply()
     }
 
     companion object {

@@ -768,6 +768,7 @@ class SettingsActivity : Activity() {
     private fun doResetDefaults() {
         for (name in arrayOf("vvtts_prefs", "vvtts_voice_profile", "vvtts_lang_settings")) {
             getSharedPreferences(name, MODE_PRIVATE).edit().clear().commit()
+            createDeviceProtectedStorageContext().getSharedPreferences(name, MODE_PRIVATE).edit().clear().commit()
         }
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
@@ -1033,6 +1034,8 @@ class SettingsActivity : Activity() {
             e.remove("enabled_langs")
         }
         e.commit()
+        val devCtx = createDeviceProtectedStorageContext()
+        java.io.File(getDataDir(), "shared_prefs/$PREFS_NAME.xml").copyTo(java.io.File(devCtx.getDataDir(), "shared_prefs/$PREFS_NAME.xml"), overwrite=true)
     }
 
     fun restoreLanguageSettings() {
