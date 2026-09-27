@@ -171,6 +171,11 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
+        stopping = false
+        deliveryExecutor.execute(Runnable { runSynthesis(request, callback()) } )
+    }
+
+    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback) {
         var text: String? = request.text
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
 
@@ -220,18 +225,12 @@ class VvTtsService : TextToSpeechService() {
         }
 
         var started = false
-        stopping = false
         try {
             if (text == null || text.isEmpty()) {
                 return  // finally emits the start+done pair for an empty utterance
             }
 
-            // emoji -> we ask the speech engine to say what the symbol means.
-            // The ECI engine has zero emoji support, so expand before anything else.
-            text = EmojiExpander.expand(text!!)
-            if (text == null || text.isEmpty()) {
-                return  // finally emits the start+done pair for an empty utterance
-            }
+            // emoji expansion now happens per-segment, pitched to the segment's detected dialect
 
             refreshSettings()
         // Auto-detect + chunk
@@ -271,6 +270,14 @@ class VvTtsService : TextToSpeechService() {
                 // inside EloquenceEngine.preprocess for zh segments. Do not repeat it
                 // here: a second pass after symbols were expanded defeats the
                 // date/time boundary detection (2024-03-15 -> mangled readings).
+                val expanded = when (seg.dialect) {
+                    LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(segText)
+                    LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(segText)
+                    else -> EmojiExpander.expand(segText)
+                }
+                if (expanded != null && expanded.isNotEmpty()) {
+                    segText = expanded
+                }
                 val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
                 if (pcm != null && pcm.size > 0) {
                     if (!started) {
@@ -326,8 +333,8 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
+    private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var stopping = false
-
         override fun onStop() {
             stopping = true
             if (engine != null) engine!!.stop()
