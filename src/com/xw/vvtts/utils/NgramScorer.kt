@@ -8,7 +8,7 @@ import java.util.zip.GZIPInputStream
 
 /**
  * Fast in-RAM Latin detection over the shipped pruned n-gram tables
- * (assets/ngram_uni_bi.tsv.gz, generated from language-models/*.json).
+ * (assets/ngram_uni_bi.tsv.gz, generated from the language-models JSON files).
  * The index order (0..7) MUST match LanguageDetector.getEnabledLanguageEnums():
  * EN, DE, FR, ES, IT, PT, FI, PL.
  *
@@ -32,7 +32,7 @@ object NgramScorer {
         if (ready) return
         try {
             val raw = context.assets.open("ngram_uni_bi.tsv.gz")
-            BufferedReader(InputStreamReader(GZIPInputStream(raw, "UTF-8")))).use { reader ->
+            BufferedReader(InputStreamReader(GZIPInputStream(raw, "UTF-8"))).use { reader ->
             while (true) {
                 val line = reader.readLine()?: break
                 val fields = line.split('\t')
