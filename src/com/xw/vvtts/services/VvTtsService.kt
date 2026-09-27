@@ -31,7 +31,7 @@ class VvTtsService : TextToSpeechService() {
     private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
     // Settings are mirrored once at startup and re-read only when something
-        // actually changed. UI edits land vis the prefs listener. Re-reading per
+        // actually changed. UI edits land via the prefs listener. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
         // which could drop a per-utterance zh pin on EVERY TalkBack swipe; the
         // dirty gate removes that whole per-swipe cost.
@@ -71,7 +71,7 @@ class VvTtsService : TextToSpeechService() {
         deviceCtx = device
         refreshSettings()
         registerAllPrefsListeners(device)
-        registerAllPrefsListeners(applicationContext!!
+        registerAllPrefsListeners(applicationContext!!)
         engine = EloquenceEngine(device)
         engine!!.setVoiceProfile(voiceProfile)
         val ok = engine!!.initialize()
