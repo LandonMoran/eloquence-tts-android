@@ -131,13 +131,17 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onGetLanguage(): Array<String> {
-        // Keep in sync with onGetVoices / onIsLanguageAvailable /
-        // onGetDefaultVoiceNameFor (ISO 639-1); only dialects actually
-        // linked in this build are listed.
-
-        return arrayOf(
-            "en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh"
-        )
+        // Framework contract: exactly 3 elements — [language, country, variant]
+        // of the language currently used by the engine (country/variant may be
+        // ""; variant must be "" when country is). NOT a catalog: the picker
+        // reads indices 0..2, so a 10-element list yields garbage locales.
+        // Truth = the active voice (BCP-47, defaults "en-US"); style matches
+        // onGetDefaultVoiceNameFor (lowercase language, uppercase country).
+        val activeVoice = voiceConfig?.voice ?: "en-US"
+        val dash = activeVoice.indexOf('-')
+        val lang = if (dash > 0) activeVoice.substring(0, dash) else activeVoice
+        val country = if (dash > 0) activeVoice.substring(dash + 1).substringBefore('-') else ""
+        return arrayOf(lang.lowercase(), country.uppercase(), "")
     }
 
 
@@ -216,7 +220,8 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         try {
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback) })
+            val gen = generation  // snapshot: a stop() while queued must drop this task
+            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
             // Framework contract: every onSynthesizeText must terminate the
@@ -226,8 +231,20 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback) {
+    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long) {
         var text: String? = request.text
+        // A stop() bumped the generation: this utterance was queued before the
+        // stop, the framework already canceled it, so it must not speak (ghost
+        // speech after cancellation) and must not clear the stopping flag.
+        // error() is the designated failure termination (never started).
+        if (gen != generation) {
+            Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {
+            }
+            return
+        }
         // The stop flag is cleared only here, once the utterance actually
         // dequeues:clearing it in onSynthesizeText() would let previous
         // utterance (still draining on the single-thread executor( resume
@@ -414,8 +431,12 @@ class VvTtsService : TextToSpeechService() {
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var stopping = false
+    /** Bumped by onStop(); utterances queued before the bump are stale (the
+     *  framework already canceled them) and must not speak after the stop. */
+    @Volatile private var generation = 0L
         override fun onStop() {
             stopping = true
+            generation++  // invalidate utterances already queued pre-stop
             if (engine != null) engine!!.stop()
         }
 
