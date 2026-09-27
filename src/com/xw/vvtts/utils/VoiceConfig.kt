@@ -83,7 +83,7 @@ class VoiceConfig(context: Context) {
         writeBoth { it.putString(KEY_DICT, kept.joinToString("\n")) }
     }
 
-    fun removeDictEntry(word: String)) {
+    fun removeDictEntry(word: String) {
         val cur = prefs.getString(KEY_DICT, "") ?: ""
         val kept = ArrayList<String>()
         for (l in cur.split("\n")) {

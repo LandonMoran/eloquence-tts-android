@@ -13,6 +13,8 @@ import android.speech.tts.Voice
 import android.util.Log
 import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.utils.EmojiExpander
+import com.xw.vvtts.utils.EmojiExpanderZhHans
+import com.xw.vvtts.utils.EmojiExpanderZhHant
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
@@ -172,7 +174,7 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         stopping = false
-        deliveryExecutor.execute(Runnable { runSynthesis(request, callback()) } )
+        deliveryExecutor.execute(Runnable { runSynthesis(request, callback) } )
     }
 
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback) {
