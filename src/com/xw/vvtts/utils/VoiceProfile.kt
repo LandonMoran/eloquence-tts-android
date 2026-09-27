@@ -12,15 +12,17 @@ import android.content.SharedPreferences
 class VoiceProfile(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    // Write-through to device-protected storage as well: the lock-screen
-    // start reads that copy, and without the mirror the preset here would
-    // revert to an older value after a reboot (exactly the Sandy/Reed flip.
+    // Write-through to device-protected storage so a reboot cannot revert
+    //the preset gets read by the lock-screen start, so a reboot must not revert it
     private val devicePrefs: SharedPreferences =
         context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
-    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit)) {
-        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.apply()
-        val b = devicePrefs.edit(); block(b); b.apply()
+    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
+        val ea = prefs.edit()
+        block(ea)
+        ea.apply()
+        val eb = devicePrefs.edit()
+        block(eb)
+        eb.apply()
     }
 
     val preset: Int
@@ -30,7 +32,7 @@ class VoiceProfile(context: Context) {
         var v = n
         if (v < 1) v = 1
         if (v > 8) v = 8
-        writeBoth { it.putInt(KEY_PRESET, v) } }
+        writeBoth { it.putInt(KEY_PRESET, v) }
     }
 
     /** Whether the given param has a custom override for this preset */
@@ -42,18 +44,18 @@ class VoiceProfile(context: Context) {
     fun getParam(preset: Int, param: Int): Int {
         val key = overrideKey(preset, param)
         if (prefs.contains(key)) return prefs.getInt(key, 0)
-        return KonaVoice.byPreset(preset).param(param)
+        return KonaVoice.byPreset(preset, param)
     }
 
     /** Set a custom override for a preset param */
     fun setParam(preset: Int, param: Int, value: Int) {
-        writeBoth { it.putInt(overrideKey(preset, param), value) } }
+        writeBoth { it.putInt(overrideKey(preset, param), value) }
     }
 
     /** Restore a preset's defaults (delete all its custom overrides) */
     fun resetPreset(preset: Int) {
         writeBoth { e ->
-            for (p in 0 until 8) {
+            for (p in 0..7) {
                 e.remove(overrideKey(preset, p))
             }
         }
