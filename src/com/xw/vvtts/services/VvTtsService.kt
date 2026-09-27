@@ -77,9 +77,12 @@ class VvTtsService : TextToSpeechService() {
         val ok = engine!!.initialize()
         // Restore the language-detection settings from device-protected storage
         restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
-        // Preload Lingua (background thread)
-        LanguageDetector.preloadLingua()
-        // Warm the engine handle for the user's fixed dialect so the first
+        // Preload Lingua (background thread(
+                LanguageDetector.preloadLingua()
+                // Preload the in-RAM n-gram tables (66KB asset,milliseconds(--primary detector
+                // for Latin runs means Lingua only fires on ambiguous text.
+                NgramScorer.load(this
+                // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
         engine!!.warmupDialect(LanguageDetector.getFixedDialect())
         Log.e(TAG, "onCreate engine initialized=$ok")

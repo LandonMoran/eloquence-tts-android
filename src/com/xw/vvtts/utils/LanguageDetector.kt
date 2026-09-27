@@ -85,7 +85,7 @@ class LanguageDetector {
         // results changes (whitelist / en/es/fr dialect pins). The fallback/ASCII
         // short-run paths are context-dependent and already cheap,so they never
         // touch this cache.
-        private val latinCache = HashMap<String, Int>()
+        private val latinCache = LinkedHashMap<String, Int>(128)
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
 
@@ -514,6 +514,26 @@ class LanguageDetector {
 
              val accentHinted = accentHint(text)
             if (accentHinted >= 0) return accentHinted
+            // Primary path:in-RAM unigram/bigram tables from the shipped 66KB
+            // asset. The 10% margin gate inside NgramScorer.detect() sends
+            // ambiguous runs back here -- only then does Lingua's heavier n-gram
+            // scan run (and only its result is cached;the tables never allocate).
+            val ngramId = NgramScorer.detect(text, enabledLanguages)
+
+            if (ngramId >= 0) {
+                val dialect = when (ngramId) {
+                    0 -> englishDialect
+                    1 -> DIALECT_DE_DE
+                    2 -> frenchDialect
+                    3 -> spanishDialect
+                    4 -> DIALECT_IT_IT
+                    5 -> DIALECT_PT_BR
+                    6 -> DIALECT_FI_FI
+                    7 -> DIALECT_PL_PL
+                    else -> -1
+                }
+                if (dialect >= 0) return dialect
+            }
             val ld = getLingua()
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
@@ -546,7 +566,7 @@ class LanguageDetector {
                 }
                 val detectedDialect = languageToDialect(lang)
                 synchronized(latinCache) {
-                    if (latinCache.size >= LATIN_CACHE_MAX) latinCache.clear()
+                    if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
                     latinCache[text] = detectedDialect
                 }
                 return detectedDialect
