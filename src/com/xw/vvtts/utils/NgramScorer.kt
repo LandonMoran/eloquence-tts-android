@@ -91,13 +91,13 @@ object NgramScorer {
         val chars = text.toCharArray()
         while (i < n) {
             val c = chars[i].toInt()
-            unis?.[c]?.let { v ->
+            unis?.get(c)?.let { v ->
                 score += v
                 hits++
             }
             if (i + 1 < n) {
                 val bk =(c shl 16) or chars[i + 1].toInt()
-                bis?.[bk]?.let { v ->
+                bis?.get(bk)?.let { v ->
                     score += v
                     hits++
                 }
