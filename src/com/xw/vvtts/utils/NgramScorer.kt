@@ -22,8 +22,8 @@ object NgramScorer {
 
     private val LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pt", "fi", "pl")
 
-    private val unigramMaps = arrayOfNulls<HashMap<String, Int>>(8)
-    private val bigramMaps = arrayOfNulls<HashMap<String, Int>>(8)
+    private val unigramMaps = arrayOfNulls<HashMap<Int, Int>>(8)
+    private val bigramMaps = arrayOfNulls<HashMap<Int, Int>>(8)
     @Volatile private var ready = false
 
     @Synchronized
@@ -31,7 +31,7 @@ object NgramScorer {
         if (ready) return
         try {
             val raw = context.assets.open("ngram_uni_bi.tsv.gz")
-            val reader = BufferedReader(InputStreamReader(GZIPInputStream(raw, "UTF-8"))))
+            val reader = BufferedReader(InputStreamReader(GZIPInputStream(raw(), "UTF-8"))))
             while (true) {
                 val line = reader.readLine()?: break
                 val fields = line.split('\t')
@@ -41,14 +41,16 @@ object NgramScorer {
                 val freq = fields[2].toIntOrNull() ?: 0
                 if (freq <= 0) continue
                 val ngram = fields[3]
+                val key = keyOf(ngram)
+                if (key < 0) continue
                 val maps = if (fields[1] == "unigrams") unigramMaps else bigramMaps
                 val map = maps[idx]
                 if (map == null) {
-                    val fresh = HashMap<String, Int>(64)
-                    fresh.put(ngram, freq)
+                    val fresh = HashMap<Int, Int>(64)
+                    fresh.put(key, freq)
                     maps[idx] = fresh
                 } else {
-                    map.put(ngram, freq)
+                    map.put(key, freq)
                 }
             }
             reader.close()
@@ -60,6 +62,12 @@ object NgramScorer {
         }
     }
 
+    private fun keyOf(s: String): Int {
+        if (s.isEmpty()) return -1
+        val c0 = s[0].toInt()
+        return if (s.length ==1) c0 else ((c0 shl 16) or s[1].toInt())
+    }
+
     private fun scoreText(text: String, idx: Int): Float {
         val unis = unigramMaps[idx]
         val bis = bigramMaps[idx]
@@ -68,13 +76,16 @@ object NgramScorer {
         var hits = 0
         var i = 0
         val n = text.length
+        val chars = text.toCharArray()
         while (i < n) {
-            unis?.[text.substring(i, i + 1)]?.let { v ->
+            val c = chars[i].toInt()
+            unis?.[c]?.let { v ->
                 score += v
                 hits++
             }
             if (i + 1 < n) {
-                bis?.[text.substring(i, i + 2)]?.let { v ->
+                val bk =(c shl 16) or chars[i + 1].toInt()
+                bis?.[bk]?.let { v ->
                     score += v
                     hits++
                 }
@@ -87,7 +98,7 @@ object NgramScorer {
     /** Returns language index 0..7 (LANG_CODES order) or -1 when unsure/tables unloaded. */
     fun detect(text: String, enabled: Set<String>): Int {
         if (!ready) return -1
-        var best =‑1
+        var best = -1
         var bestScore =0.0f
         var second =0.0f
         var i = 0
