@@ -82,7 +82,7 @@ class VvTtsService : TextToSpeechService() {
         LanguageDetector.preloadLingua()
         // Preload the in-RAM n-gram tables (66KB asset,milliseconds(--primary detector
         // for Latin runs means Lingua only fires on ambiguous text.
-        NgramScorer.load(this(
+        NgramScorer.load(this)
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
         engine!!.warmupDialect(LanguageDetector.getFixedDialect())
@@ -215,7 +215,7 @@ class VvTtsService : TextToSpeechService() {
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         try {
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback( } )
+            deliveryExecutor.execute(Runnable { runSynthesis(request, callback( )) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
         }
