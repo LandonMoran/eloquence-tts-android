@@ -74,8 +74,23 @@ object NgramScorer {
         for (idx in 0..7) {
             val t = totals[idx]
             if (t <=0f) continue
-            unigramMaps[idx]?.let { m -> for ((k,v)in m) m[k] = v / t }
-            bigramMaps[idx]?.let { m -> for ((k,v)in m) m[k] = v / t }
+            unigramMaps[idx]?.let { m ->
+                // Entry.setValue does NOT touch modCount, so in-place normalization
+                // is safe while iterating (HashMap forbids put/remove here — that
+                // would throw ConcurrentModificationException on the next next()).
+                val it = m.entries.iterator()
+                while (it.hasNext()) {
+                    val e = it.next()
+                    e.setValue(e.value / t)
+                }
+            }
+            bigramMaps[idx]?.let { m ->
+                val it = m.entries.iterator()
+                while (it.hasNext()) {
+                    val e = it.next()
+                    e.setValue(e.value / t)
+                }
+            }
         }
     }
 
