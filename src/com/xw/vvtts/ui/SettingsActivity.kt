@@ -240,11 +240,13 @@ class SettingsActivity : Activity() {
         tv.text = "$label: $initial%"
         tv.textSize = 14f
         tv.setTextColor(getColor(R.color.m3_on_surface_variant))
+        // Visual-only value label — a11y label lives on the SeekBar itself
+        tv.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         card.addView(tv)
 
         val bar = SeekBar(this)
         bar.id = View.generateViewId()
-        tv.setLabelFor(bar.id)
+        bar.contentDescription = label
         bar.max = max - min
         bar.progress = initial - min
         bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
