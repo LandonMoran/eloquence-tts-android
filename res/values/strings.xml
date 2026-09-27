@@ -25,7 +25,10 @@
     <string name="cancel">Cancel</string>
 
     <!-- ETI control set (r6 accessibility pass) -->
-    <string name="preset_voice_fmt">Preset voice: %1$s</string>
+    <string name="preset_voice_fmt">Voice role: %1$s
+Preset tone - tap to change</string>
+    <string name="reset_preset_button">Reset voice parameters to defaults</string>
+    <string name="reset_preset_done">%1$s reset to its defaults</string>
     <string name="punctuation_fmt">Punctuation: %1$s</string>
     <string name="punct_title">Punctuation</string>
     <string name="punct_pauses_only">Pauses only</string>
@@ -88,7 +91,8 @@
     <string name="sec_about">About</string>
 
     <!-- Row labels -->
-    <string name="voice_fmt">Voice: %1$s</string>
+    <string name="voice_fmt">Spoken language: %1$s
+What the voice speaks - tap to change</string>
     <string name="lang_fmt">Detection: %1$s</string>
     <string name="lang_detect_button">Auto-detection options ›</string>
 

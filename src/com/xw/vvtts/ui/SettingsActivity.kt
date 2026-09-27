@@ -168,6 +168,15 @@ class SettingsActivity : Activity() {
                                 addSectionHeader(charSectionLocal, R.string.sec_voice_char)
                                 addVoiceCharSliders(charSectionLocal)
                                 addNoteRow(charSectionLocal, R.string.voice_char_note)
+                                val resetPresetBtnLocal = addRow(this, charSectionLocal)
+                                resetPresetBtnLocal.text = getString(R.string.reset_preset_button)
+                                resetPresetBtnLocal.setOnClickListener {
+                                    val vp = voiceProfile
+                                    if (vp == null) return@setOnClickListener
+                                    vp.resetPreset(vp.preset)
+                                    refreshVoiceCharSliders()
+                                    Toast.makeText(this, getString(R.string.reset_preset_done, VoiceProfile.PRESET_NAMES[vp.preset - 1]), Toast.LENGTH_SHORT).show()
+                                }
                                 panelVoice.addView(charSectionLocal)
                                 charSection = charSectionLocal
                                 addChineseVoiceGuard(panelVoice)
