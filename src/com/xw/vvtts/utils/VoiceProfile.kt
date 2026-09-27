@@ -45,7 +45,7 @@ class VoiceProfile(context: Context) {
         val key = overrideKey(preset, param)
         if (prefs.contains(key)) return prefs.getInt(key, 0)
         val customVoice = KonaVoice.byPreset(preset)
-        return customVoice.param(param
+        return customVoice.param(param)
     }
 
     /** Set a custom override for a preset param */
