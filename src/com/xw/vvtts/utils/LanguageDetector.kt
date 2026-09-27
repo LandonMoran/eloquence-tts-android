@@ -58,10 +58,11 @@ class LanguageDetector {
         @Volatile private var englishDialect = DIALECT_EN_US
         @Volatile private var spanishDialect = DIALECT_ES_ES
         @Volatile private var frenchDialect = DIALECT_FR_FR
-        // Detection whitelist: by default English + Japanese + Chinese
-        // (zh-CN is linked in this build via the oracle synth path).
-        // Languages outside the whitelist fall back to the default language when detected.
-        @Volatile private var enabledLanguages: Set<String> = HashSet(listOf("en", "ja", "zh"))
+        // Detection whitelist: by default every shipped language is enabled,so a
+        // fresh install works with zero configuration (seamless multi-language TTS(. Users
+        // can prune languages in settings to speed up/steady detection;pruned languages
+        // fall back to the default language when detected.
+        @Volatile private var enabledLanguages: Set<String> = ALL_LANG_CODES.toSet()
             // default language:DEFAULT_UNSPECIFIED(unspecified)or a specific dialect.
             // only active when "language detection is on":digits and unrecognized text use it;if unset,follow the previous segment.
         @Volatile private var defaultLanguage = DEFAULT_UNSPECIFIED
@@ -76,29 +77,49 @@ class LanguageDetector {
         @Volatile private var linguaInitFailed = false
         @Volatile private var linguaPreloaded = false
 
+        // Memo of recent Lingua-decided dialects. The n-gram scan is the largest single
+        // per-segment cost on the delivery thread, and TalkBack constantly re-announces
+        // the same strings (labels,,names,,widgets) on every swipe. Caching just the
+        // successful Lingua decisions (text-deterministic,context-free) makes those
+        // repeats zero-cost. Bounded;cleared whenever detection config that affects
+        // results changes (whitelist / en/es/fr dialect pins). The fallback/ASCII
+        // short-run paths are context-dependent and already cheap,so they never
+        // touch this cache.
+        private val latinCache = HashMap<String, Int>()
+        private const val LATIN_CACHE_MAX = 512
+        private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
+
         fun setChineseDialect(dialect: Int) { chineseDialect = dialect }
         fun getChineseDialect() = chineseDialect
 
-        fun setEnglishDialect(dialect: Int) { englishDialect = dialect }
+        fun setEnglishDialect(dialect: Int) { englishDialect = dialect; invalidateLatinCache() }
         fun getEnglishDialect() = englishDialect
 
-        fun setSpanishDialect(dialect: Int) { spanishDialect = dialect }
+        fun setSpanishDialect(dialect: Int) { spanishDialect = dialect; invalidateLatinCache() }
         fun getSpanishDialect() = spanishDialect
 
-        fun setFrenchDialect(dialect: Int) { frenchDialect = dialect }
+        fun setFrenchDialect(dialect: Int) { frenchDialect = dialect; invalidateLatinCache() }
         fun getFrenchDialect() = frenchDialect
 
         fun setEnabledLanguages(langs: Set<String>?) {
-            val newSet = if (langs == null || langs.isEmpty()) HashSet() else HashSet(langs)
-            // Skip the rebuild when the whitelist did not change: reusing the same set
-            // on every utterance used to null the detector and rebuild Lingua inline on
-            // the binder thread (multi-second stall per utterance).
-            if (newSet == enabledLanguages) {
-                enabledLanguages = newSet
+            val en = enabledLanguages
+            if (langs == null || langs.isEmpty()) {
+                // Keep the current set on empty input (nothing to change;also avoid
+                // allocating a fresh empty HashSet per utterance when already empty.)
+                if (en.isEmpty()) return
+                enabledLanguages = HashSet()
+                resetLingua()
                 return
             }
-            enabledLanguages = newSet
-            // 立即重建 Lingua 检测器（语言白名单变了）
+            // Identity/equality shortcut:refreshSettings() re-pushes the same set
+            // object on every utterance;skip the copy+rebuild entirely when nothing
+            // changed. (The old path allocated a fresh HashSet every utterance.)
+            if (langs == en) {
+                enabledLanguages = en
+                return
+            }
+            enabledLanguages = HashSet(langs)
+            // whitelist changed:rebuild Lingua immediately,no restart needed
             resetLingua()
         }
 
@@ -113,6 +134,7 @@ class LanguageDetector {
 
         /** Rebuild Lingua(call when the whitelist changes;takes effect immediately,no restart needed) */
         private fun resetLingua() {
+            invalidateLatinCache()
             synchronized(lock) {
                 linguaDetector = null
                 linguaInitFailed = false
@@ -160,12 +182,18 @@ class LanguageDetector {
                 try {
                     val t0 = System.currentTimeMillis()
                     val langs = getEnabledLanguageEnums()
-                    linguaDetector = LanguageDetectorBuilder
+                    var builder = LanguageDetectorBuilder
                         .fromLanguages(*langs.toTypedArray())
                         .withMinimumRelativeDistance(0.0)
                         .withPreloadedLanguageModels()
-                        .build()
-                    Log.i(TAG, "Lingua loaded in " + (System.currentTimeMillis() - t0) + "ms, langs=" + langs.size)
+                    // With the full 8-language set (the zero-config default( every n-gram
+                    // is scored against every candidate——the slowest wiring. Lingua's
+                    // low-accuracy mode scales that per-call cost back down,so swipes stay
+                    // snappy. Once the user prunes the set to <=3 languages, default
+                    // accuracy is already cheap enough that we keep full precision.
+                    if (langs.size >= 4) builder = builder.withLowAccuracyMode()
+                    linguaDetector = builder.build()
+                    Log.i(TAG, "Lingua loaded in " + (System.currentTimeMillis() - t0) + "ms, langs=" + langs.size + ", lowAcc=" + (langs.size >= 4))
                     return linguaDetector
                 } catch (e: Throwable) {
                     Log.e(TAG, "Lingua init failed", e)
@@ -198,10 +226,10 @@ class LanguageDetector {
                 }
             }
             // need at least one language or Lingua's build fails
-            // Lingua requires >=2 languages to build. The default whitelist
-            // {en,ja,zh} yields only ENGLISH (ja/zh are CJK-excluded), so a
-            // fresh install would throw every init into the // catch above.
-            // Top up neutrally; downstream gating (detectLatin) re-checks the
+            // Lingua requires >=2 languages to build. The default whitelist has all 8
+            // Latin codes,so this only matters when the user prunes down to <=1(Latin
+            // (e.g. English-only(or when the service starts before prefs are read(.
+            // Top up neutrally; downstream gating (detectLatin() re-checks the
             // real whitelist per segment, so fillers never leak through.
             if (filtered.size < 2) {
                 if (!filtered.contains(Language.ENGLISH)) filtered.add(Language.ENGLISH)
@@ -255,7 +283,8 @@ class LanguageDetector {
             // Leading digit/date runs flush with the RUN's dialect; start from the
             // user's default language when set (e.g. zh) instead of hard English so a
             // leading timestamp doesn't get voiced in the wrong language.
-            var lastDialect = resolveDefaultLanguage().takeIf { it >= 0 } ?: englishDialect
+            var lastDialect = resolveDefaultLanguage().takeIf { it >= 0 }
+                ?: localeLatinDialect().takeIf { it >= 0 } ?: englishDialect
 
             for (i in text.indices) {
                 val c = text[i]
@@ -416,6 +445,28 @@ class LanguageDetector {
             out.add(Segment(text, dialect))
         }
 
+        /** Cheap certainty:letters that exist in exactly one shipped language
+         * (ñ→Spanish, ß→German,and the Polish ogonek/acute set) pin the
+         * language of a run immediately——no n-gram scan. -1 = no hint. */
+        private fun accentHint(text: String): Int {
+            var i = text.length
+            while (--i >= 0) {
+                when (text[i]) {
+                    // Spanish: ñ/Ñ are unique among shipped languages
+                    '\u00F1', '\u00D1' ->
+                        if (isLanguageEnabled("es")) return spanishDialect else return -1
+                    // German: ß is unique among shipped languages
+                    '\u00DF' ->
+                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else return -1
+                    // Polish: Ąą Ęę Ćć Śś Źź Żż Ńń (ogonek/acutes) are Polish-only among shipped languages
+                    '\u0105', '\u0104', '\u0119', '\u0118', '\u0107', '\u0106',
+                    '\u015A', '\u015B', '\u0179', '\u017A', '\u017B', '\u017C', '\u0143', '\u0144' ->
+                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else return -1
+                }
+            }
+            return -1
+        }
+
         /** Latin-text detection:always try Lingua first;only use the default language when detection returns null.
         * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
         * if the detected language isn't in the whitelist,,fall back to the default language(or English). */
@@ -434,18 +485,19 @@ class LanguageDetector {
 
 
             }
-            // Fast path:pure-ASCII runs are unmistakably English only when English
-            // is the pinned default (no diacritics means no script ambiguity,and the user
-            // already chose English(); Lingua's n-gram scoring is the biggest single
-            // per-segment cost on the delivery thread, so skip it for the commonest case
-            // (TalkBack/English UI text(). Mixed-script, accented, or non-English-default
-            // text still goes through Lingua as before.
+                        // Fast path: pure-ASCII runs are unmistakably English when the context is
+            // English (OS UI locale is English, no non-English default pinned,and the
+            // previous segment was English()). Lingua's n-gram scoring is the biggest
+            // single per-segment cost on the delivery thread,so skip it for the commonest
+            // case (TalkBack/English UI on en-locale devices(). Accented, mixed-locale,
+            // or non-English-context runs still go through Lingua as before.
 
-            val enabledSet = LanguageDetector.getEnabledLanguages()
-            val otherLatin = enabledSet?.any { it != "en" && (it == "de" || it == "fr" || it == "es" || it == "it" || it == "pl" || it == "pt" || it == "fi") } ?: false
+                        val dl1 = resolveDefaultLanguage()
+            val localeEn = java.util.Locale.getDefault().language.startsWith("en")
+            val enContext = localeEn && (dl1 < 0 || dl1 == englishDialect) &&
+                fallbackDialect == englishDialect
 
-            if (!otherLatin && isLanguageEnabled("en") && (resolveDefaultLanguage() == englishDialect)) {
-
+            if (enContext) {
                 var ascii = true
                 var i = text.length
                 while (--i >= 0) {
@@ -453,11 +505,30 @@ class LanguageDetector {
                 }
                 if (ascii) return englishDialect
             }
+            // Unambiguous accent markers (ñ=Spanish, ß=German,and the Polish
+            // ogonek/acute letters) nail the language for accented runs——skip Lingua's
+            // n-gram scan entirely. Runs without these markers (or with ambiguous
+            // diacritics like ä/é) are scored by Lingua exactly as before,so accuracy
+            // elsewhere is untouched. The whitelist is honored:if the hint's language
+            // isn't enabled, fall through to normal detection.
+
+             val accentHinted = accentHint(text)
+            if (accentHinted >= 0) return accentHinted
             val ld = getLingua()
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
                 val dl = resolveDefaultLanguage()
                 return if (isLatinDialect(dl)) dl else englishDialect
+            }
+
+            // Recent Lingua decisions are repeats-safe:re-announcing the same UI
+            // string (label,nname,,word( used to re-run the whole n-gram scan.
+            // Skip it——the biggest per-swipe win for TalkBack. Only actual Lingua
+            // decisions are cached;fallback/ASCII/short-run paths are context-dependent
+            // and already cheap,so they never touch it.
+            synchronized(latinCache) {
+                val hit = latinCache[text]
+                if (hit != null) return hit
             }
 
             try {
@@ -473,11 +544,33 @@ class LanguageDetector {
                     val dl = resolveDefaultLanguage()
                     return if (isLatinDialect(dl)) dl else englishDialect
                 }
-                return languageToDialect(lang)
+                val detectedDialect = languageToDialect(lang)
+                synchronized(latinCache) {
+                    if (latinCache.size >= LATIN_CACHE_MAX) latinCache.clear()
+                    latinCache[text] = detectedDialect
+                }
+                return detectedDialect
             } catch (e: Throwable) {
                 // detection exception -> default language(Latin only),else English
                 val dl = resolveDefaultLanguage()
                 return if (isLatinDialect(dl)) dl else englishDialect
+            }
+        }
+
+        /** Base Latin dialect from the OS UI locale - the fresh-install default until the
+         *  user pins a default or a previous segment establishes the language.
+         *  Returns -1 when the OS locale maps to no shipped Latin voice((zh/ja/ko/etc)). */
+        private fun localeLatinDialect(): Int {
+            return when (java.util.Locale.getDefault().language) {
+                "en" -> englishDialect
+                "de" -> DIALECT_DE_DE
+                "fr" -> frenchDialect
+                "es" -> spanishDialect
+                "it" -> DIALECT_IT_IT
+                "pl" -> DIALECT_PL_PL
+                "pt" -> DIALECT_PT_BR
+                "fi" -> DIALECT_FI_FI
+                else -> -1
             }
         }
 

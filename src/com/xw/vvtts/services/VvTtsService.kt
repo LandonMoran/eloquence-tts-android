@@ -387,7 +387,10 @@ class VvTtsService : TextToSpeechService() {
             LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
             LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
             LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
-            LanguageDetector.setEnabledLanguages(prefs.getStringSet("enabled_langs", null))
+            val savedLangs = prefs.getStringSet("enabled_langs", null)
+            // Fresh install (no pref(: enable every shipped language so everything works
+            // with zero configuration; users who pruned keep their set.
+            LanguageDetector.setEnabledLanguages(savedLangs ?: LanguageDetector.ALL_LANG_CODES.toSet())
         }
 
         // === Direct Boot (lock-screen( helpers === Mirror the 3 settings files from

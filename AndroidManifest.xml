@@ -9,6 +9,7 @@
 
     <application
         android:label="Eloquence TTS"
+        android:largeHeap="true"
         android:extractNativeLibs="true"
         android:theme="@style/Theme.Vvtts">
 

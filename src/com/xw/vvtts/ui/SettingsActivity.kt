@@ -1052,7 +1052,7 @@ class SettingsActivity : Activity() {
         if (prefs.contains("enabled_langs")) {
             enabled = prefs.getStringSet("enabled_langs", null)!!
         } else {
-            enabled = HashSet(listOf("en", "ja"))
+            enabled = LanguageDetector.ALL_LANG_CODES.toSet()
         }
         LanguageDetector.setEnabledLanguages(enabled)
     }
