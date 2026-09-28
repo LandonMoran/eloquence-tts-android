@@ -76,7 +76,7 @@ object ElqUpdateChecker {
             }
             val latestCode = target.tagName?.removePrefix("v")?.toIntOrNull() ?: -1
             val apkUrl = pickAsset(target.assets) ?: target.htmlUrl
-            UpdateResult(
+            return UpdateResult(
                 hasUpdate = latestCode > localVersionCode,
                 currentVersionCode = localVersionCode,
                 latestVersionCode = latestCode.takeIf { it >= 0 },

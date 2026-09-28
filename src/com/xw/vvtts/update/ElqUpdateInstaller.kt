@@ -26,7 +26,7 @@ object ElqUpdateInstaller {
     fun install(context: Context, apkFile: File): Result {
         val appContext = context.applicationContext ?: context
         val pm = appContext.packageManager
-        val sessionId by try {
+        val sessionId = try {
             val params = PackageInstaller.SessionParams(
                     PackageInstaller.SessionParams.MODE_FULL_INSTALL,
                 ).apply {
@@ -59,6 +59,7 @@ object ElqUpdateInstaller {
             return Result.Failed(null, e.message ?: e.javaClass.simpleName)
         }
         return awaitStatus(appContext, sessionId)
+    }
 
     private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
         val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
