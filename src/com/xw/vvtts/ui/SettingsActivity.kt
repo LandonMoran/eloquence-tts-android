@@ -61,8 +61,12 @@ class SettingsActivity : Activity() {
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
         engine = EloquenceEngine(this)
-        engine!!.initialize()
-        engine!!.setVoiceProfile(voiceProfile)
+        try {
+            engine!!.initialize()
+            engine!!.setVoiceProfile(voiceProfile)
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "engine init failed", t)
+        }
         // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
@@ -216,7 +220,7 @@ class SettingsActivity : Activity() {
                 resetBtnLocal.text = getString(R.string.reset_button)
                 resetBtnLocal.setOnClickListener { confirmResetDefaults() };
                 val updateBtnLocal = addRow(this, panelTools)
-                updateBtnLocal.text == getString(R.string.update_button)
+                updateBtnLocal.text = getString(R.string.update_button)
                 updateBtnLocal.setOnClickListener { UpdateActions.showCheckDialog(this) };
                 val aboutBtnLocal = addRow(this, panelTools)
                 aboutBtnLocal.text = getString(R.string.about_row)
