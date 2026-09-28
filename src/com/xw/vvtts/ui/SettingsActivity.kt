@@ -28,6 +28,7 @@ import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.update.ElqUpdateChecker
 import com.xw.vvtts.update.ElqUpdateDownloader
 import com.xw.vvtts.update.ElqUpdateInstaller
+import com.xw.vvtts.update.UpdateActions
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile

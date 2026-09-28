@@ -87,7 +87,7 @@ object ElqUpdateChecker {
             )
         } catch (e: Exception) {
             Log.e(TAG, "update check failed", e)
-            UpdateResult(currentVersionCode = localVersionCode, error = e.message ?: "check failed")
+            return UpdateResult(currentVersionCode = localVersionCode, error = e.message ?: "check failed")
         } finally {
             runCatching { conn?.disconnect() }
         }
