@@ -167,7 +167,7 @@ What the voice speaks - tap to change</string>
     <string name="sec_updates">Updates</string>
     <string name="update_button">Check for updates</string>
     <string name="checking_updates">Checking for updates...</string>
-    <string name="up_to_date">You're up to date</string>
+    <string name="up_to_date">You\'re up to date</string>
     <string name="update_available_fmt">Update %1$s is available</string>
     <string name="download_install">Download and Install</string>
     <string name="update_downloading_fmt">Downloading update: %1$d%%</string>
