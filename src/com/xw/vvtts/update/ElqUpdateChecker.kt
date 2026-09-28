@@ -3,11 +3,8 @@ package com.xw.vvtts.update
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.squareup.moshi.Json
-import com.squareup.moshi.JsonAdapter
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.Types
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import org.json.JSONArray
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.GZIPInputStream
@@ -19,19 +16,19 @@ object ElqUpdateChecker {
     private const val REPO_OWNER = "LandonMoran"
     private const val REPO_NAME = "eloquence-tts-android"
 
-    data class GitHubAsset(
-        val name: String? = null,
-        @Json(name = "browser_download_url") val browserDownloadUrl: String? = null
+    private class GitHubAsset(
+        val name: String?,
+        val browserDownloadUrl: String?
     )
 
-    data class GitHubRelease(
-        @Json(name = "tag_name") val tagName: String? = null,
-        val prerelease: Boolean = false,
-        val draft: Boolean = false,
-        @Json(name = "published_at") val publishedAt: String? = null,
-        @Json(name = "html_url") val htmlUrl: String? = null,
-        val body: String? = null,
-        val assets: List<GitHubAsset> = emptyList()
+    private class GitHubRelease(
+        val tagName: String?,
+        val prerelease: Boolean,
+        val draft: Boolean,
+        val publishedAt: String?,
+        val htmlUrl: String?,
+        val body: String?,
+        val assets: List<GitHubAsset>
     )
 
     data class UpdateResult(
@@ -45,12 +42,6 @@ object ElqUpdateChecker {
         val error: String? = null
     )
 
-    private val moshi: Moshi = Moshi.Builder()
-        .add(KotlinJsonAdapterFactory())
-        .build()
-    private val releaseListType = Types.newParameterizedType(List::class.java, GitHubRelease::class.java)
-    private val releaseAdapter: JsonAdapter<List<GitHubRelease>> = moshi.adapter(releaseListType)
-
     fun check(context: Context): UpdateResult {
         val localVersionCode = try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode
@@ -58,9 +49,10 @@ object ElqUpdateChecker {
             0
         }
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
-        val conn: HttpURLConnection? = null
+        var conn: HttpURLConnection? = null
         try {
             val c = URL(apiUrl).openConnection() as HttpURLConnection
+            conn = c
             c.requestMethod = "GET"
             c.connectTimeout = 15000
             c.readTimeout = 15000
@@ -76,7 +68,7 @@ object ElqUpdateChecker {
             if (json.isEmpty()) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "Empty response")
             }
-            val releases = releaseAdapter.fromJson(json) ?: emptyList()
+            val releases = parseReleases(json)
             val stable = releases.filter { !it.prerelease && !it.draft }
             val target = stable.maxByOrNull { it.publishedAt ?: "" }
             if (target == null) {
@@ -101,6 +93,39 @@ object ElqUpdateChecker {
         }
     }
 
+    private fun parseReleases(json: String): List<GitHubRelease> {
+        val out = mutableListOf<GitHubRelease>()
+        val arr = JSONArray(json)
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val assets = mutableListOf<GitHubAsset>()
+            if (o.has("assets") && !o.isNull("assets")) {
+                val aa = o.getJSONArray("assets")
+                for (j in 0 until aa.length()) {
+                    val a = aa.getJSONObject(j)
+                    assets.add(
+                        GitHubAsset(
+                            name = a.optString("name").ifEmpty { null },
+                            browserDownloadUrl = a.optString("browser_download_url").ifEmpty { null }
+                        )
+                    )
+                }
+            }
+            out.add(
+                GitHubRelease(
+                    tagName = o.optString("tag_name").ifEmpty { null },
+                    prerelease = o.optBoolean("prerelease"),
+                    draft = o.optBoolean("draft"),
+                    publishedAt = o.optString("published_at").ifEmpty { null },
+                    htmlUrl = o.optString("html_url").ifEmpty { null },
+                    body = o.optString("body").ifEmpty { null },
+                    assets = assets
+                )
+            )
+        }
+        return out
+    }
+
     private fun pickAsset(assets: List<GitHubAsset>): String? {
         val abi = Build.SUPPORTED_ABIS?.firstOrNull() ?: "arm64-v8a"
         val candidates = when {
@@ -108,7 +133,7 @@ object ElqUpdateChecker {
             abi.contains("armeabi") || abi.contains("arm") -> listOf("vvtts-armeabi-v7a.apk", "vvtts-universal.apk")
             else -> listOf("vvtts-universal.apk")
         }
-        for ( want in candidates) {
+        for (want in candidates) {
             val hit = assets.firstOrNull { it.name?.equals(want, ignoreCase = true) == true }
             if (hit != null) return hit.browserDownloadUrl
         }
