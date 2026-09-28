@@ -74,9 +74,10 @@ class VvTtsService : TextToSpeechService() {
         refreshSettings()
         registerAllPrefsListeners(device)
         registerAllPrefsListeners(applicationContext!!)
-        engine = EloquenceEngine(device)
-        engine!!.setVoiceProfile(voiceProfile)
-        val ok = engine!!.initialize()
+        val eng = acquireProcessEngine(device)
+        engine = eng
+        eng.setVoiceProfile(voiceProfile)
+        val ok = eng.isInitialized()
         // Restore the language-detection settings from device-protected storage
         restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
         // Preload Lingua (background thread(
@@ -545,5 +546,28 @@ class VvTtsService : TextToSpeechService() {
             private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
             // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
             private const val PACE_LEAD_MS =300L
+
+            // === Process-scoped engine reuse ===
+            // TextToSpeechService is created/destroyed each time the framework binds the
+            // engine (TalkBack swipe bursts re-bind constantly(. A per-onCreate engine
+            // would tear down warm LPC handles and every re-bind would re-pay the full
+            // native eciNewEx voice-bank load — the big hover-to-speech delay after any
+            // pause. Holding one engine per process keeps all dialects warm: re-binds
+            // reuse live handles, first-swipe-after-idle latency drops to near zero.
+
+            private val engineLock = Any()
+            @Volatile private var processEngine: EloquenceEngine? = null
+
+
+            private fun acquireProcessEngine(ctx: Context): EloquenceEngine {
+                processEngine?.let { return it }
+                synchronized(engineLock) {
+                    val cur = processEngine
+                    if (cur != null) return cur
+                    val fresh = EloquenceEngine(ctx)
+                    if (fresh.initialize()) processEngine = fresh
+                    return fresh
+                }
+            }
         }
     }
