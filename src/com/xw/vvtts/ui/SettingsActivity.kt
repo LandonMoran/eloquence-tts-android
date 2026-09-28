@@ -24,11 +24,11 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
-import com.xw.vvttts.engine.EloquenceEngine
-import com.xw.vvttts.update.ElqUpdateChecker
-import com.xw.vvttts.update.ElqUpdateDownloader
-import com.xw.vvttts.update.ElqUpdateInstaller
-import com.xw.vvttts.utils.LanguageDetector
+import com.xw.vvtts.engine.EloquenceEngine
+import com.xw.vvtts.update.ElqUpdateChecker
+import com.xw.vvtts.update.ElqUpdateDownloader
+import com.xw.vvtts.update.ElqUpdateInstaller
+import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File

@@ -1,4 +1,4 @@
-package com.xw.vvttts.update
+package com.xw.vvtts.update
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -20,7 +20,7 @@ object ElqUpdateInstaller {
         data class Failed(val statusCode: Int?, val message: String): Result
     }
 
-    private const val ACTION_INSTALL_STATUS = "com.xw.vvttts.action.APP_UPDATE_INSTALL_STATUS"
+    private const val ACTION_INSTALL_STATUS = "com.xw.vvtts.action.APP_UPDATE_INSTALL_STATUS"
     private const val INSTALL_TIMEOUT_MINUTES = 5L
 
     fun install(context: Context, apkFile: File): Result {

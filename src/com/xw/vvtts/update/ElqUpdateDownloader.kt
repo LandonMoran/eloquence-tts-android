@@ -1,4 +1,4 @@
-package com.xw.vvttts.update
+package com.xw.vvtts.update
 
 import android.util.Log
 import java.io.File

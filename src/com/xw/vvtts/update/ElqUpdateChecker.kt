@@ -1,4 +1,4 @@
-package com.xw.vvttts.update
+package com.xw.vvtts.update
 
 import android.content.Context
 import android.os.Build
@@ -104,9 +104,9 @@ object ElqUpdateChecker {
     private fun pickAsset(assets: List<GitHubAsset>): String? {
         val abi = Build.SUPPORTED_ABIS?.firstOrNull() ?: "arm64-v8a"
         val candidates = when {
-            abi.contains("arm64") -> listOf("vvttts-arm64-v8a.apk", "vvttts-universal.apk")
-            abi.contains("armeabi") || abi.contains("arm") -> listOf("vvttts-armeabi-v7a.apk", "vvttts-universal.apk")
-            else -> listOf("vvttts-universal.apk")
+            abi.contains("arm64") -> listOf("vvtts-arm64-v8a.apk", "vvtts-universal.apk")
+            abi.contains("armeabi") || abi.contains("arm") -> listOf("vvtts-armeabi-v7a.apk", "vvtts-universal.apk")
+            else -> listOf("vvtts-universal.apk")
         }
         for ( want in candidates) {
             val hit = assets.firstOrNull { it.name?.equals(want, ignoreCase = true) == true }

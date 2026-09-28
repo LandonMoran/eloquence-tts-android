@@ -1,10 +1,10 @@
-package com.xw.vvttts.update
+package com.xw.vvtts.update
 
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.widget.Toast
-import com.xw.vvttts.R
+import com.xw.vvtts.R
 import java.io.File
 
 object UpdateActions {
