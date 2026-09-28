@@ -176,14 +176,14 @@ static void vv_wait_till_done(VvtsSession *s) {
      * samples but the synthesis thread still has to finish it.  Poll
      * eciSpeaking (as the old bridge did for Apple's object.. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    for (int i =  ​0; i < 4000 && s->hECI && eciSpeaking(s->hECI); i++) {
+    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI); i++) {
         if ((i % 100) ==  0)
             __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
         struct timespec ts = {0, 2000000L}; /* 2 ms */
         nanosleep(&ts, NULL);
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
-    s->synthBusy =  ​0;
+    s->synthBusy =  0;
 }
 
 static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
@@ -330,9 +330,9 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
      * the current voice/environment params into the engine and is REQUIRED for
      * synthesis itself -- removing it (commit 380ddce( broke all speech(
      * and for the params eciSetVoiceParam just wrote to reach the engine. */
-    et_insertIndex(s->hECI,  ​4242);
+    et_insertIndex(s->hECI,  4242);
                 et_addText(s->hECI, buf);
-                s->synthBusy =  ​1;
+                s->synthBusy =  1;
                 struct timespec st1, st2, st3;
                 clock_gettime(CLOCK_MONOTONIC, &st1);
                 et_synthesize(s->hECI);
@@ -340,7 +340,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 vv_wait_till_done(s);
                 clock_gettime(CLOCK_MONOTONIC, &st3);
                 long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
-                long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  ​1000000LL;
+                long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
                 __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
 
     if (s->pcmLen == 0) return NULL;
