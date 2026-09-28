@@ -49,7 +49,7 @@ python3 oracle/merge_build.py
 bash build.sh
 ```
 
-产物为 `vvtts_signed.apk`。CI（`.github/workflows/build.yml`）在 `feat/**`/`fix/**` push 时自动构建（单次运行）；`build-apk.yml` 为手动快速验证通道。
+产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
 
 
 
@@ -68,7 +68,7 @@ bash build.sh
 
 - `oracle/table/*.consolidated.tsv`：一行一个汉字 + 真人 PCM，采集自参考 Eloquence 引擎
 - `oracle/merge_build.py`：把 consolidated TSV + legacy 行确定性合并成 `oracle_chs.c`（16,913 字）
-- `oracle-dump` workflow（arm64 CI）可重采缺失字（如 百 / 零 / 八。，产物 `corpus/zh-cn-hanzi.tsv`，再由 `oracle-assemble` 合并回表
+产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
 - 数字 0-9 由 `TextNormalizer` 归一为汉字（零一二…（，经同一语音库朗读
 
 ###角色切换
