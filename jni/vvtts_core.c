@@ -143,6 +143,7 @@ typedef struct {
     size_t  pcmLen, pcmCap;
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
+    volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
 } VvtsSession;
 
 /* The engine calls back on its own synthesis thread; the caller only reads
@@ -176,7 +177,7 @@ static void vv_wait_till_done(VvtsSession *s) {
      * samples but the synthesis thread still has to finish it.  Poll
      * eciSpeaking (as the old bridge did for Apple's object.. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI); i++) {
+    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
         if ((i % 100) ==  0)
             __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
         struct timespec ts = {0, 2000000L}; /* 2 ms */
@@ -184,6 +185,38 @@ static void vv_wait_till_done(VvtsSession *s) {
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
     s->synthBusy =  0;
+}
+
+/* vv_settle: bounded poll used when re-entering synthesis right after a
+ * stop aborted the wait loop -- eciStop stops handing samples but the
+ * engine's own thread still has to finish; one session must never be driven
+ * from two threads concurrently, so wait for the engine to go quiet before
+ * touching text/pcm again. */
+static void vv_settle(VvtsSession *s) {
+    for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
+        struct timespec ts = {0, 2000000L};
+        nanosleep(&ts, NULL);
+    }
+}
+
+/* The engine emits short lead-in/trailing silence around every utterance;
+ * for short TalkBack labels those fixed pauses dominate the perceived swipe
+ * latency, so trim them before resampling.  A >-33 dBFS sample stops the
+ * scan, so real speech is never eaten; near-empty blips are left alone. */
+static void vv_trim_silence(short *pcm, size_t *pn) {
+    size_t n = *pn;
+    if (n < 32) return;
+    const int TH = 700;
+    size_t cap = (n < 2 * 11025) ? n : (2 * 11025);
+    size_t lead = 0;
+    while (lead < n && lead < cap && pcm[lead] > -TH && pcm[lead] < TH) lead++;
+    if (n - lead < 16) return;
+    size_t tail = 0;
+    while (tail < n - 1 && tail < cap && pcm[n - 1 - tail] > -TH && pcm[n - 1 - tail] < TH) tail++;
+    size_t keep = n - lead - tail;
+    if (keep < 16) return;
+    for (size_t k = 0; k < keep; k++) pcm[k] = pcm[lead + k];
+    *pn = keep;
 }
 
 static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
@@ -287,6 +320,11 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     s->text = buf;
     s->pcmLen = 0;
 
+    /* A stop may have aborted the previous wait loop: re-sync with the
+     * engine's thread before we touch text/pcm for the new utterance. */
+    s->cancel = 0;
+    vv_settle(s);
+
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
          * from the oracle bank instead -- raw PCM keyed by the GB18030 bytes
@@ -309,6 +347,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
          * too fast (chipmunk/high-pitched( and comes out as garbled noise. */
         short *rs = NULL;
         size_t outLen = 0;
+        vv_trim_silence(pcm, &samples);
         if (vv_resample_4x(pcm, samples, &rs, &outLen) ==
                 0 && rs && outLen >  0) {
             free(pcm);
@@ -347,7 +386,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         {
             short *rs = NULL;
                         size_t outLen = 0;
-                        if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) ==    0 && rs && outLen >  0) {
+                        vv_trim_silence(s->pcm, &s->pcmLen);
+            if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) ==    0 && rs && outLen >  0) {
                             jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
                             if (res) {
                                 (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, rs);
@@ -411,6 +451,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return;
+    s->cancel = 1; /* let the wait loop abort on the next 2 ms tick */
     eciStop(s->hECI); /* stops handing samples; the thread still settles */
 }
 
@@ -420,10 +461,11 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     VvtsSession *s = vv_find(env, handle);
     if (!s) return;
     if (s->hECI) {
+        s->cancel = 1; /* abort the wait loop fast */
         eciStop(s->hECI);
         /* let the synthesis thread finish its current utterance before we
          * free the session it is still pointing at */
-        for (int i = 0; i < 4000 && eciSpeaking(s->hECI); i++) {
+        for (int i = 0; i < 4000 && eciSpeaking(s->hECI) && !s->cancel; i++) {
             struct timespec ts = {0, 2000000L};
             nanosleep(&ts, NULL);
         }
