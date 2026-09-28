@@ -404,6 +404,16 @@ class LanguageDetector {
             }
         }
 
+        /** Numeric runs must not feed the engine an unshipped dialect (Hangul/Kana\n raw seeds crash the native voice-table walk). */
+        private fun isShippedDialect(d: Int): Boolean {
+            return when (d) {
+                DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_US, DIALECT_ES_MX,
+                DIALECT_FR_FR, DIALECT_FR_CA, DIALECT_DE_DE, DIALECT_IT_IT, DIALECT_ZH_CN,
+                DIALECT_PT_BR, DIALECT_JA_JP, DIALECT_FI_FI, DIALECT_PL_PL -> true
+                else -> false
+            }
+        }
+
         /** Character type -> ECI dialect(no whitelist check here;flushSegment handles the whitelist uniformly) */
         private fun typeToDialect(type: Int, fallbackDialect: Int): Int {
             return when (type) {
@@ -446,7 +456,8 @@ class LanguageDetector {
                 // reaches here: segment() returns the whole run with the fixed dialect directly.
 
                 val dl = resolveDefaultLanguage()
-                dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fallbackDialect
+                val fb = if (isShippedDialect(fallbackDialect)) fallbackDialect else englishDialect
+                dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fb
 
             } else {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
