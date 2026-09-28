@@ -156,7 +156,7 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
-        if (lang.startsWith("pt")) return if ("BR" == c) "pt-BR" else "pt-PT"
+        if (lang.startsWith("pt")) return "pt-BR"
         if (lang.startsWith("fi")) return "fi-FI"
         if (lang.startsWith("zh")) return "zh-CN"
         return "en-US"
