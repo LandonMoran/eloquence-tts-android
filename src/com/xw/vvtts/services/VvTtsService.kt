@@ -221,9 +221,10 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
+        val schedAt = SystemClock.elapsedRealtime()
         try {
             val gen = generation  // snapshot: a stop() while queued must drop this task
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen) })
+            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
             // Framework contract: every onSynthesizeText must terminate the
@@ -233,7 +234,9 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long) {
+    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
+        val t0 = SystemClock.elapsedRealtime()
+        Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
         var text: String? = request.text
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
@@ -322,6 +325,7 @@ class VvTtsService : TextToSpeechService() {
 
         // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
+            Log.i("SPD", "segmented n=" + segments.size + " dt=" + (SystemClock.elapsedRealtime() - t0) + "ms")
             for (seg in segments) {
                 Log.i("VvTts", "seg dialect=" + Integer.toHexString(seg.dialect) + " len=" + seg.text.length)
             }
@@ -374,7 +378,9 @@ class VvTtsService : TextToSpeechService() {
                 if (expanded != null && expanded.isNotEmpty()) {
                     segText = expanded
                 }
+                val t3 = SystemClock.elapsedRealtime()
                 val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
+                Log.i("SPD", "seg len=" + seg.text.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                 if (pcm != null && pcm.size > 0) {
                     if (!started) {
                         callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
