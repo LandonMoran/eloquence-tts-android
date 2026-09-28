@@ -646,7 +646,7 @@ class EloquenceEngine(context: Context) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
-            null
+            return null
         }
         return try {
             future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS)
