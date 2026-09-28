@@ -162,4 +162,15 @@ What the voice speaks - tap to change</string>
     <string name="about_title">About Eloquence TTS</string>
     <string name="about_row">About Eloquence TTS</string>
     <string name="about_body_fmt">Eloquence TTS version %1$s.\nA port of the IBM Eloquence speech engine with ETI-compatible controls and a Material 3 interface.</string>
+
+    <!-- Updates -->
+    <string name="sec_updates">Updates</string>
+    <string name="update_button">Check for updates</string>
+    <string name="checking_updates">Checking for updates...</string>
+    <string name="up_to_date">You're up to date</string>
+    <string name="update_available_fmt">Update %1$s is available</string>
+    <string name="download_install">Download and Install</string>
+    <string name="update_downloading_fmt">Downloading update: %1$d%%</string>
+    <string name="update_failed_fmt">Update failed: %1$s</string>
+    <string name="update_install_ok">Update installed</string>
 </resources>

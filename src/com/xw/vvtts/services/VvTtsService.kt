@@ -204,6 +204,7 @@ class VvTtsService : TextToSpeechService() {
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
                 || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
                 || lang.startsWith("zh")
+        if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE

@@ -24,10 +24,14 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
-import com.xw.vvtts.engine.EloquenceEngine
-import com.xw.vvtts.utils.LanguageDetector
+import com.xw.vvttts.engine.EloquenceEngine
+import com.xw.vvttts.update.ElqUpdateChecker
+import com.xw.vvttts.update.ElqUpdateDownloader
+import com.xw.vvttts.update.ElqUpdateInstaller
+import com.xw.vvttts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
+import java.io.File
 import java.util.HashSet
 
 class SettingsActivity : Activity() {
@@ -210,6 +214,9 @@ class SettingsActivity : Activity() {
                 val resetBtnLocal = addRow(this, panelTools)
                 resetBtnLocal.text = getString(R.string.reset_button)
                 resetBtnLocal.setOnClickListener { confirmResetDefaults() };
+                val updateBtnLocal = addRow(this, panelTools)
+                updateBtnLocal.text == getString(R.string.update_button)
+                updateBtnLocal.setOnClickListener { UpdateActions.showCheckDialog(this) };
                 val aboutBtnLocal = addRow(this, panelTools)
                 aboutBtnLocal.text = getString(R.string.about_row)
                 aboutBtnLocal.setOnClickListener { showAboutDialog() };

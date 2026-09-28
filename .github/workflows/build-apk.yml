@@ -70,6 +70,11 @@ jobs:
           export ANDROID_SDK="$HOME/android-sdk" ABI="x86_64"
           bash build_native.sh
 
+      - name: Stamp version from tag
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        run: |
+          VERCODE="$(echo "${{ github.ref_name }}" | cut -c2-)"
+          sed -i "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$VERCODE\"/" AndroidManifest.xml
       - name: Build APK (x86_64)
         run: |
           export ANDROID_SDK="$HOME/android-sdk"

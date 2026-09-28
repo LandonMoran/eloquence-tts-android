@@ -79,6 +79,11 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
 
+      - name: Stamp version from tag
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        run: |
+          VERCODE="$(echo "${{ github.ref_name }}" | cut -c2-)"
+          sed -i "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$VERCODE\"/" AndroidManifest.xml
       - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
         run: |
           rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk

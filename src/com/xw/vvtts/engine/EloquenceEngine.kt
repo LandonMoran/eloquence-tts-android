@@ -22,6 +22,7 @@ import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.UUID
 import com.xw.vvtts.utils.CrashCodeDefender
 
 class EloquenceEngine(context: Context) {
@@ -33,7 +34,9 @@ class EloquenceEngine(context: Context) {
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
     private var initialized = false
-    @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "elq-synth").apply { isDaemon = true }
+    }
     @Volatile private var hangDetected = false
     private val HANG_TIMEOUT_S = 30L
     @Volatile private var stopped = false
@@ -486,7 +489,7 @@ class EloquenceEngine(context: Context) {
                 return@synthWithTimeout null
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
-            val outFile = File(storageContext.cacheDir, "core_pcm_out")
+            val outFile = File(storageContext.cacheDir, "core_pcm_out_" + UUID.randomUUID())
             if (!sameAsLast) {
             // Second param write right before synthesis — an addText/internal reset on this
             // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
@@ -501,6 +504,7 @@ class EloquenceEngine(context: Context) {
                         var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
+            runCatching { outFile.delete() }
             if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)
             pcm
         }
