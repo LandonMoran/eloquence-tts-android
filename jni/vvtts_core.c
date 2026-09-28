@@ -175,7 +175,7 @@ static void vv_wait_till_done(VvtsSession *s) {
     /* openevv's engine cannot abandon an utterance: eciStop stops the
      * samples but the synthesis thread still has to finish it.  Poll
      * eciSpeaking (as the old bridge did for Apple's object). */
-    for (int i = 0; i < 8000 && s->hECI && eciSpeaking(s->hECI); i++) {
+    for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI); i++) {
         struct timespec ts = {0, 2000000L}; /* 2 ms */
         nanosleep(&ts, NULL);
     }
@@ -412,7 +412,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
         eciStop(s->hECI);
         /* let the synthesis thread finish its current utterance before we
          * free the session it is still pointing at */
-        for (int i = 0; i < 8000 && eciSpeaking(s->hECI); i++) {
+        for (int i = 0; i < 4000 && eciSpeaking(s->hECI); i++) {
             struct timespec ts = {0, 2000000L};
             nanosleep(&ts, NULL);
         }

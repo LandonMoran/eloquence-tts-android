@@ -2,6 +2,7 @@ package com.xw.vvtts.engine
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.SystemClock
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.KonaVoice
@@ -38,7 +39,9 @@ class EloquenceEngine(context: Context) {
         Thread(r, "elq-synth").apply { isDaemon = true }
     }
     @Volatile private var hangDetected = false
-    private val HANG_TIMEOUT_S = 30L
+        @Volatile private var retireUntilMs = 0L
+        private val HANG_TIMEOUT_S = 30L
+        private val ZOMBIE_GRACE_MS = 12000L
     @Volatile private var stopped = false
     @Volatile private var pendingVoice: Int? = null
     @Volatile private var pendingSapi = ""
@@ -632,12 +635,18 @@ class EloquenceEngine(context: Context) {
     // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
     // so THIS request fails fast — a frozen native call cannot take down the whole TTS.
     private fun synthWithTimeout(block: () -> ShortArray?): ShortArray? {
+        val nowMin = SystemClock.elapsedRealtime()
+        if (nowMin < retireUntilMs) {
+            Log.w(TAG, "TTS_HANG: zombie grace until " + retireUntilMs + " (" + (retireUntilMs - nowMin) + " ms left); skipping to avoid doubling the retired native worker")
+            return null
+        }
         val future = try {
             synthExecutor.submit<ShortArray?> { block() }
         } catch (e: RejectedExecutionException) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
-            synthExecutor.submit<ShortArray?> { block() }
+            retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
+            null
         }
         return try {
             future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS)
@@ -649,6 +658,7 @@ class EloquenceEngine(context: Context) {
                 Log.e(TAG, "    " + t.name + ": " + st.joinToString(" | "))
             }
             rotateEngine()
+            retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
             null
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()

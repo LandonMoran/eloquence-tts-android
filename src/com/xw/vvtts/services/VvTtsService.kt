@@ -349,10 +349,16 @@ class VvTtsService : TextToSpeechService() {
             val volume = voiceConfig!!.volume
 
             val pace = Pace(engine!!.getCoreSampleRate())
-            for (seg in segments) {
-                // Bail on either signal: stop() (framework( or a generation bump
-                // (a newer utterance superseded ours while we were mid-queue(.
-                if (stopping || gen != generation) break
+                        val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
+                        for (seg in segments) {
+                            // Bail on either signal: stop() (framework( or a generation bump
+                            // (a newer utterance superseded ours while we were mid-queue(.
+                            if (stopping || gen != generation) break
+                            if (SystemClock.elapsedRealtime() > uttDeadline) {
+
+                                Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
+                                break
+                            }
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
@@ -545,7 +551,11 @@ class VvTtsService : TextToSpeechService() {
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
             private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
             // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
-            private const val PACE_LEAD_MS =300L
+                        private const val PACE_LEAD_MS =300L
+                        // Per-utterance wall-clock budget: if synthesis (hang-cascades, 30s
+                        // watchdog rotations stacking behind each other( blows past this, we
+                        // truncate rather than let one utterance stall the whole TalkBack pipeline.
+                        private const val UTT_BUDGET_MS = 12000L
 
             // === Process-scoped engine reuse ===
             // TextToSpeechService is created/destroyed each time the framework binds the
