@@ -65,6 +65,12 @@ jobs:
             -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
+      - name: Use committed CI keystore
+        run: |
+          cp vvttts-ci.jks vvttts.jks
+          ls -la vvttts.jks
+
+
       - name: Build native bridge (x86_64)
         run: |
           export ANDROID_SDK="$HOME/android-sdk" ABI="x86_64"

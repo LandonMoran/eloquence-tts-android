@@ -1,6 +1,7 @@
 # 构建产物
 *.apk
 *.jks
+!vvttts-ci.jks
 *.keystore
 out_classes/
 out_dex/
