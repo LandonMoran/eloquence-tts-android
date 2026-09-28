@@ -8,7 +8,8 @@
 
 - **14 种语言**：简体中文、繁体中文（台湾）、日文、韩文、英式/美式英语、德语、法语（法国/加拿大）、西班牙语（西班牙/墨西哥）、意大利语、葡萄牙语（巴西）、芬兰语
 - **8 个发音角色**：Reed / Sandy / Glen / Rocko / Bobby / Shelly / Grandpa / Grandma，通过 ECI voice param 机制切换
-- **多语言自动检测**：Unicode 区块 + Lingua 统计双层检测，混合语言文本自动分片，各用各的引擎朗读
+- **多语言自动检测**：Unicode 规则 → 内存 n-gram 统计 → Lingua 三层检测，混合语言文本自动分片，各用各的引擎朗读
+- **自动更新**：基于 GitHub Releases 的检查/下载/安装通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）
 - **零延迟**：本地引擎，按下就出声，无云端往返
 - **自定义捏声**：长按发音角色可调节性别、头部大小、情感起伏、粗糙度、气息感等音色参数
 - **语速 / 音调 / 音量**：可独立调节，试听实时生效
@@ -48,7 +49,7 @@ python3 oracle/merge_build.py
 bash build.sh
 ```
 
-产物为 `vvtts_signed.apk`。CI（`.github/workflows/build-apk.yml`）在 `fix/**` push 时自动构建。
+产物为 `vvtts_signed.apk`。CI（`.github/workflows/build.yml`）在 `feat/**`/`fix/**` push 时自动构建（单次运行）；`build-apk.yml` 为手动快速验证通道。
 
 
 
@@ -90,5 +91,6 @@ bash build.sh
 
 ## Roadmap
 
-- [ ] 重采 百 / 零 / 八 PCM（`oracle-dump` + `oracle-assemble`（，合上最后一个数字静音口
-- [ ] 发布说明见 `RELEASES.md`（草稿，未发布。）
+- [ ] 重采 百 / 零 / 八 PCM（`oracle-dump` + `oracle-assemble`），合上最后一个数字静音口
+- [x] 首个发布：v1.0 · versionCode 1（版本策略见 `RELEASES.md`）
+- 发布变更说明见 `RELEASES.md`（随每次发布更新）
