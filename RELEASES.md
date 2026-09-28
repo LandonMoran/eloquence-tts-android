@@ -1,6 +1,6 @@
 # Release Notes — v1.0
 
-> 首个正式发布。版本策略：1.0 → versionCode 1；后续每次发布（1.x 或 2.0）versionCode +1，tag 采用语义化版本（`v1.0`、`v1.1` …）。APK 从 GitHub Releases 直接分发（非 Play 商店）。
+> 首个正式发布。版本策略：1.0 → versionCode 2000000001（沿用 r37 占位版（versionCode 2000000000）之后的编号，首个正式版起每次发布 versionCode +1），tag 采用语义化版本（`v1.0`、`v1.1` …）。APK 从 GitHub Releases 直接分发（非 Play 商店）。
 
 ## ✨ 新特性
 
