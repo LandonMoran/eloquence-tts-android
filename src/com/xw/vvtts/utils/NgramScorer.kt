@@ -104,7 +104,7 @@ object NgramScorer {
         val unis = unigramMaps[idx]
         val bis = bigramMaps[idx]
         if (unis == null && bis == null) return -1f
-        var score =1.0f
+        var score = 0.0f
         var hits = 0
         var i = 0
         val n = text.length
