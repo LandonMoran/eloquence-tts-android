@@ -155,33 +155,33 @@ class VvTtsService : TextToSpeechService() {
         val voices = ArrayList<Voice>()
         // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
         voices.add(Voice("en-US", Locale.US,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("en-GB", Locale.UK,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("de-DE", Locale.GERMANY,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("fr-FR", Locale.FRANCE,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("fr-CA", Locale.CANADA_FRENCH,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("es-ES", Locale("es", "ES"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("es-US", Locale("es", "US"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("es-MX", Locale("es", "MX"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("it-IT", Locale.ITALY,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("ja-JP", Locale.JAPAN,
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("pl-PL", Locale("pl", "PL"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("pt-BR", Locale("pt", "BR"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("fi-FI", Locale("fi", "FI"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         voices.add(Voice("zh-CN", Locale("zh", "CN"),
-            Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         // Only advertise dialects actually linked in this build (build_native.sh LANGS)
         return voices
     }

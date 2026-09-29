@@ -29,6 +29,11 @@ class EloquenceEngine(context: Context) {
     private val storageContext: Context = context.createDeviceProtectedStorageContext()
 
     private var voiceProfile: VoiceProfile? = null
+    /** User dictionary (word|spoken lines, VoiceConfig.dictEntries(); applied after the
+     *  builtin spoken-exception tables so user overrides win ( mirrors the factory
+     *  native loadUserDictionary hook; our ECI build has no dict API, so the substitution
+     *  pass is the Kotlin-side equivalent. Fresh read per utterance, so edits apply immediately. */
+    private val userDictionary by lazy { VoiceConfig(appContext) }
     private var core: VvttsCore? = null          // In-house bridge (multi-language
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
@@ -156,6 +161,16 @@ class EloquenceEngine(context: Context) {
     companion object {
         private const val TAG = "EloquenceEngine"
 
+        private fun applyDict(text: String, entries: List<Pair<String, String>>): String {
+            var t = text
+            for ((w, r) in entries) {
+                if (w.isEmpty()) continue
+                val re = Regex("(?i)\\b" + Regex.escape(w) + "\\b")
+                t = re.replace(t, r)
+            }
+            return t
+        }
+
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
         const val DIALECT_EN_GB = 0x10001    // [1.1] eng
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
@@ -210,7 +225,7 @@ class EloquenceEngine(context: Context) {
 
         /** Normalize numerals/symbols for CJK (Chinese readings); other dialects pass
          *  through unchanged —the Lingua/segment layer already handled their quirks. */
-        private fun preprocess(text: String, dialect: Int): String {
+        private fun preprocess(text: String, dialect: Int, userDict: List<Pair<String, String>> = emptyList()): String {
             val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
                 TextNormalizer.normalizeForChinese(text) else text
             if (base.isEmpty() || dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW) return base
@@ -228,9 +243,14 @@ class EloquenceEngine(context: Context) {
                 DIALECT_DE_DE -> DE_SPOKEN_EXCEPTIONS
                 else -> emptyList()
             }
-            for ((w, r)in overrides) {
-                t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
+            for ((w2, r)in overrides) {
+                t = Regex("(?i)" + Regex.escape(w)).replace(t\, r)
             }
+            // User dictionary: wire the existing applyDict() helper ( committed but
+            // never called(; user-added word|spoken entries now reach synthesis. Mirrors
+            // the factory native loadUserDictionary hook; applied after the builtin tables so
+            // user overrides win ( word-boundary match - Landons intended semantics(.
+            t = applyDict(t1, userDict)
             return t
         }
         // Factory voice registry: (eng,USA( -> enu pack, (eng,GBR( -> eng pack — so en-US
@@ -280,15 +300,6 @@ class EloquenceEngine(context: Context) {
     }
 
 
-    private fun applyDict(text: String, entries: List<Pair<String, String>>): String {
-        var t = text
-        for ((w, r) in entries) {
-            if (w.isEmpty()) continue
-            val re = Regex("(?i)\\b" + Regex.escape(w) + "\\b")
-            t = re.replace(t, r)
-        }
-        return t
-    }
 
     private val punctMap: Map<Char, String> = mapOf(
         '.' to " period ", ',' to " comma ", '!' to " exclamation mark ",
@@ -513,7 +524,7 @@ class EloquenceEngine(context: Context) {
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext, preprocess(text, dialect))))
+                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext, preprocess(text, dialect, userDictionary.dictEntries()))))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {
