@@ -52,6 +52,9 @@ Preset tone - tap to change</string>
     <string name="dict_delete">Delete</string>
     <string name="dict_done">Done</string>
     <string name="dict_clear_all">Clear all</string>
+    <string name="dict_case_sensitive">Case sensitive</string>
+    <string name="dict_edit_title">Edit dictionary word</string>
+    <string name="dict_edit">Edit</string>
     <string name="dict_clear_confirm">This permanently deletes all dictionary entries.</string>
     <string name="dict_imported">Imported: %1$d words</string>
     <string name="dict_exported">Dictionary exported</string>

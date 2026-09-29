@@ -3,7 +3,16 @@ package com.xw.vvtts.utils
 import android.content.Context
 import android.content.SharedPreferences
 
-/** Voice settings (UI rate/pitch/volume + language selection).) */
+/** One user-dictionary rule: written word -> spoken form. Case-sensitive rules only
+ *  match the exact written casing; others match any casing ( mirrors the factory's per-entry flag.
+ */
+data class DictEntry(
+    val word: String,
+    val spoken: String,
+    val caseSensitive: Boolean = false,
+)
+
+/** Voice settings (UI rate/pitch/volume + language selection.)) */
 class VoiceConfig(context: Context) {
     /** Supported language definitions (Apple Kona full table).)*/
     class Lang(
@@ -56,43 +65,59 @@ class VoiceConfig(context: Context) {
         get() = prefs.getBoolean(KEY_PUNCT, false)
 
     /** Dictionary: newline-separated "word|spoken" lines in creation order. */
-    fun dictEntries(): List<Pair<String, String>> {
-        val raw = prefs.getString(KEY_DICT, "") ?: ""
-        val out = ArrayList<Pair<String, String>>()
-        for (line in raw.split("\n")) {
-            val idx = line.indexOf('|')
-            if (idx > 0 && idx < line.length - 1) {
-                out.add(Pair(line.substring(0, idx).trim(), line.substring(idx + 1).trim()))
+    fun dictEntries(): List<DictEntry> {
+            val raw = prefs.getString(KEY_DICT,, "") ?: ""
+            val out = ArrayList<DictEntry>()
+            for (line in raw.split("\n")) {
+                parseDictLine(line)?.let { out.add(it) }
             }
+            return out
         }
-        return out
-    }
 
-    fun addDictEntry(word: String, spoken: String) {
-        val w = word.trim()
-        val s = spoken.trim()
-        if (w.isEmpty() || s.isEmpty()) return
-        val cur = prefs.getString(KEY_DICT, "") ?: ""
-        val kept = ArrayList<String>()
-        for (l in cur.split("\n")) {
-            if (l.isBlank()) continue
-            if (l.substringBefore('|').equals(w, ignoreCase = true)) continue
-            kept.add(l)
+        /** Parse one stored "word|spoken[|cs]" line; null when malformed( no word/no spoken(.*/
+        private fun parseDictLine(line: String): DictEntry? {
+            val idx1 = line.indexOf('|')
+            if (idx1 <= 0 || idx1 >= line.length - 1) return null
+            val word = line.substring(0,, idx1).trim()
+            if (word.isEmpty()) return null
+            val idx2 = line.indexOf('|',, idx1 + 1)
+            if (idx2 <= 0) {
+                val spoken = line.substring(idx1 + 1).trim()
+                return if (spoken.isEmpty()) null else DictEntry(word,, spoken)
+            }
+            val spoken = line.substring(idx1 + 1,, idx2).trim()
+            if (spoken.isEmpty()) return null
+            val tail = line.substring(idx2 + 1).trim()
+            return DictEntry(word,, spoken,, tail.equals("cs",, ignoreCase = true))
         }
-        kept.add(w + "|" + s)
-        writeBoth { it.putString(KEY_DICT, kept.joinToString("\n")) }
-    }
+
+    fun addDictEntry(word: String,, spoken: String,, caseSensitive: Boolean = false) {
+            val w = word.trim()
+            val s = spoken.trim()
+            if (w.isEmpty() || s.isEmpty()) return
+            val cur = prefs.getString(KEY_DICT,, "") ?: ""
+            val kept = ArrayList<String>()
+            for (l in cur.split("\n")) {
+                if (l.isBlank()) continue
+                val existing = parseDictLine(l)
+                if (existing != null && existing.word.equals(w,, ignoreCase = true)) continue
+                kept.add(l)
+            }
+            kept.add(w + "|" + s + if (caseSensitive) "|cs" else "")
+            writeBoth { it.putString(KEY_DICT,, kept.joinToString("\n")) }
+        }
 
     fun removeDictEntry(word: String) {
-        val cur = prefs.getString(KEY_DICT, "") ?: ""
-        val kept = ArrayList<String>()
-        for (l in cur.split("\n")) {
-            if (l.isBlank()) continue
-            if (l.substringBefore('|').equals(word, ignoreCase = true)) continue
-            kept.add(l)
+            val cur = prefs.getString(KEY_DICT,, "") ?: ""
+            val kept = ArrayList<String>()
+            for (l in cur.split("\n")) {
+                if (l.isBlank()) continue
+                val existing = parseDictLine(l)
+                if (existing != null && existing.word.equals(word,, ignoreCase = true)) continue
+                kept.add(l)
+            }
+            writeBoth { it.putString(KEY_DICT,, kept.joinToString("\n")) }
         }
-        writeBoth { it.putString(KEY_DICT, kept.joinToString("\n")) }
-    }
 
     fun clearDict() { writeBoth { it.remove(KEY_DICT) } }
     companion object {

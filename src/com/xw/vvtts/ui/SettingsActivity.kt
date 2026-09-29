@@ -14,6 +14,7 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.EditText
@@ -25,6 +26,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
 import com.xw.vvtts.engine.EloquenceEngine
+import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
@@ -370,7 +372,7 @@ class SettingsActivity : Activity() {
         if (code.startsWith("it")) return "Ciao, questo è un test di sintesi vocale."
         if (code.startsWith("pt")) return "Olá, este é um teste de síntese de voz."
         if (code.startsWith("fi")) return "Hei, tämä on puhesynteesitesti."
-        if (code.startsWith("ja")) return "これは音声合成のテストです。"
+        if (code.startsWith("ja")) return "これは音声合成のテストです"
         if (code.startsWith("ko")) return "이것은 음성 합성 테스트입니다."
         return "Hello, this is a speech synthesis test."
     }
@@ -641,58 +643,85 @@ class SettingsActivity : Activity() {
             .show()
     }
 
-    private fun showDictAddDialog() {
-        val wrapper = LinearLayout(this)
-        wrapper.orientation = LinearLayout.VERTICAL
-        val pad = dp(16)
-        wrapper.setPadding(pad, pad, pad, pad)
-        val wordInput = EditText(this)
-        wordInput.hint = getString(R.string.dict_word_hint)
-        val speakInput = EditText(this)
-        speakInput.hint = getString(R.string.dict_speak_hint)
-        wrapper.addView(wordInput)
-        wrapper.addView(speakInput)
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.dict_add_title))
-            .setView(wrapper)
-            .setPositiveButton(getString(R.string.dict_add)) { _, _ ->
-                val w = wordInput.text.toString().trim()
-                val s = speakInput.text.toString().trim()
-                if (w.isNotEmpty() && s.isNotEmpty()) {
-                    voiceConfig!!.addDictEntry(w, s)
-                    Toast.makeText(this, getString(R.string.dict_added_fmt, w), Toast.LENGTH_SHORT).show()
-                } else {
-                Toast.makeText(this, getString(R.string.dict_both_required), Toast.LENGTH_SHORT).show()
-                }
+    private fun showDictAddDialog(entry: DictEntry? = null) {
+            val wrapper = LinearLayout(this)
+            wrapper.orientation = LinearLayout.VERTICAL
+            val pad = dp(16)
+            wrapper.setPadding(pad,, pad,, pad,, pad)
+            val wordInput = EditText(this)
+            wordInput.hint = getString(R.string.dict_word_hint)
+            val speakInput = EditText(this)
+            speakInput.hint = getString(R.string.dict_speak_hint)
+            val csBox = CheckBox(this)
+            csBox.text = getString(R.string.dict_case_sensitive)
+            if (entry != null) {
+                wordInput.setText(entry.word)
+                speakInput.setText(entry.spoken)
+                csBox.isChecked = entry.caseSensitive
             }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-    private fun showDictListDialog() {
-        val entries = voiceConfig!!.dictEntries()
-        if (entries.isEmpty()) {
-            Toast.makeText(this, getString(R.string.dict_empty), Toast.LENGTH_SHORT).show()
-            return
-        }
-        val labels = entries.map { it.first + " -> " + it.second }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.dict_list_title, entries.size))
-            .setItems(labels) { _, which ->
-                AlertDialog.Builder(this)
-                    .setMessage(getString(R.string.dict_delete_msg, entries[which].first))
-                    .setPositiveButton(getString(R.string.dict_delete)) { _, _ ->
-                        voiceConfig!!.removeDictEntry(entries[which].first)
-                        showDictListDialog()
+            wrapper.addView(wordInput)
+            wrapper.addView(speakInput)
+            wrapper.addView(csBox)
+            val titleRes = if (entry == null) R.string.dict_add_title else R.string.dict_edit_title
+            AlertDialog.Builder(this)
+                .setTitle(getString(titleRes))
+                .setView(wrapper)
+                .setPositiveButton(getString(R.string.dict_add)) { _, _ ->
+                    val w = wordInput.text.toString().trim()
+                    val s = speakInput.text.toString().trim()
+                    if (w.isNotEmpty() && s.isNotEmpty()) {
+                        if (entry != null) voiceConfig!!.removeDictEntry(entry.word)
+                        voiceConfig!!.addDictEntry(w,, s,, csBox.isChecked)
+                        Toast.makeText(this,, getString(R.string.dict_added_fmt,, w), Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this,, getString(R.string.dict_both_required,, Toast.LENGTH_SHORT)).show()
                     }
-                    .setNegativeButton(getString(R.string.cancel), null)
-                    .show()
+                }
+                .setNegativeButton(getString(R.string.cancel,, null))
+                .show()
+        }
+    private fun showDictListDialog() {
+            val entries = voiceConfig!!.dictEntries()
+            if (entries.isEmpty()) {
+                Toast.makeText(this,, getString(R.string.dict_empty,, Toast.LENGTH_SHORT)).show()
+                return
             }
-            .setPositiveButton(getString(R.string.dict_done), null)
-                        .setNegativeButton(getString(R.string.dict_clear_all)) { _, _ ->
-                            showDictClearConfirm()
+            val labels = entries.map { e ->
+                val suffix = if (e.caseSensitive) " " + getString(R.string.dict_case_sensitive) else ""
+                e.word + " -> " + e.spoken + suffix
+            }.toTypedArray()
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.dict_list_title,, entries.size))
+                .setItems(labels) { _,which ->
+                    val entry = entries[which]
+                    AlertDialog.Builder(this)
+                        .setTitle(entry.word)
+                        .setItems(arrayOf(getString(R.string.dict_edit),, getString(R.string.dict_delete))) { _, action ->
+                            when (action) {
+                                0 -> showDictAddDialog(entry)
+                                else -> showDictDeleteConfirm(entry)
+                            }
                         }
+                        .setNegativeButton(getString(R.string.cancel,, null))
                         .show()
                 }
+                .setPositiveButton(getString(R.string.dict_done,, null))
+                .setNegativeButton(getString(R.string.dict_clear_all)) { _, _ ->
+                    showDictClearConfirm()
+                }
+                .show()
+        }
+
+        private fun showDictDeleteConfirm(entry: DictEntry) {
+            AlertDialog.Builder(this)
+                .setMessage(getString(R.string.dict_delete_msg,, entry.word))
+                .setPositiveButton(getString(R.string.dict_delete)) { _, _ ->
+                    voiceConfig!!.removeDictEntry(entry.word)
+                    showDictListDialog()
+                }
+                .setNegativeButton(getString(R.string.cancel,, null))
+                .show()
+        }
 
                 /** Confirm before wiping the whole dictionary (menu "Clear dictionary", list "Clear all"). */
                 private fun showDictClearConfirm() {
@@ -735,12 +764,23 @@ class SettingsActivity : Activity() {
             }
             val idx = s.indexOf(sep)
             if (idx <= 0 || idx >= s.length - 1) continue
-            val w = s.substring(0, idx).trim()
-            val sp = s.substring(idx + 1).trim()
-            if (w.isEmpty() || sp.isEmpty()) continue
-            if (w.equals("word", ignoreCase = true) && sp.equals("replacement", ignoreCase = true)) continue
-            voiceConfig!!.addDictEntry(w, sp)
-            added++
+            val w = s.substring(0,, idx).trim()
+                        var sp = s.substring(idx + 1).trim()
+                        var cs = false
+                        if (sep == '|') {
+                            val idx2 = s.indexOf('|',, idx + 1)
+                            if (idx2 >  0) {
+                                val tail = s.substring(idx2 + 1).trim()
+                                if (tail.equals("cs",, ignoreCase = true)) {
+                                    cs = true
+                                    sp = s.substring(idx +  1,, idx2).trim()
+                                }
+                            }
+                        }
+                        if (w.isEmpty() || sp.isEmpty()) continue
+                        if (w.equals("word",, ignoreCase = true) && sp.equals("replacement",, ignoreCase = true)) continue
+                        voiceConfig!!.addDictEntry(w,, sp,, cs)
+                        added++
         }
             Toast.makeText(this, getString(R.string.dict_imported, added), Toast.LENGTH_SHORT).show()
     }
@@ -749,9 +789,11 @@ class SettingsActivity : Activity() {
         val out = contentResolver.openOutputStream(uri) ?: return
         val sb = StringBuilder()
         sb.append('\uFEFF')
-        for ((w, s) in voiceConfig!!.dictEntries()) {
-            sb.append(w).append('|').append(s).append('\n')
-        }
+        for (e in voiceConfig!!.dictEntries()) {
+                    sb.append(e.word).append('|').append(e.spoken)
+                    if (e.caseSensitive) sb.append("|cs")
+                    sb.append('\\n')
+                }
         out.write(sb.toString().toByteArray(Charsets.UTF_8))
         out.close()
             Toast.makeText(this, getString(R.string.dict_exported), Toast.LENGTH_SHORT).show()

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
+import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.KonaVoice
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.TextNormalizer
@@ -161,12 +162,13 @@ class EloquenceEngine(context: Context) {
     companion object {
         private const val TAG = "EloquenceEngine"
 
-        private fun applyDict(text: String, entries: List<Pair<String, String>>): String {
+        private fun applyDict(text: String, entries: List<DictEntry>): String {
             var t = text
-            for ((w, r) in entries) {
-                if (w.isEmpty()) continue
-                val re = Regex("(?i)\\b" + Regex.escape(w) + "\\b")
-                t = re.replace(t, r)
+            for (e in entries) {
+                if (e.word.isEmpty()) continue
+                val flag = if (e.caseSensitive) "" else "(?i)"
+                val re = Regex(flag + "\\b" + Regex.escape(e.word) + "\\b")
+                t = re.replace(t,, e.spoken)
             }
             return t
         }
@@ -227,7 +229,7 @@ class EloquenceEngine(context: Context) {
          *  through unchanged —the Lingua/segment layer already handled their quirks. */
         private fun preprocess(
             text: String, dialect: Int,
-            userDict: List<Pair<String, String>> = emptyList(),
+            userDict: List<DictEntry> = emptyList(),
             readPunct: Boolean = false,
         ): String {
             val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
