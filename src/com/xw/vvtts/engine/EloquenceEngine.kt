@@ -211,11 +211,51 @@ class EloquenceEngine(context: Context) {
         /** Normalize numerals/symbols for CJK (Chinese readings); other dialects pass
          *  through unchanged —the Lingua/segment layer already handled their quirks. */
         private fun preprocess(text: String, dialect: Int): String {
-            return when (dialect) {
-                DIALECT_ZH_CN, DIALECT_ZH_TW -> TextNormalizer.normalizeForChinese(text)
-                else -> text
+            val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
+                TextNormalizer.normalizeForChinese(text) else text
+            if (base.isEmpty() || dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW) return base
+            // Factory (decompiled Eloquence apk) Western text cleanups + per-dialect
+            // spoken-exception tables ( ia.b a() + language packs(, ported verbatim..
+            // Case-insensitive substring semantics match the factory (no word boundaries(. The
+            // tables fix syllables/contractions the linked eci library would otherwise botch..
+            var t = base.replace("\u0080", "euro").replace('|', ' ')
+            t = t.replace('\u2019', '\'')
+            if (t.isEmpty()) return t
+            val overrides: List<Pair<String, String>> = when (dialect) {
+                DIALECT_EN_US -> ENU_SPOKEN_EXCEPTIONS
+                DIALECT_EN_GB -> ENG_SPOKEN_EXCEPTIONS
+                DIALECT_FR_FR, DIALECT_FR_CA -> FR_SPOKEN_EXCEPTIONS
+                DIALECT_DE_DE -> DE_SPOKEN_EXCEPTIONS
+                else -> emptyList()
             }
+            for ((w, r)in overrides) {
+                t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
+            }
+            return t
         }
+        // Factory voice registry: (eng,USA( -> enu pack, (eng,GBR( -> eng pack — so en-US
+        // uses the 28-entry table ( "#"→" hash " is en-GB-only(. Ported verbatim from
+        // the decompiled Eloquence apk language packs ( f3234b/f3232b/f3242b/f3244b/f3230b(.
+        private val ENU_SPOKEN_EXCEPTIONS = listOf(
+            "tzsche" to "tsche", "ctrl" to "control", "JLS" to "J L S",
+            "assistive" to "a sistive", "freedomscientific" to "Freedom Scientific",
+            "caesure" to "seizure", "c#0sure" to "seizure", "SD" to "S D",
+            "h've" to "have", "h're" to "here", "hhs" to "hs", "bhes" to "b hes",
+            "dhes" to "d hes", "fhes" to "f hes", "jhes" to "j hes", "lhes" to "l hes",
+            "mhes" to "m hes", "nhes" to "n hes", "qhes" to "q hes", "vhes" to "v hes",
+            "zhes" to "z hes", "uncosp" to "un cosp", "rarheskill" to "rar heskill",
+            "ad hesi" to "adhesi", "gmail" to "g mail",
+            "TS2:21st" to "TS2:21s t", "TS2:22nd" to "TS2:22n d", "TS2:24th" to "TS2:24t h",
+        )
+        private val ENG_SPOKEN_EXCEPTIONS = ENU_SPOKEN_EXCEPTIONS + ("#" to " hash ")
+        private val FR_SPOKEN_EXCEPTIONS = listOf(
+            "quil" to "kil",
+            "Je ne voudrais pas quil t'arrive quelque" to "Je ne voudrais pas quil t arrive quelque",
+        )
+        private val DE_SPOKEN_EXCEPTIONS = listOf(
+            "dagegen" to "dage gen", "dage-gen" to "dage gen",
+            "dageben" to "dage ben", "dage-ben" to "dage ben",
+        )
 
         @JvmStatic
         fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
@@ -481,7 +521,6 @@ class EloquenceEngine(context: Context) {
                 return@synthWithTimeout null
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
-            val outFile = File(storageContext.cacheDir, "core_pcm_out")
             if (!sameAsLast) {
             // Second param write right before synthesis — an addText/internal reset on this
             // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
@@ -493,7 +532,7 @@ class EloquenceEngine(context: Context) {
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
             VvttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
                         }
-                        var pcm = VvttsCore.synth(handle, dialect, encoded, charset, outFile.absolutePath)
+                        var pcm = VvttsCore.synth(handle, dialect, encoded, charset, null)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)

@@ -463,7 +463,12 @@ class VvTtsService : TextToSpeechService() {
 
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
             private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
-            // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
-            private const val PACE_LEAD_MS =300L
+            // Pacing lead: max audio ms handed ahead of playback. At 300ms the single
+            // delivery worker held its thread for the real-time duration of most TalkBack
+            // utterances, so fast swipes stacked behind the previous utterance's playback (
+            // the clogged-swipe ~1s+ symptom(. The factory hands audio at synth speed with
+            // no pacing hold at all; 3000ms covers TalkBack-sized utterances so the worker
+            // hands off instantly for them, while capping buffered audio ~265KB for longer reads..
+            private const val PACE_LEAD_MS = 3000L
         }
     }
