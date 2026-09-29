@@ -717,7 +717,7 @@ class SettingsActivity : Activity() {
                         Toast.makeText(this,  getString(R.string.dict_both_required), Toast.LENGTH_SHORT).show()
                     }
                 }
-                .setNegativeButton(getString(R.string.cancel),  null))
+                .setNegativeButton(getString(R.string.cancel),  null)
                 .show()
         }
     private fun showDictListDialog() {
@@ -742,10 +742,10 @@ class SettingsActivity : Activity() {
                                 else -> showDictDeleteConfirm(entry)
                             }
                         }
-                        .setNegativeButton(getString(R.string.cancel),  null))
+                        .setNegativeButton(getString(R.string.cancel),  null)
                         .show()
                 }
-                .setPositiveButton(getString(R.string.dict_done),  null))
+                .setPositiveButton(getString(R.string.dict_done),  null)
                 .setNegativeButton(getString(R.string.dict_clear_all)) { _, _ ->
                     showDictClearConfirm()
                 }
@@ -759,7 +759,7 @@ class SettingsActivity : Activity() {
                     voiceConfig!!.removeDictEntry(entry.word)
                     showDictListDialog()
                 }
-                .setNegativeButton(getString(R.string.cancel),  null))
+                .setNegativeButton(getString(R.string.cancel),  null)
                 .show()
         }
 
@@ -832,7 +832,7 @@ class SettingsActivity : Activity() {
         for (e in voiceConfig!!.dictEntries()) {
                     sb.append(e.word).append('|').append(e.spoken)
                     if (e.caseSensitive) sb.append("|cs")
-                    sb.append('\\n')
+                    sb.append('\n')
                 }
         out.write(sb.toString().toByteArray(Charsets.UTF_8))
         out.close()
