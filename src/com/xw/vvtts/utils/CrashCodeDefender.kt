@@ -20,7 +20,7 @@ import kotlin.text.Charsets
  * The saying behind all of the corpus: it is every one-letter neighborhood of the
  * seeds that took the original engine down ( words, apostrophe-led clock times,
  * and the follow-on family(. A dictionary alone covers only observed shapes;the
- * engine-side guards cover the whole class;;this gate is the cheap first layer.
+ * engine-side guards cover the whole class;this gate is the cheap first layer.
 
  * The corpus ships gzipped as an asset (~48KB(;a missing or damaged asset fails
  * open:speech is never blocked by this gate.e

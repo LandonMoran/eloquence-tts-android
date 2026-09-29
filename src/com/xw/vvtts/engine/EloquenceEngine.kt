@@ -168,7 +168,7 @@ class EloquenceEngine(context: Context) {
                 if (e.word.isEmpty()) continue
                 val flag = if (e.caseSensitive) "" else "(?i)"
                 val re = Regex(flag + "\\b" + Regex.escape(e.word) + "\\b")
-                t = re.replace(t,, e.spoken)
+                t = re.replace(t,  e.spoken)
             }
             return t
         }
@@ -231,6 +231,7 @@ class EloquenceEngine(context: Context) {
             text: String, dialect: Int,
             userDict: List<DictEntry> = emptyList(),
             readPunct: Boolean = false,
+            numberMode: Int = 0,
         ): String {
             val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
                 TextNormalizer.normalizeForChinese(text) else text
@@ -253,9 +254,10 @@ class EloquenceEngine(context: Context) {
                 t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
             }
 
-            // Factory number grouping ( "Disabled" level): bin very long digit runs
-            // into 2-digit groups so 9+ digit strings read naturally ( mirror factory.
-            t = groupLongDigitRuns(t)
+            // Factory number grouping, ported from their TTS service. Mode -1 = off
+            // ( pass-through); mode 0 = ECI defaults ( step 1 for runs of 9+);
+            // 1-4 = fixed group sizes 1..4.
+            t = numberGroups(t,  numberMode)
 
             // User dictionary: wire the existing applyDict() helper ( committed but
             // never called(; user-added word|spoken entries now reach synthesis. Mirrors
@@ -341,37 +343,45 @@ class EloquenceEngine(context: Context) {
         return sb.toString()
     }
 
-    /** Factory number processing ( "Disabled" level,: the ECI library botches long
-     *  digit runs;; 2-digit grouping ( "1234567890" -> "12 34 56 78 90"(
-     *  kicks in at >=9 digits ( matching the factory "Disabled" level(. Shorter
-     *  runs pass through untouched.. */
-    private fun groupLongDigitRuns(text: String): String {
-        if (text.none { it.isDigit() }) return text
-        val sb = StringBuilder(text.length + 16)
-        var i =  0
-        while (i < text.length) {
-            if (text[i].isDigit()) {
-                var j = i + 1
-                while (j < text.length && text[j].isDigit()) j++
-                if (j - i >=  9) {
-                    var k = i
-                    while (k < j) {
-                        val end = Math.min(k + 2, j)
-                        sb.append(text, k, end)
-                        if (end < j) sb.append(' ')
-                        k = end
+    /**
+     * Factory number processing, ported from their TTS service: group long digit
+     * runs into fixed steps; mode 0 = "use ECI defaults" (their f3223c=0 path,
+     * implemented here as step 1 for runs of 9+ ). Mode 1..4 = fixed step of
+     * that many digits, with trailing groups of 1/2/3/4. Runs shorter than 5
+     * digits pass through untouched. */
+        private fun numberGroups(text: String,  mode: Int): String {
+            if (text.none { it.isDigit() }) return text
+            val sb = StringBuilder(text.length + 16)
+            var i =  0
+            while (i < text.length) {
+                if (text[i].isDigit()) {
+                    var j = i + 1
+                    while (j < text.length && text[j].isDigit()) j++
+                    val n = j - i
+                    if (n >=  5) {
+                        val step = if (mode <  0) 0 else if (mode !=  0) mode else if (n >=  9) 1 else  0
+                        if (step >  0) {
+                            var k = i
+                            while (k < j) {
+                                val end = Math.min(k + step,  j)
+                                sb.append(text,  k,  end)
+                                if (end < j) sb.append(' ')
+                                k = end
+                            }
+                        } else {
+                            sb.append(text,  i,  j)
+                        }
+                    } else {
+                        sb.append(text,  i,  j)
                     }
+                    i = j
                 } else {
-                    sb.append(text, i, j)
+                    sb.append(text[i])
+                    i++
                 }
-                i = j
-            } else {
-                sb.append(text[i])
-                i++
             }
+            return sb.toString()
         }
-        return sb.toString()
-    }
 
     fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
         // Legacy Guangrong routing dropped; forwards to synthesizeCore (Apple engine(
@@ -571,7 +581,9 @@ class EloquenceEngine(context: Context) {
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext, preprocess(text, dialect, userDictionary.dictEntries(), userDictionary.punctEnabled))))
+                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext,  preprocess(
+                                            text,  dialect,  userDictionary.dictEntries(),  userDictionary.punctEnabled,
+                                            if (userDictionary.numberEnabled) userDictionary.numberModePref else -1))))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {

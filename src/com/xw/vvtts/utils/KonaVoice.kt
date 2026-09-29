@@ -6,7 +6,7 @@ package com.xw.vvtts.utils
  * 8 voices x the ECI voice params shared across all languages:
  *   gender(0) headSize(1) pitchBase(2) pitchFluc(3) rough(4) breath(5) speed(6) vol(7)
  *
- * raw CSV field order:breathiness,eciVoiceNumber,,headSize,,konaDialect,
+ * raw CSV field order:breathiness,eciVoiceNumber, headSize, konaDialect,
  *   languageCode, name, pitchBase, pitchFluctuation, roughness, speed, vocalTract, volume
  *
  * mapped to ECI eciSetVoiceParam numbers(authoritative enum in eci.h):
@@ -51,8 +51,8 @@ class KonaVoice {
     }
 
     companion object {
-        /** 8 voices(UI presets 1-8 order:Reed,Shelley,,Sandy,,Rocko,,Flo,,Grandma,,Grandpa,,Eddy)
-        *  gender comes straight from the CSV's vocalTract field(0=male,,1=female);this is what keeps female voices from sounding "manly". */
+        /** 8 voices(UI presets 1-8 order:Reed,Shelley, Sandy, Rocko, Flo, Grandma, Grandpa, Eddy)
+        *  gender comes straight from the CSV's vocalTract field(0=male, 1=female);this is what keeps female voices from sounding "manly". */
         val VOICES = arrayOf(
             // 1 Reed(vocalTract=0 male)
             Voice("Reed", "Reed", 1, 0, 50, 65, 30, 0, 0, 50, 92, 0),

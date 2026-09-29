@@ -6,12 +6,12 @@ package com.xw.vvtts.utils
  * Fixes the three big issues in Apple's Eloquence CJK libraries:
  *   1. Pure ASCII digits aren't spoken -> convert to Chinese number reading(≤4 digits read as a whole;≥5 digit-by-digit)
  *   2. Symbols aren't spoken ->139 symbols mapped to Chinese readings
- *   3. Full-width/half-width normalization(so dates,times,,digits are recognized correctly)
+ *   3. Full-width/half-width normalization(so dates,times, digits are recognized correctly)
  *
  * Guangrong's algorithm(reverse-engineered from grtts TextNormalizer.kt):
- *   DIGIT_CHARS ＝ zero,one,,two,,three,,four,,five,,six,,seven,,eight,,nine
- *   PLACE_CHARS ＝ ["",ten,,hundred,,thousand]"
- *   GROUP_UNITS ＝ [10^4, 10^8,,10^12,,...](powers of 10)
+ *   DIGIT_CHARS ＝ zero,one, two, three, four, five, six, seven, eight, nine
+ *   PLACE_CHARS ＝ ["",ten, hundred, thousand]"
+ *   GROUP_UNITS ＝ [10^4, 10^8, 10^12, ...](powers of 10)
  *   short rule:≤4 digits -> NUMERIC;long rule:≥5 digits -> DIGIT
  */
 class TextNormalizer {
@@ -275,9 +275,9 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** Detect whether a digit run is part of a date/time(avoid wrongly converting 2024/03/15,,14:30) */
+        /** Detect whether a digit run is part of a date/time(avoid wrongly converting 2024/03/15, 14:30) */
         private fun hasDateTimeBoundaries(input: String, start: Int, end: Int): Boolean {
-            // followed by year/month/day,,'-' or '/',,dot/min/sec,,or ':'
+            // followed by year/month/day, '-' or '/', dot/min/sec, or ':'
             if (end < input.length) {
                 val c = input[end]
                 if (c == '年' || c == '月' || c == '日' || c == '点' || c == '分' || c == '秒'

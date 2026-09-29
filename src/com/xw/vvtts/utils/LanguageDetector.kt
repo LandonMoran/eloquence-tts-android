@@ -79,7 +79,7 @@ class LanguageDetector {
 
         // Memo of recent Lingua-decided dialects. The n-gram scan is the largest single
         // per-segment cost on the delivery thread, and TalkBack constantly re-announces
-        // the same strings (labels,,names,,widgets) on every swipe. Caching just the
+        // the same strings (labels, names, widgets) on every swipe. Caching just the
         // successful Lingua decisions (text-deterministic,context-free) makes those
         // repeats zero-cost. Bounded;cleared whenever detection config that affects
         // results changes (whitelist / en/es/fr dialect pins). The fallback/ASCII
@@ -278,7 +278,7 @@ class LanguageDetector {
 
             // pass 1:Unicode run-splitting
             var current = StringBuilder()
-            var currentType = -1  // 0=Chinese, 1=kana, 2=Hangul, 3=Latin,  4=separator,,  5=digit
+            var currentType = -1  // 0=Chinese, 1=kana, 2=Hangul, 3=Latin,  4=separator,   5=digit
             var lastRealType = 3  //the last non-separator type (default Latin)
             // Leading digit/date runs flush with the RUN's dialect; start from the
             // user's default language when set (e.g. zh) instead of hard English so a
@@ -337,7 +337,7 @@ class LanguageDetector {
 
         /**
          * Character classification.
-         * 0=Chinese(Han),1=Japanese kana,,2=Korean Hangul,,3=Latin,,4=separator
+         * 0=Chinese(Han),1=Japanese kana, 2=Korean Hangul, 3=Latin, 4=separator
          */
         private fun classifyChar(c: Char): Int {
             // kana
@@ -368,7 +368,7 @@ class LanguageDetector {
             return 3
         }
 
-        /** Separator test:spaces,punct,,symbols——these follow the previous segment's language */
+        /** Separator test:spaces,punct, symbols——these follow the previous segment's language */
         private fun isSeparator(c: Char): Boolean {
             // ASCII punctuation
             if (c.code <= 0x7F) {
@@ -469,7 +469,7 @@ class LanguageDetector {
 
         /** Latin-text detection:always try Lingua first;only use the default language when detection returns null.
         * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
-        * if the detected language isn't in the whitelist,,fall back to the default language(or English). */
+        * if the detected language isn't in the whitelist, fall back to the default language(or English). */
         private fun detectLatin(text: String, fallbackDialect: Int): Int {
             // Short runs (names, loanwords, fragments( almost always belong to
                         // the user's base language. Don't let Lingua flip the voice mid-sentence:
@@ -522,7 +522,7 @@ class LanguageDetector {
             }
 
             // Recent Lingua decisions are repeats-safe:re-announcing the same UI
-            // string (label,nname,,word( used to re-run the whole n-gram scan.
+            // string (label,nname, word( used to re-run the whole n-gram scan.
             // Skip it——the biggest per-swipe win for TalkBack. Only actual Lingua
             // decisions are cached;fallback/ASCII/short-run paths are context-dependent
             // and already cheap,so they never touch it.

@@ -60,13 +60,20 @@ class VoiceConfig(context: Context) {
     fun setDspMode(m: Int) { writeBoth { it.putInt(KEY_DSP_MODE, m) } }
     fun setAutoDetect(b: Boolean) { writeBoth { it.putBoolean(KEY_AUTO_DETECT, b) } }
 
-    fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT, b) } }
-    val punctEnabled: Boolean
-        get() = prefs.getBoolean(KEY_PUNCT, false)
+    fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT,  b) } }
+        val punctEnabled: Boolean
+            get() = prefs.getBoolean(KEY_PUNCT,  false)
+
+        fun setNumberEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_NUMBER_ENABLED,  b) } }
+        val numberEnabled: Boolean
+            get() = prefs.getBoolean(KEY_NUMBER_ENABLED,  false)
+        fun setNumberModePref(v: Int) { writeBoth { it.putInt(KEY_NUMBER_MODE,  v) } }
+        val numberModePref: Int
+            get() = prefs.getInt(KEY_NUMBER_MODE,  0)
 
     /** Dictionary: newline-separated "word|spoken" lines in creation order. */
     fun dictEntries(): List<DictEntry> {
-            val raw = prefs.getString(KEY_DICT,, "") ?: ""
+            val raw = prefs.getString(KEY_DICT,  "") ?: ""
             val out = ArrayList<DictEntry>()
             for (line in raw.split("\n")) {
                 parseDictLine(line)?.let { out.add(it) }
@@ -78,45 +85,45 @@ class VoiceConfig(context: Context) {
         private fun parseDictLine(line: String): DictEntry? {
             val idx1 = line.indexOf('|')
             if (idx1 <= 0 || idx1 >= line.length - 1) return null
-            val word = line.substring(0,, idx1).trim()
+            val word = line.substring(0,  idx1).trim()
             if (word.isEmpty()) return null
-            val idx2 = line.indexOf('|',, idx1 + 1)
+            val idx2 = line.indexOf('|',  idx1 + 1)
             if (idx2 <= 0) {
                 val spoken = line.substring(idx1 + 1).trim()
-                return if (spoken.isEmpty()) null else DictEntry(word,, spoken)
+                return if (spoken.isEmpty()) null else DictEntry(word,  spoken)
             }
-            val spoken = line.substring(idx1 + 1,, idx2).trim()
+            val spoken = line.substring(idx1 + 1,  idx2).trim()
             if (spoken.isEmpty()) return null
             val tail = line.substring(idx2 + 1).trim()
-            return DictEntry(word,, spoken,, tail.equals("cs",, ignoreCase = true))
+            return DictEntry(word,  spoken,  tail.equals("cs",  ignoreCase = true))
         }
 
-    fun addDictEntry(word: String,, spoken: String,, caseSensitive: Boolean = false) {
+    fun addDictEntry(word: String,  spoken: String,  caseSensitive: Boolean = false) {
             val w = word.trim()
             val s = spoken.trim()
             if (w.isEmpty() || s.isEmpty()) return
-            val cur = prefs.getString(KEY_DICT,, "") ?: ""
+            val cur = prefs.getString(KEY_DICT,  "") ?: ""
             val kept = ArrayList<String>()
             for (l in cur.split("\n")) {
                 if (l.isBlank()) continue
                 val existing = parseDictLine(l)
-                if (existing != null && existing.word.equals(w,, ignoreCase = true)) continue
+                if (existing != null && existing.word.equals(w,  ignoreCase = true)) continue
                 kept.add(l)
             }
             kept.add(w + "|" + s + if (caseSensitive) "|cs" else "")
-            writeBoth { it.putString(KEY_DICT,, kept.joinToString("\n")) }
+            writeBoth { it.putString(KEY_DICT,  kept.joinToString("\n")) }
         }
 
     fun removeDictEntry(word: String) {
-            val cur = prefs.getString(KEY_DICT,, "") ?: ""
+            val cur = prefs.getString(KEY_DICT,  "") ?: ""
             val kept = ArrayList<String>()
             for (l in cur.split("\n")) {
                 if (l.isBlank()) continue
                 val existing = parseDictLine(l)
-                if (existing != null && existing.word.equals(word,, ignoreCase = true)) continue
+                if (existing != null && existing.word.equals(word,  ignoreCase = true)) continue
                 kept.add(l)
             }
-            writeBoth { it.putString(KEY_DICT,, kept.joinToString("\n")) }
+            writeBoth { it.putString(KEY_DICT,  kept.joinToString("\n")) }
         }
 
     fun clearDict() { writeBoth { it.remove(KEY_DICT) } }
@@ -130,6 +137,8 @@ class VoiceConfig(context: Context) {
         const val KEY_AUTO_DETECT = "auto_detect"
         const val KEY_PUNCT = "speak_punctuation"
         const val KEY_DICT = "user_dict"
+        const val KEY_NUMBER_ENABLED = "number_processing_enabled"
+        const val KEY_NUMBER_MODE = "number_processing_mode"
 
         // eciDialect values: measured from each language module's registered constant
         // (lang/*/eci_ini_*.c *_eci_library_lang); one-to-one with build_native.sh LANGS

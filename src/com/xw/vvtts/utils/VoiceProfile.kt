@@ -5,9 +5,9 @@ import android.content.SharedPreferences
 
 /**
  * Voice profile configuration.
- * 8 preset Kona voices;; per-role custom overrides of the 8 ECI voice params.
+ * 8 preset Kona voices; per-role custom overrides of the 8 ECI voice params.
  * Defaults come from KonaVoice (KonaVoicePresets.csv is the source of truth),
- * user custom values live in SharedPreferences;; reset removes the overrides.
+ * user custom values live in SharedPreferences; reset removes the overrides.
  */
 class VoiceProfile(context: Context) {
     private val prefs: SharedPreferences =

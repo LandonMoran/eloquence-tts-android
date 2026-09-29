@@ -33,6 +33,14 @@ Preset tone - tap to change</string>
     <string name="punct_title">Punctuation</string>
     <string name="punct_pauses_only">Pauses only</string>
     <string name="punct_speak_marks">Speak marks</string>
+    <string name="number_title">Number grouping</string>
+    <string name="number_fmt">Numbers: %1$s</string>
+    <string name="number_off">Off</string>
+    <string name="number_default">Default</string>
+    <string name="number_1digit">1 digit</string>
+    <string name="number_2digit">2 digits</string>
+    <string name="number_3digit">3 digits</string>
+    <string name="number_4digit">4 digits</string>
     <string name="user_dict_button">User dictionary</string>
     <string name="dict_menu_title">User dictionary</string>
     <string name="dict_add_word">Add word...</string>

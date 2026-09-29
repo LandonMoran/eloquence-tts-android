@@ -50,6 +50,7 @@ class SettingsActivity : Activity() {
     private var charSection: LinearLayout? = null
     private var chineseGuard: LinearLayout? = null
     private var punctBtn: Button? = null
+    private var numberBtn: Button? = null
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
     private val REQ_DICT_CREATE = 703
@@ -199,6 +200,10 @@ class SettingsActivity : Activity() {
                 punctBtn = punctBtnLocal
                 punctBtnLocal.setOnClickListener { showPunctuationDialog() };
                 refreshPunctButton(punctBtnLocal)
+                val numberBtnLocal = addRow(this, panelReading)
+                numberBtn = numberBtnLocal
+                numberBtnLocal.setOnClickListener { showNumberDialog() };
+                refreshNumberButton(numberBtnLocal)
                 // ---- Detection tab: language picker + detection settings ----
                 val langDetectBtn = addRow(this, panelDetection)
                 langDetectBtn.text = getString(R.string.lang_detect_button)
@@ -609,6 +614,41 @@ class SettingsActivity : Activity() {
             if (on) getString(R.string.punct_speak_marks) else getString(R.string.punct_pauses_only)
         )
     }
+    private fun showNumberDialog() {
+        val cur = if (voiceConfig!!.numberEnabled) voiceConfig!!.numberModePref + 1 else 0
+        val options = arrayOf(
+            getString(R.string.number_off),
+            getString(R.string.number_default),
+            getString(R.string.number_1digit),
+            getString(R.string.number_2digit),
+            getString(R.string.number_3digit),
+            getString(R.string.number_4digit)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.number_title))
+            .setSingleChoiceItems(options,  cur) { d, which ->
+                voiceConfig!!.setNumberEnabled(which > 0)
+                if (which > 0) voiceConfig!!.setNumberModePref(which - 1)
+                d.dismiss()
+                numberBtn?.let { refreshNumberButton(it) }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun refreshNumberButton(btn: Button) {
+        val on = voiceConfig!!.numberEnabled
+        val label = when {
+            !on -> getString(R.string.number_off)
+            voiceConfig!!.numberModePref == 0 -> getString(R.string.number_default)
+            voiceConfig!!.numberModePref ==  1 -> getString(R.string.number_1digit)
+            voiceConfig!!.numberModePref ==  2 -> getString(R.string.number_2digit)
+            voiceConfig!!.numberModePref ==  3 -> getString(R.string.number_3digit)
+            else -> getString(R.string.number_4digit)
+        }
+        btn.text = getString(R.string.number_fmt,  label)
+    }
+
     private fun showDictMenuDialog() {
         val items = arrayOf(
             getString(R.string.dict_add_word),
@@ -647,7 +687,7 @@ class SettingsActivity : Activity() {
             val wrapper = LinearLayout(this)
             wrapper.orientation = LinearLayout.VERTICAL
             val pad = dp(16)
-            wrapper.setPadding(pad,, pad,, pad,, pad)
+            wrapper.setPadding(pad,  pad,  pad,  pad)
             val wordInput = EditText(this)
             wordInput.hint = getString(R.string.dict_word_hint)
             val speakInput = EditText(this)
@@ -671,19 +711,19 @@ class SettingsActivity : Activity() {
                     val s = speakInput.text.toString().trim()
                     if (w.isNotEmpty() && s.isNotEmpty()) {
                         if (entry != null) voiceConfig!!.removeDictEntry(entry.word)
-                        voiceConfig!!.addDictEntry(w,, s,, csBox.isChecked)
-                        Toast.makeText(this,, getString(R.string.dict_added_fmt,, w), Toast.LENGTH_SHORT).show()
+                        voiceConfig!!.addDictEntry(w,  s,  csBox.isChecked)
+                        Toast.makeText(this,  getString(R.string.dict_added_fmt,  w), Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(this,, getString(R.string.dict_both_required,, Toast.LENGTH_SHORT)).show()
+                        Toast.makeText(this,  getString(R.string.dict_both_required,  Toast.LENGTH_SHORT)).show()
                     }
                 }
-                .setNegativeButton(getString(R.string.cancel,, null))
+                .setNegativeButton(getString(R.string.cancel,  null))
                 .show()
         }
     private fun showDictListDialog() {
             val entries = voiceConfig!!.dictEntries()
             if (entries.isEmpty()) {
-                Toast.makeText(this,, getString(R.string.dict_empty,, Toast.LENGTH_SHORT)).show()
+                Toast.makeText(this,  getString(R.string.dict_empty,  Toast.LENGTH_SHORT)).show()
                 return
             }
             val labels = entries.map { e ->
@@ -691,21 +731,21 @@ class SettingsActivity : Activity() {
                 e.word + " -> " + e.spoken + suffix
             }.toTypedArray()
             AlertDialog.Builder(this)
-                .setTitle(getString(R.string.dict_list_title,, entries.size))
+                .setTitle(getString(R.string.dict_list_title,  entries.size))
                 .setItems(labels) { _,which ->
                     val entry = entries[which]
                     AlertDialog.Builder(this)
                         .setTitle(entry.word)
-                        .setItems(arrayOf(getString(R.string.dict_edit),, getString(R.string.dict_delete))) { _, action ->
+                        .setItems(arrayOf(getString(R.string.dict_edit),  getString(R.string.dict_delete))) { _, action ->
                             when (action) {
                                 0 -> showDictAddDialog(entry)
                                 else -> showDictDeleteConfirm(entry)
                             }
                         }
-                        .setNegativeButton(getString(R.string.cancel,, null))
+                        .setNegativeButton(getString(R.string.cancel,  null))
                         .show()
                 }
-                .setPositiveButton(getString(R.string.dict_done,, null))
+                .setPositiveButton(getString(R.string.dict_done,  null))
                 .setNegativeButton(getString(R.string.dict_clear_all)) { _, _ ->
                     showDictClearConfirm()
                 }
@@ -714,12 +754,12 @@ class SettingsActivity : Activity() {
 
         private fun showDictDeleteConfirm(entry: DictEntry) {
             AlertDialog.Builder(this)
-                .setMessage(getString(R.string.dict_delete_msg,, entry.word))
+                .setMessage(getString(R.string.dict_delete_msg,  entry.word))
                 .setPositiveButton(getString(R.string.dict_delete)) { _, _ ->
                     voiceConfig!!.removeDictEntry(entry.word)
                     showDictListDialog()
                 }
-                .setNegativeButton(getString(R.string.cancel,, null))
+                .setNegativeButton(getString(R.string.cancel,  null))
                 .show()
         }
 
@@ -764,22 +804,22 @@ class SettingsActivity : Activity() {
             }
             val idx = s.indexOf(sep)
             if (idx <= 0 || idx >= s.length - 1) continue
-            val w = s.substring(0,, idx).trim()
+            val w = s.substring(0,  idx).trim()
                         var sp = s.substring(idx + 1).trim()
                         var cs = false
                         if (sep == '|') {
-                            val idx2 = s.indexOf('|',, idx + 1)
+                            val idx2 = s.indexOf('|',  idx + 1)
                             if (idx2 >  0) {
                                 val tail = s.substring(idx2 + 1).trim()
-                                if (tail.equals("cs",, ignoreCase = true)) {
+                                if (tail.equals("cs",  ignoreCase = true)) {
                                     cs = true
-                                    sp = s.substring(idx +  1,, idx2).trim()
+                                    sp = s.substring(idx +  1,  idx2).trim()
                                 }
                             }
                         }
                         if (w.isEmpty() || sp.isEmpty()) continue
-                        if (w.equals("word",, ignoreCase = true) && sp.equals("replacement",, ignoreCase = true)) continue
-                        voiceConfig!!.addDictEntry(w,, sp,, cs)
+                        if (w.equals("word",  ignoreCase = true) && sp.equals("replacement",  ignoreCase = true)) continue
+                        voiceConfig!!.addDictEntry(w,  sp,  cs)
                         added++
         }
             Toast.makeText(this, getString(R.string.dict_imported, added), Toast.LENGTH_SHORT).show()
@@ -819,6 +859,7 @@ class SettingsActivity : Activity() {
         voiceBtn?.let { refreshVoiceButton(it) }
         presetBtn?.let { refreshPresetButton(it) }
         punctBtn?.let { refreshPunctButton(it) }
+        numberBtn?.let { refreshNumberButton(it) }
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
         refreshVoiceCharSliders()
