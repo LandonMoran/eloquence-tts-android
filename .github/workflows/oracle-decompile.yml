@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: XAPK zip URL (factory split-pack( to fetch
+        description: XAPK zip URL (empty = embedded default(
         required: false
-        default: "https://files.catbox.moe/3g38bc.zip"
+        default: ""
       target:
-        description: Split APK to decompile (default base.apk = Java wiring((
+        description: Split APK to decompile (empty = base.apk = Java wiring((
         required: false
-        default: base.apk
+        default: ""
   push:
     branches: [feat/ngram-tables]
 
@@ -20,11 +20,18 @@ permissions:
 jobs:
   jadx:
     runs-on: ubuntu-24.04-arm
+    env:
+      # Oracle fingerprint: factory.zip md5 7e4274e9f140e5cc249765cda3f27694
+      FACTORY_URL: "https://files.catbox.moe/3g38bc.zip"
+      TARGET_APK: "${{ inputs.target }}"
     steps:
       - name: Fetch oracle XAPK
         run: |
           set -o pipefail
-          curl -sSL -o factory.zip "${{ inputs.url }}"
+          URL="${FACTORY_URL:-https://files.catbox.moe/3g38bc.zip}"
+          TGT="${TARGET_APK:-base.apk}"
+          echo "fetching $URL (target=$TGT)"
+          curl -sSL -o factory.zip "$URL"
           unzip -oq factory.zip -d splits "*.apk"
           ls -lh splits
 
@@ -37,9 +44,11 @@ jobs:
       - name: Decompile with jadx
         run: |
           set -o pipefail
+          URL="${FACTORY_URL:-https://files.catbox.moe/3g38bc.zip}"
+          TGT="${TARGET_APK:-base.apk}"
           curl -sSL -o /tmp/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip
           unzip -q /tmp/jadx.zip -d /tmp/jadx
-          /tmp/jadx/bin/jadx -d out --show-bad-code --threads-count 4 "splits/${{ inputs.target }}"
+          /tmp/jadx/bin/jadx -d out --show-bad-code --threads-count 4 "splits/$TGT"
 
       - name: Package sources
         run: |
