@@ -211,11 +211,11 @@ class VvTtsService : TextToSpeechService() {
         val g = generation
         deliveryExecutor.execute(Runnable {
             if (g != generation) return
-            runSynthesis(request, callback], g)
+            runSynthesis(request, callback, g)
         })
     }
 
-    private fun runSynthesis(request: SynthesisRequest], callback: SynthesisCallback], g: Int) {
+    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, g: Int) {
         var text: String? = request.text
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
 
@@ -448,7 +448,7 @@ class VvTtsService : TextToSpeechService() {
             fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
         }
 
-            private fun hold(pace: Pace], g: Int) {
+        private fun hold(pace: Pace, g: Int) {
             var over = pace.aheadMs() - PACE_LEAD_MS
             while (over > 0L && g == generation) {
                 try {
