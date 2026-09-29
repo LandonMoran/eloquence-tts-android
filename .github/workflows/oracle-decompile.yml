@@ -11,6 +11,8 @@ on:
         description: Split APK to decompile (default base.apk = Java wiring((
         required: false
         default: base.apk
+  push:
+    branches: [feat/ngram-tables]
 
 permissions:
   contents: read
