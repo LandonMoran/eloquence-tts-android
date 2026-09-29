@@ -225,7 +225,11 @@ class EloquenceEngine(context: Context) {
 
         /** Normalize numerals/symbols for CJK (Chinese readings); other dialects pass
          *  through unchanged —the Lingua/segment layer already handled their quirks. */
-        private fun preprocess(text: String, dialect: Int, userDict: List<Pair<String, String>> = emptyList()): String {
+        private fun preprocess(
+            text: String, dialect: Int,
+            userDict: List<Pair<String, String>> = emptyList(),
+            readPunct: Boolean = false,
+        ): String {
             val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
                 TextNormalizer.normalizeForChinese(text) else text
             if (base.isEmpty() || dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW) return base
@@ -251,6 +255,10 @@ class EloquenceEngine(context: Context) {
             // the factory native loadUserDictionary hook; applied after the builtin tables so
             // user overrides win ( word-boundary match - Landons intended semantics(.
             t = applyDict(t, userDict)
+            // Read-punctuation ( "speak_punctuation" knob in Settings → Reading tab; mirrors
+            // the factory "Use punctuation" — expands ,.!?... to spoken names so a blind
+            // review of typed/OCR text hears the actual punctuation ( no silent marks(.
+            if (readPunct) t = expandPunct(t)
             return t
         }
         // Factory voice registry: (eng,USA( -> enu pack, (eng,GBR( -> eng pack — so en-US
@@ -524,7 +532,7 @@ class EloquenceEngine(context: Context) {
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext, preprocess(text, dialect, userDictionary.dictEntries()))))
+                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext, preprocess(text, dialect, userDictionary.dictEntries(), userDictionary.punctEnabled))))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {
