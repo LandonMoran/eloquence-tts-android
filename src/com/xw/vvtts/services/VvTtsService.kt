@@ -210,8 +210,7 @@ class VvTtsService : TextToSpeechService() {
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val g = generation
         deliveryExecutor.execute(Runnable {
-            if (g != generation) return
-            runSynthesis(request, callback, g)
+            if (g == generation) runSynthesis(request, callback, g)
         })
     }
 
