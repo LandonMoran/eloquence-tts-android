@@ -354,6 +354,13 @@ class VvTtsService : TextToSpeechService() {
 
             val pace = Pace(engine!!.getCoreSampleRate())
                         val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
+            // Start the framework's audio pipe BEFORE synthesis: first-audio
+            // latency must not include the first segment's native synth time.
+            // The finally block still emits the start+done pair exactly once.
+            if (!started) {
+                callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
+                started = true
+            }
                         for (seg in segments) {
                             // Bail on either signal: stop() (framework( or a generation bump
                             // (a newer utterance superseded ours while we were mid-queue(.
@@ -382,10 +389,6 @@ class VvTtsService : TextToSpeechService() {
                 val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
                 Log.i("SPD", "seg len=" + seg.text.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                 if (pcm != null && pcm.size > 0) {
-                    if (!started) {
-                        callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
-                        started = true
-                    }
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
                     // Pace the handoff: never run more than 300 ms of audio ahead of

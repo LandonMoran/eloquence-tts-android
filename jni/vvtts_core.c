@@ -180,7 +180,11 @@ static void vv_wait_till_done(VvtsSession *s) {
     for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
         if ((i % 100) ==  0)
             __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
-        struct timespec ts = {0, 2000000L}; /* 2 ms */
+        /* Polling is what collects the engine's queued samples: the engine
+         * posts chunks into the app queue and only a poll delivers them, so
+         * this loop's SLEEP is a hard ceiling on the drain rate.  Keep it
+         * short -- 500us -- or long utterances take seconds to come out. */
+        struct timespec ts = {0, 500000L}; /* 0.5 ms */
         nanosleep(&ts, NULL);
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
@@ -194,7 +198,7 @@ static void vv_wait_till_done(VvtsSession *s) {
  * touching text/pcm again. */
 static void vv_settle(VvtsSession *s) {
     for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
-        struct timespec ts = {0, 2000000L};
+        struct timespec ts = {0, 500000L}; /* 0.5 ms: poll = collect, keep it short */
         nanosleep(&ts, NULL);
     }
 }
@@ -466,7 +470,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
         /* let the synthesis thread finish its current utterance before we
          * free the session it is still pointing at */
         for (int i = 0; i < 4000 && eciSpeaking(s->hECI) && !s->cancel; i++) {
-            struct timespec ts = {0, 2000000L};
+            struct timespec ts = {0, 500000L}; /* 0.5 ms */
             nanosleep(&ts, NULL);
         }
         eciDelete(s->hECI);
