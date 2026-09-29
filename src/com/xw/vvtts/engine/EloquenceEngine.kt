@@ -244,13 +244,13 @@ class EloquenceEngine(context: Context) {
                 else -> emptyList()
             }
             for ((w2, r)in overrides) {
-                t = Regex("(?i)" + Regex.escape(w)).replace(t\, r)
+                t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
             }
             // User dictionary: wire the existing applyDict() helper ( committed but
             // never called(; user-added word|spoken entries now reach synthesis. Mirrors
             // the factory native loadUserDictionary hook; applied after the builtin tables so
             // user overrides win ( word-boundary match - Landons intended semantics(.
-            t = applyDict(t1, userDict)
+            t = applyDict(t, userDict)
             return t
         }
         // Factory voice registry: (eng,USA( -> enu pack, (eng,GBR( -> eng pack — so en-US
