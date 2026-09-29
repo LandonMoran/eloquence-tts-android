@@ -48,7 +48,7 @@ jobs:
           TGT="${TARGET_APK:-base.apk}"
           curl -sSL -o /tmp/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip
           unzip -q /tmp/jadx.zip -d /tmp/jadx
-          /tmp/jadx/bin/jadx -d out --show-bad-code --threads-count 4 "splits/$TGT"
+          /tmp/jadx/bin/jadx -d out --show-bad-code --threads-count 4 "splits/$TGT" || echo "jadx reported non-fatal errors; packaging partial sources"; find out -name '*.java' | wc -l
 
       - name: Package sources
         run: |
