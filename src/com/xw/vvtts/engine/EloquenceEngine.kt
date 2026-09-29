@@ -250,7 +250,7 @@ class EloquenceEngine(context: Context) {
                 DIALECT_DE_DE -> DE_SPOKEN_EXCEPTIONS
                 else -> emptyList()
             }
-            for ((w2, r)in overrides) {
+            for ((w, r) in overrides) {
                 t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
             }
 
@@ -314,48 +314,44 @@ class EloquenceEngine(context: Context) {
             }
             return out
         }
-    }
+        private val punctMap: Map<Char, String> = mapOf(
+            '.' to " period ", ',' to " comma ", '!' to " exclamation mark ",
+            '?' to " question mark ", ';' to " semicolon ", ':' to " colon ",
+            '"' to " quote ", '\'' to " apostrophe ",
+            '(' to " open parenthesis ", ')' to " close parenthesis ",
+            '/' to " slash ", '*' to " asterisk ",
+        )
 
-
-
-    private val punctMap: Map<Char, String> = mapOf(
-        '.' to " period ", ',' to " comma ", '!' to " exclamation mark ",
-        '?' to " question mark ", ';' to " semicolon ", ':' to " colon ",
-        '"' to " quote ", '\'' to " apostrophe ",
-        '(' to " open parenthesis ", ')' to " close parenthesis ",
-        '/' to " slash ", '*' to " asterisk ",
-    )
-
-    private fun expandPunct(text: String): String {
-        val sb = StringBuilder(text.length + 24)
-        var i = 0
-        while (i < text.length) {
-            val c = text[i]
-            if (c == '.' && i >  0 && i + 1 < text.length &&
-                text[i - 1].isDigit() && text[i + 1].isDigit()) {
-                sb.append(c)  // decimal point: keep "3.14" intact
-            } else {
-                val name = punctMap[c]
-                if (name != null) sb.append(name) else sb.append(c)
+        private fun expandPunct(text: String): String {
+            val sb = StringBuilder(text.length +  24)
+            var i =  0
+            while (i < text.length) {
+                val c = text[i]
+                if (c == '.' && i >  0 && i +  1 < text.length &&
+                    text[i -  1].isDigit() && text[i +  1].isDigit()) {
+                    sb.append(c)  // decimal point: keep "3.14" intact
+                } else {
+                    val name = punctMap[c]
+                    if (name != null) sb.append(name) else sb.append(c)
+                }
+                i++
             }
-            i++
+            return sb.toString()
         }
-        return sb.toString()
-    }
 
-    /**
-     * Factory number processing, ported from their TTS service: group long digit
-     * runs into fixed steps; mode 0 = "use ECI defaults" (their f3223c=0 path,
-     * implemented here as step 1 for runs of 9+ ). Mode 1..4 = fixed step of
-     * that many digits, with trailing groups of 1/2/3/4. Runs shorter than 5
-     * digits pass through untouched. */
+        /**
+         * Factory number processing, ported from their TTS service: group long digit
+         * runs into fixed steps; mode 0 = "use ECI defaults" (their f3223c=0 path,
+         * implemented here as step 1 for runs of 9+ ). Mode 1..4 = fixed step of
+         * that many digits, with trailing groups of 1/2/3/4. Runs shorter than  5
+         * digits pass through untouched. */
         private fun numberGroups(text: String,  mode: Int): String {
             if (text.none { it.isDigit() }) return text
-            val sb = StringBuilder(text.length + 16)
+            val sb = StringBuilder(text.length +  16)
             var i =  0
             while (i < text.length) {
                 if (text[i].isDigit()) {
-                    var j = i + 1
+                    var j = i +  1
                     while (j < text.length && text[j].isDigit()) j++
                     val n = j - i
                     if (n >=  5) {
@@ -382,6 +378,13 @@ class EloquenceEngine(context: Context) {
             }
             return sb.toString()
         }
+    }
+
+
+
+
+
+
 
     fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
         // Legacy Guangrong routing dropped; forwards to synthesizeCore (Apple engine(
