@@ -250,6 +250,11 @@ class EloquenceEngine(context: Context) {
             for ((w2, r)in overrides) {
                 t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
             }
+
+            // Factory number grouping ( "Disabled" level): bin very long digit runs
+            // into 2-digit groups so 9+ digit strings read naturally ( mirror factory.
+            t = groupLongDigitRuns(t)
+
             // User dictionary: wire the existing applyDict() helper ( committed but
             // never called(; user-added word|spoken entries now reach synthesis. Mirrors
             // the factory native loadUserDictionary hook; applied after the builtin tables so
@@ -322,7 +327,7 @@ class EloquenceEngine(context: Context) {
         var i = 0
         while (i < text.length) {
             val c = text[i]
-            if (c == '.' && i > 0 && i + 1 < text.length &&
+            if (c == '.' && i >  0 && i + 1 < text.length &&
                 text[i - 1].isDigit() && text[i + 1].isDigit()) {
                 sb.append(c)  // decimal point: keep "3.14" intact
             } else {
@@ -330,6 +335,38 @@ class EloquenceEngine(context: Context) {
                 if (name != null) sb.append(name) else sb.append(c)
             }
             i++
+        }
+        return sb.toString()
+    }
+
+    /** Factory number processing ( "Disabled" level,: the ECI library botches long
+     *  digit runs;; 2-digit grouping ( "1234567890" -> "12 34 56 78 90"(
+     *  kicks in at >=9 digits ( matching the factory "Disabled" level(. Shorter
+     *  runs pass through untouched.. */
+    private fun groupLongDigitRuns(text: String): String {
+        if (text.none { it.isDigit() }) return text
+        val sb = StringBuilder(text.length + 16)
+        var i =  0
+        while (i < text.length) {
+            if (text[i].isDigit()) {
+                var j = i + 1
+                while (j < text.length && text[j].isDigit()) j++
+                if (j - i >=  9) {
+                    var k = i
+                    while (k < j) {
+                        val end = Math.min(k + 2, j)
+                        sb.append(text, k, end)
+                        if (end < j) sb.append(' ')
+                        k = end
+                    }
+                } else {
+                    sb.append(text, i, j)
+                }
+                i = j
+            } else {
+                sb.append(text[i])
+                i++
+            }
         }
         return sb.toString()
     }
