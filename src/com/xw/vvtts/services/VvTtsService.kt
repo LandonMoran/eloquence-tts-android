@@ -377,18 +377,28 @@ class VvTtsService : TextToSpeechService() {
                 // inside EloquenceEngine.preprocess for zh segments. Do not repeat it
                 // here: a second pass after symbols were expanded defeats the
                 // date/time boundary detection (2024-03-15 -> mangled readings).
-                val expanded = when (seg.dialect) {
-                    LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(segText)
-                    LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(segText)
-                    else -> EmojiExpander.expand(segText)
-                }
-                if (expanded != null && expanded.isNotEmpty()) {
-                    segText = expanded
-                }
-                val t3 = SystemClock.elapsedRealtime()
-                val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
-                Log.i("SPD", "seg len=" + seg.text.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
-                if (pcm != null && pcm.size > 0) {
+                // Synthesize long segments into small, sentence-aware pieces: each
+                // piece is one bounded native call (~200 ms worst case), so the
+                // stop/generation checkpoint between pieces means a swipe lands
+                // within a couple hundred ms instead of waiting out a single
+                // uninterruptible synth of the whole segment (the "one second
+                // between swipes" / "fast swipes get clogged" regression).
+                for (chunkText in splitSynthChunks(segText)) {
+                    if (stopping || gen != generation) break
+                    if (SystemClock.elapsedRealtime() > uttDeadline) break
+                    var textToSynth: String = chunkText
+                    val expanded = when (seg.dialect) {
+                        LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(chunkText)
+                        LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(chunkText)
+                        else -> EmojiExpander.expand(chunkText)
+                    }
+                    if (expanded != null && expanded.isNotEmpty()) {
+                        textToSynth = expanded
+                    }
+                    val t3 = SystemClock.elapsedRealtime()
+                    val pcm = engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
+                    if (pcm != null && pcm.size > 0) {
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
                     // Pace the handoff: never run more than 300 ms of audio ahead of
@@ -407,6 +417,7 @@ class VvTtsService : TextToSpeechService() {
                             hold(pace)
                         }
                     }
+                }
                 }
             }
         } catch (e: Throwable) {
@@ -560,11 +571,17 @@ class VvTtsService : TextToSpeechService() {
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
             private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
             // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
-                        private const val PACE_LEAD_MS =300L
+                        private const val PACE_LEAD_MS = 300L
                         // Per-utterance wall-clock budget: if synthesis (hang-cascades, 30s
                         // watchdog rotations stacking behind each other( blows past this, we
                         // truncate rather than let one utterance stall the whole TalkBack pipeline.
                         private const val UTT_BUDGET_MS = 12000L
+                        // Synth chunk caps: the first piece is smaller so first audio
+                        // lands fast; later pieces cap the worst-case wait for a swipe,
+                        // which now lands within one bounded native call instead of a
+                        // whole segment.
+                        private const val CHUNK_FIRST = 40
+                        private const val CHUNK_MAX = 60
 
             // === Process-scoped engine reuse ===
             // TextToSpeechService is created/destroyed each time the framework binds the
@@ -587,6 +604,62 @@ class VvTtsService : TextToSpeechService() {
                     if (fresh.initialize()) processEngine = fresh
                     return fresh
                 }
+            }
+
+            /**
+             * Split a long segment into sentence-aware pieces capped at CHUNK_MAX
+             * chars (the first piece at CHUNK_FIRST so first audio lands fast).
+             * Splits only at punctuation/whitespace so words, dates and number
+             * runs stay intact - a '-'/'/' or '.' inside a date is never a split
+             * point. Used per-utterance so a swipe (stop/generation bump) lands
+             * within one bounded native synth call instead of waiting out a
+             * giant segment.
+             */
+            private fun splitSynthChunks(text: String): List<String> {
+                val chunks = mutableListOf<String>()
+                val n = text.length
+                if (n <= CHUNK_MAX) return listOf(text)
+                var start = 0
+                while (start < n) {
+                    val cap = if (chunks.isEmpty()) CHUNK_FIRST else CHUNK_MAX
+                    var end = start + cap
+                    if (end >= n) {
+                        chunks.add(text.substring(start))
+                        break
+                    }
+                    var cut = -1
+                    var i = end
+                    while (i > start + 1 && cut < 0) {
+                        val c = text[i - 1]
+                        val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
+                            || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
+                            || c == '！' || c == '？' || c == '、'
+                        if (isBoundary) {
+                            val prev = if (i >= 2) text[i - 2] else ' '
+                            val next = if (i < n) text[i] else ' '
+                            // Never split '.'/',' inside numbers/decimals: "1,234.5"
+                            // an "3.14" must survive as one token.
+                            val digitGuard = (c == '.' && (prev.isDigit() || next.isDigit()))
+                                || (c == ',' && prev.isDigit() && next.isDigit())
+                            if (!digitGuard) cut = i
+                        }
+                        i--
+                    }
+                    if (cut < 0) {
+                        // No boundary in range: force-cut, backing off digit/symbol
+                        // runs so dates/numbers are never split mid-run.
+
+                        cut = end
+                        while (cut > start + 1 && (text[cut - 1].isDigit() || text[cut - 1] == ':'
+                                || text[cut - 1] == '/' || text[cut - 1] == '-' || text[cut - 1] == '.')) {
+                            cut--
+                        }
+                    }
+                    chunks.add(text.substring(start, cut))
+                    start = cut
+                    while (start < n && text[start].isWhitespace()) start++
+                }
+                return chunks
             }
         }
     }
