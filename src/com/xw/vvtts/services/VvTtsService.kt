@@ -208,11 +208,14 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
-        stopping = false
-        deliveryExecutor.execute(Runnable { runSynthesis(request, callback) } )
+        val g = generation
+        deliveryExecutor.execute(Runnable {
+            if (g != generation) return
+            runSynthesis(request, callback], g)
+        })
     }
 
-    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback) {
+    private fun runSynthesis(request: SynthesisRequest], callback: SynthesisCallback], g: Int) {
         var text: String? = request.text
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
 
@@ -300,6 +303,7 @@ class VvTtsService : TextToSpeechService() {
 
             val pace = Pace(engine!!.getCoreSampleRate())
             for (seg in segments) {
+                if (g != generation) break
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
@@ -327,12 +331,12 @@ class VvTtsService : TextToSpeechService() {
                     // playback  otherwise swipes/stops drown in the framework's queue
                     var offset = 0
                     while (offset < bytes.size) {
-                        if (stopping) break
+                        if (g != generation) break
                         val len = Math.min(max, bytes.size - offset)
                         callback.audioAvailable(bytes, offset, len)
                         offset += len
                         pace.handed(len)
-                        hold(pace)
+                        hold(pace, g)
                     }
                 }
             }
@@ -371,9 +375,9 @@ class VvTtsService : TextToSpeechService() {
     }
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-    @Volatile private var stopping = false
+    @Volatile private var generation = 0
         override fun onStop() {
-            stopping = true
+            generation++
             if (engine != null) engine!!.stop()
         }
 
@@ -444,9 +448,9 @@ class VvTtsService : TextToSpeechService() {
             fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
         }
 
-        private fun hold(pace: Pace) {
+            private fun hold(pace: Pace], g: Int) {
             var over = pace.aheadMs() - PACE_LEAD_MS
-            while (over > 0L && !stopping) {
+            while (over > 0L && g == generation) {
                 try {
                     Thread.sleep(minOf(over, 20L))
                 } catch (interrupted: InterruptedException) {
