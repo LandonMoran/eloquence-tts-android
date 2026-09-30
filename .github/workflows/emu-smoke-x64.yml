@@ -30,10 +30,14 @@ jobs:
             set -eu
             cd "$GITHUB_WORKSPACE"
             # --- fetch APK from latest successful build-apk run ---
-            R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-            [ -n "$R" ] || { echo "no build-apk run on this branch"; exit 1; }
+            for i in $(seq 1 60); do
+              R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+              [ -n "$R" ] && break
+              sleep 10
+            done
             echo "latest build-apk run: $R"
             for i in $(seq 1 180); do
+              [ -n "$R" ] || break
               C=$(gh run view "$R" --json status,conclusion --jq 'if .status=="completed" then .conclusion else "in_progress" end')
               [ "$C" = "success" ] && break
               [ "$C" != "in_progress" ] && { echo "latest build-apk run concluded: $C"; R=""; break; }
