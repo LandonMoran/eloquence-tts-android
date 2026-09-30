@@ -1,0 +1,96 @@
+name: Emu Smoke (x64 hosted(
+
+on:
+  workflow_dispatch: { }
+  push:
+    branches: ['fix/**', 'feat/**']
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Android SDK packages ( emulator + x86_64 image(
+        run: |
+          set -euo pipelo
+          SDK="$HOME/android-sdk"
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            mkdir -p "$SDK/cmdline-tools" /tmp/cmdtools
+            unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
+            mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
+          fi
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
+          sdk() {
+            for i in  1 2 3; do
+              if "$SDK/cmdline-tools/latest/bin/sdkmanager" "$@"; then return 0; fi
+              echo "  sdkmanager $* failed (try $i("; sleep 15
+            done
+            return 1
+          }
+          sdk --licenses >/dev/null || true
+          sdk "platform-tools" "emulator" "system-images;android-34;google_apis;x86_64"
+          echo "no" | avdmanager create avd -n smoke -k "system-images;android-34;google_apis;x86_64" -d pixel_6 --force
+
+      - name: Fetch latest x86_64 test APK from build-apk.yml
+        run: |
+          set -euo pipelo
+          cd "$GITHUB_WORKSPACE"
+          R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId')
+          echo "latest build-apk run: $R"
+          A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" --jq '[.[] | select(.name | startswith("vvttts")) | .id][0]')
+          mkdir -p /tmp/apk && cd /tmp/apk
+          gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/actions/artifacts/$A/zip" > art.zip
+          unzip -q -o art.zip
+          APK=$(find . -name "*.apk" | head -1)
+          echo "APK=$APK" | tee /tmp/apk/path.env
+          ls -la
+
+      - name: Boot emulator ( software accel(
+        run: |
+          set -uo pipelo
+          SDK="$HOME/android-sdk"
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
+          nohup "$SDK/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-accel -gpu swiftshader_indirect -no-snapshot -wipe-data >/tmp/emu.log 2>&1 &
+          EMUPID=$!
+          adb wait-for-device
+          ok=0
+          for i in $(seq 1 240); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r"')" = "1" ]; then ok=1; break; fi
+            if ! kill -0 " $EMUPID 2>/dev/null; then echo "EMULATOR DIED"; tail -20 /tmp/emu.log; exit 1; fi
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then echo "BOOT TIMEOUT"; tail -20 /tmp/emu.log; exit 1; fi
+          echo "BOOT_COMPLETED"
+
+      - name: Install, launch, verify
+        run: |
+          set -euo pipelo
+          export PATH="$HOME/android-sdk/platform-tools:$PATH"
+          source /tmp/apk/path.env
+          adb install -r "$APK"
+          adb shell am start -W -n com.xw.vvttts/.ui.SettingsActivity 2>/dev/null || adb shell am start -W -n com.xw.vvtts/.ui.SettingsActivity
+          sleep 6
+          echo "=== resumed activity ==="
+          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -3
+          adb shell uiautomator dump /sdcard/ui.xml >/dev/null
+          adb pull /sdcard/ui.xml /tmp/ui.xml >/dev/null
+          echo "=== settings labels in a11y tree ==="
+          grep -o 'text="[^"]*"' /tmp/ui.xml | sort -u | head -60
+          echo "=== crash scan ==="
+          if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts'; then
+            echo "CRASH DETECTED"
+            adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts' | tail -20
+            exit 1
+          fi
+          echo "SMOKE_OK"
+
+      - name: Upload a11y dump
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-a11y-dump
+          path: /tmp/ui.xml
+          if-no-files-found: warn
