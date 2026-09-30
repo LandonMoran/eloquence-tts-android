@@ -78,20 +78,20 @@ jobs:
           R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
           [ -n "$R" ] || { echo "no build-apk run on this branch"; exit 1; }
           echo "latest build-apk run: $R"
-          for i in $(seq 1 60); do
+          for i in $(seq 1 180); do
             C=$(gh run view "$R" --json status,conclusion --jq 'if .status=="completed" then .conclusion else "in_progress" end')
             [ "$C" = "success" ] && break
             [ "$C" != "in_progress" ] && { echo "latest build-apk run concluded: $C"; R=""; break; }
             sleep  10
           done
           if [ -z "$R" ]; then
-            R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '[.[] | select(.conclusion=="success") | .databaseId][0] // empty')
+            R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
           fi
           [ -n "$R" ] || { echo "no successful build-apk run found"; exit 1; }
           echo "using build-apk run: $R"
           A=""
           for i in $(seq 1 30); do
-            A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" --jq '[.[] | select(.name | startswith("vvttts")) | select((.expired // false) | not) | .id][0] // empty')
+            A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x["id"] for x in d.get("artifacts",[]) if x.get("name","").startswith("vvttts") and not x.get("expired",False)]; print(a[0] if a else "")' || true)
             [ -n "$A" ] && break
             sleep  10
           done
