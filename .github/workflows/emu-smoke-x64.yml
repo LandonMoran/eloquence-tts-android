@@ -15,7 +15,8 @@ jobs:
       - name: Install Android SDK ( preinstalled or self(
         run: |
           set -euo pipefail
-          for root in "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk "$HOME/android-sdk"; do
+          SDK="$HOME/android-sdk"
+          for root in "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk "$SDK"; do
             if [ -n "$root" ] && [ -d "$root/system-images" ]; then SDK="$root"; break; fi
           done
           echo "SDK=$SDK"
