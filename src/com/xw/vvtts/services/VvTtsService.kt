@@ -227,9 +227,25 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
+        // Screen-reader pacing:a new request supersedes any queued-but-not-yet-
+        // started utterance. TalkBack swipes enqueue faster than playback drains;
+        // a plain FIFO piles up an unbounded backlog until speech trails focus
+        // by 10-20s and breaks ("keeps up a moment, then dies"(. In-flight
+        // speech still runs to completion (the engine cannot abandon it(; only jobs
+        // waiting behind it -- thus already stale -- are dropped.
+        generation++
         val g = generation
         deliveryExecutor.execute(Runnable {
-            if (g == generation) runSynthesis(request, callback, g)
+            if (g == generation) {
+                runSynthesis(request, callback, g)
+            } else {
+                // Keep the framework's utterance contract: silently complete dropped
+                // jobs so the client isn't left waiting on onSynthesizeText.
+                try {
+                    callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+                    callback.done()
+                } catch (ignore: Throwable) {}
+            }
         })
     }
 
