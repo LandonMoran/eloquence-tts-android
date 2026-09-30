@@ -30,8 +30,8 @@ jobs:
             done
             return 1
           }
-          sdk --licenses >/dev/null || true
-          sdk "platform-tools" "emulator" "system-images;android-34;google_apis;x86_64"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "emulator" "system-images;android-34;google_apis;x86_64"
           echo "no" | avdmanager create avd -n smoke -k "system-images;android-34;google_apis;x86_64" -d pixel_6 --force
 
       - name: Fetch latest x86_64 test APK from build-apk.yml
