@@ -70,6 +70,8 @@ jobs:
           echo "SDK_DIR=$SDK" >> "$GITHUB_ENV"
 
       - name: Fetch latest x86_64 test APK from build-apk.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
