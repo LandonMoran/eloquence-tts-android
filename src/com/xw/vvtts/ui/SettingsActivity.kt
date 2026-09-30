@@ -1,4 +1,5 @@
 package com.xw.vvtts.ui
+import com.xw.vvttts.update.UpdateActions
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -154,7 +155,7 @@ class SettingsActivity : Activity() {
             refreshVoiceCharSliders()
             Toast.makeText(this, getString(R.string.reset_preset_done, VoiceProfile.PRESET_NAMES[vp.preset - 1]), Toast.LENGTH_SHORT).show()
         }
-        panelVoice.addView(charSectionLocal)
+        mainContainer.addView(charSectionLocal)
         charSection = charSectionLocal
         addChineseVoiceGuard(mainContainer)
         updateChineseGuard()
