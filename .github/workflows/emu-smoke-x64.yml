@@ -23,7 +23,7 @@ jobs:
           echo "SDK=$SDK"
           df -h / | tail -1
           echo "--- SDK contents ---"
-          ls "$SDK" 2>/dev/null | tr '\n' ' '; echo
+          ls "$SDK" 2>/dev/null | tr '\n' ' ' || true; echo
           du -sh "$SDK" 2>/dev/null || true
           if [ ! -x "$CMDT/latest/bin/avdmanager" ]; then
             curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
@@ -49,6 +49,14 @@ jobs:
             rm -f /tmp/sysimg.zip
             test -f "$SDK/system-images/android-34/google_apis/x86_64/system.img" || { echo "IMAGE EXTRACT FAILED"; exit 1; }
             echo "Downloaded+extracted: $IMG"
+          fi
+          if [ ! -x "$SDK/emulator/emulator" ]; then
+            echo "--- installing emulator + platform-tools via sdkmanager ---"
+            yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+            yes | "$CMDT/latest/bin/sdkmanager" "emulator" "platform-tools"
+          elif [ ! -x "$SDK/platform-tools/adb" ]; then
+            yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+            yes | "$CMDT/latest/bin/sdkmanager" "platform-tools"
           fi
           echo "no" | avdmanager create avd -n smoke -k "$IMG" -d pixel_6 --force
           echo "SDK_DIR=$SDK" >> "$GITHUB_ENV"
