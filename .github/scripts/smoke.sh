@@ -45,7 +45,9 @@ echo "APK=$APK" | tee /tmp/apk/path.env
 ls -la
 # --- install, launch, verify ---
 adb install -r "$APK"
-adb shell am start -W -n com.xw.vvttts/.ui.SettingsActivity
+PKG="$(adb shell cmd package list packages -3 | grep -m1 -o 'com\.xw\.vvtt[a-z]*')"
+ACT="$(adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER "$PKG" | tail -n 1)"
+adb shell am start -W -n "$ACT"
 sleep 6
 echo "=== resumed activity ==="
 adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -3
@@ -54,9 +56,9 @@ adb pull /sdcard/ui.xml /tmp/ui.xml >/dev/null
 echo "=== settings labels in a11y tree ==="
 grep -o 'text="[^"]*"' /tmp/ui.xml | sort -u | head -60
 echo "=== crash scan ==="
-if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts'; then
+if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in "$PKG"'; then
   echo "CRASH DETECTED"
-  adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts' | tail -20
+  adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in "$PKG"' | tail -20
   exit 1
 fi
 echo "SMOKE_OK"
