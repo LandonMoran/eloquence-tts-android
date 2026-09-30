@@ -414,7 +414,7 @@ class VvTtsService : TextToSpeechService() {
     }
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-    @Volatile private var generation =  ​0
+    @Volatile private var generation =  0
         // The pacing hold waits on this monitor so a generation bump wakes it,and
         // the superseded utterance stops pacing at real-time ( the 10s lag on fast
         // lock->unlock->swipeand the first-boot lock-screen silence(.
