@@ -1,7 +1,7 @@
-name: Emu Smoke (x64 hosted(
+name: Emu Smoke (x64 hosted)
 
 on:
-  workflow_dispatch: { }
+  workflow_dispatch: {}
   push:
     branches: ['fix/**', 'feat/**']
 
@@ -15,23 +15,24 @@ jobs:
       - name: Install Android SDK ( preinstalled or self(
         run: |
           set -euo pipefail
+          CMDT="$HOME/android-sdk/cmdline-tools"
           SDK="$HOME/android-sdk"
-          for root in "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk "$SDK"; do
-            if [ -n "$root" ] && [ -d "$root/system-images" ]; then SDK="$root"; break; fi
+          for root in "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk; do
+            if [ -n "$root" ] && [ -d "$root/emulator" ]; then SDK="$root"; break; fi
           done
           echo "SDK=$SDK"
           df -h / | tail -1
-          echo "--- preinstalled SDK contents ---"
-          ls "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}" 2>/dev/null | tr '\n' ' '; echo
-          du -sh "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}" 2>/dev/null || true
-          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+          echo "--- SDK contents ---"
+          ls "$SDK" 2>/dev/null | tr '\n' ' '; echo
+          du -sh "$SDK" 2>/dev/null || true
+          if [ ! -x "$CMDT/latest/bin/avdmanager" ]; then
             curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-            mkdir -p "$SDK/cmdline-tools" /tmp/cmdtools
+            mkdir -p "$CMDT" /tmp/cmdtools
             unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
-            rm -rf "$SDK/cmdline-tools/latest"
-            mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
+            rm -rf "$CMDT/latest"
+            mv /tmp/cmdtools/cmdline-tools "$CMDT/latest"
           fi
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$CMDT/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
           IMG=""
           for cand in "system-images;android-34;default;x86_64" "system-images;android-34;google_apis;x86_64" "system-images;android-35;default;x86_64"; do
             p=$(echo "$cand" | tr ';' '/')
@@ -41,16 +42,13 @@ jobs:
             echo "Using pre-installed image: $IMG"
           else
             IMG="system-images;android-34;google_apis;x86_64"
-            # Runner image ships a ~10GB preinstalled SDK that fills the 14GB disk;
-            # freeing it before self-installing avoids silent ENOSPC death of sdkmanager.
-            if [ -d /usr/local/lib/android/sdk ]; then
-              echo "--- freeing preinstalled SDK to make room ---"
-              sudo rm -rf /usr/local/lib/android/sdk
-              df -h / | tail -1
-            fi
-            yes | sdkmanager --licenses >/dev/null 2>&1 || true
-            yes | sdkmanager "platform-tools" "emulator" "$IMG"
-            test -d "$SDK/$(echo "$IMG" | tr ';' '/')" || { echo "SDK INSTALL FAILED:"; ls -R "$SDK/system-images" 2>/dev/null | head; exit 1; }
+            echo "--- downloading system image x86_64-34_r14.zip (1.6GB( ---"
+            mkdir -p "$SDK/system-images/android-34/google_apis"
+            curl -fLsS --retry 2 -C - -o /tmp/sysimg.zip https://dl.google.com/android/repository/sys-img/google_apis/x86_64-34_r14.zip
+            sudo unzip -q -o /tmp/sysimg.zip -d "$SDK/system-images/android-34/google_apis"
+            rm -f /tmp/sysimg.zip
+            test -f "$SDK/system-images/android-34/google_apis/x86_64/system.img" || { echo "IMAGE EXTRACT FAILED"; exit 1; }
+            echo "Downloaded+extracted: $IMG"
           fi
           echo "no" | avdmanager create avd -n smoke -k "$IMG" -d pixel_6 --force
           echo "SDK_DIR=$SDK" >> "$GITHUB_ENV"
@@ -73,13 +71,14 @@ jobs:
         run: |
           set -uo pipefail
           SDK="${SDK_DIR:-$HOME/android-sdk}"
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$HOME/android-sdk/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
+          test -x "$SDK/emulator/emulator" || { echo "NO EMULATOR at $SDK/emulator"; exit 1; }
           nohup "$SDK/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-accel -gpu swiftshader_indirect -no-snapshot -wipe-data >/tmp/emu.log 2>&1 &
           EMUPID=$!
           adb wait-for-device
           ok=0
           for i in $(seq 1 240); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r"')" = "1" ]; then ok=1; break; fi
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r"' )" = "1" ]; then ok=1; break; fi
             if ! kill -0 "$EMUPID" 2>/dev/null; then echo "EMULATOR DIED"; tail -20 /tmp/emu.log; exit 1; fi
             sleep 5
           done
