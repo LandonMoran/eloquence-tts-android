@@ -27,7 +27,7 @@ jobs:
           profile: pixel_6
           emulator-boot-timeout: 1800
           script: |
-            set -euo pipefail
+            set -eu
             cd "$GITHUB_WORKSPACE"
             # --- fetch APK from latest successful build-apk run ---
             R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
