@@ -31,7 +31,7 @@ fi
 echo "using build-apk run: $R"
 A=""
 for i in $(seq 1 30); do
-  A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x["id"] for x in d.get("artifacts",[]) if x.get("name","").startswith("vvttts")and not x.get("expired",False)]; print(a[0] if a else "")' || true)
+  A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x["id"] for x in d.get("artifacts",[]) if x.get("name","").startswith(("vvttts", "vvtts"))and not x.get("expired",False)]; print(a[0] if a else "")' || true)
   [ -n "$A" ] && break
   sleep 10
 done
