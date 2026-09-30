@@ -52,11 +52,19 @@ jobs:
           fi
           if [ ! -x "$SDK/emulator/emulator" ]; then
             echo "--- installing emulator + platform-tools via sdkmanager ---"
-            yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-            yes | "$CMDT/latest/bin/sdkmanager" "emulator" "platform-tools"
+            ( set +o pipefail
+              yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+            )
+            ( set +o pipefail
+              yes | "$CMDT/latest/bin/sdkmanager" "emulator" "platform-tools"
+            )
           elif [ ! -x "$SDK/platform-tools/adb" ]; then
-            yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-            yes | "$CMDT/latest/bin/sdkmanager" "platform-tools"
+            ( set +o pipefail
+              yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+            )
+            ( set +o pipefail
+              yes | "$CMDT/latest/bin/sdkmanager" "platform-tools"
+            )
           fi
           echo "no" | avdmanager create avd -n smoke -k "$IMG" -d pixel_6 --force
           echo "SDK_DIR=$SDK" >> "$GITHUB_ENV"
