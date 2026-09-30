@@ -1,5 +1,5 @@
 package com.xw.vvtts.ui
-import com.xw.vvttts.update.UpdateActions
+import com.xw.vvtts.update.UpdateActions
 
 import android.app.Activity
 import android.app.AlertDialog
