@@ -480,7 +480,13 @@ class LanguageDetector {
             if (text.length <	10) {
                 val dl = resolveDefaultLanguage()
                 if (isLatinDialect(dl)) return dl
-                return if (isLatinDialect(fallbackDialect)) fallbackDialect else englishDialect
+                if (isLatinDialect(fallbackDialect)) return fallbackDialect
+                // Pure-ASCII short words are English (loanwords(: they must never
+                // follow a non-Latin context nor a pinned zh/ja/ko default: "release"
+                // was read as Chinese behind a Chinese run (and when the zh pin leaked(.
+                // Latin contexts (de/fr/... keep following the previous segment as before.
+                if (text.all { it ->it <= '\u007F' }) return englishDialect
+                return englishDialect
 
 
 

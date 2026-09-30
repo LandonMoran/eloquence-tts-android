@@ -1,6 +1,7 @@
 package com.xw.vvtts.services
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.media.AudioFormat
 import android.os.UserManager
@@ -86,6 +87,14 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onDestroy() {
+        // Drop every queued utterance on teardown. The delivery executor's
+        // thread keeps draining queued jobs even after the service dies ( hot-swap
+        // tears the service down via unbind/destroy without any stop(,( so the
+        // generation gate is the only thing that keeps them from flushing seconds
+        // later: the reported "two voices at once" / "1-10s dead time" /
+        // lock-screen speech arriving late on unlock. Reboot clears them naturally
+        // ( process death kills the queue(; unbind/destroy must too.
+        generation++
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
@@ -94,6 +103,16 @@ class VvTtsService : TextToSpeechService() {
         } catch (ignore: Throwable) {
         }
         super.onDestroy()
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        // Engine hot-swap ( switching TTS engines in Settings/at lock/unlock(
+        // unbinds the old engine without calling onStop(;drop every queued
+        // utterance so nothing flushes seconds later when the user is already
+        // elsewhere (the "two voices overlapping" and "late 1-10s speech"
+        // reports(.
+        generation++
+        return super.onUnbind(intent)
     }
 
 
@@ -302,7 +321,10 @@ class VvTtsService : TextToSpeechService() {
 
             val pace = Pace(engine!!.getCoreSampleRate())
             for (seg in segments) {
-                if (g != generation) break
+                // In-flight utterances run to completion: stop/swap only drops
+                // queued (not yet started) jobs (the pre-run gate above(; cutting the
+                // current one mid-stream left the lock screen silent and buffered
+                // tails overlapping fresh speech at unlock.
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
@@ -330,12 +352,11 @@ class VvTtsService : TextToSpeechService() {
                     // playback  otherwise swipes/stops drown in the framework's queue
                     var offset = 0
                     while (offset < bytes.size) {
-                        if (g != generation) break
                         val len = Math.min(max, bytes.size - offset)
                         callback.audioAvailable(bytes, offset, len)
                         offset += len
                         pace.handed(len)
-                        hold(pace, g)
+                        hold(pace)
                     }
                 }
             }
@@ -447,9 +468,9 @@ class VvTtsService : TextToSpeechService() {
             fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
         }
 
-        private fun hold(pace: Pace, g: Int) {
+        private fun hold(pace: Pace) {
             var over = pace.aheadMs() - PACE_LEAD_MS
-            while (over > 0L && g == generation) {
+            while (over > 0L) {
                 try {
                     Thread.sleep(minOf(over, 20L))
                 } catch (interrupted: InterruptedException) {
