@@ -1,4 +1,14 @@
 set -eu
+echo "=== smoke.sh trace start $(date +%T) ==="
+for v in GH_TOKEN GITHUB_TOKEN GITHUB_REF GITHUB_WORKSPACE GITHUB_SHA; do
+  if test -n "${!v:-}"; then
+    echo "$v: SET"
+  else
+    echo "$v: EMPTY"
+  fi
+done
+echo "=== smoke.sh first gh call ==="
+set -x
 cd "$GITHUB_WORKSPACE"
 # --- fetch APK from latest successful build-apk run ---
 for i in $(seq 1 60); do
