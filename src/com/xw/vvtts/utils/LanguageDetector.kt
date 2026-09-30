@@ -428,12 +428,8 @@ class LanguageDetector {
                 val cp = text.codePointAt(i)
                 if (Character.isLetter(cp)) {
                     hasLetter = true
-                    val block = Character.UnicodeBlock.of(cp)
-                    if (block != Character.UnicodeBlock.LATIN &&
-                        block != Character.UnicodeBlock.LATIN_EXTENDED_A &&
-                        block != Character.UnicodeBlock.LATIN_EXTENDED_B &&
-                        block != Character.UnicodeBlock.LATIN_EXTENDED_ADDITIONAL &&
-                        block != Character.UnicodeBlock.COMBINING_DIACRITICAL_MARKS) {
+                    val cpIsLatin = (cp in  0x0000..0x024F) || (cp in  0x1E00..0x1EFF)
+                    if (!cpIsLatin) {
                         return false
                     }
                 }
