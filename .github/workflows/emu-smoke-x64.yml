@@ -20,12 +20,12 @@ jobs:
 
       - name: Boot emulator + run smoke ( KVM, same path as emu-lab(
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_6
           emulator-boot-timeout: 1800
-          env:
-            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           script: bash "${GITHUB_WORKSPACE}/.github/scripts/smoke.sh"
