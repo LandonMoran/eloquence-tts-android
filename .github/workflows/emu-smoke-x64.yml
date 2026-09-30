@@ -1,4 +1,4 @@
-name: Emu Smoke (x64 hosted)
+name: Emu Smoke ( x64 hosted(
 
 on:
   workflow_dispatch: {}
@@ -12,137 +12,71 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Android SDK ( preinstalled or self(
+      - name: Enable KVM
         run: |
-          set -euo pipefail
-          CMDT="$HOME/android-sdk/cmdline-tools"
-          SDK="$HOME/android-sdk"
-          for root in "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk; do
-            if [ -n "$root" ] && [ -d "$root/emulator" ]; then SDK="$root"; break; fi
-          done
-          echo "SDK=$SDK"
-          df -h / | tail -1
-          echo "--- SDK contents ---"
-          ls "$SDK" 2>/dev/null | tr '\n' ' ' || true; echo
-          du -sh "$SDK" 2>/dev/null || true
-          if [ ! -x "$CMDT/latest/bin/avdmanager" ]; then
-            curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-            mkdir -p "$CMDT" /tmp/cmdtools
-            unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
-            rm -rf "$CMDT/latest"
-            mv /tmp/cmdtools/cmdline-tools "$CMDT/latest"
-          fi
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$CMDT/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
-          IMG=""
-          for cand in "system-images;android-34;default;x86_64" "system-images;android-34;google_apis;x86_64" "system-images;android-35;default;x86_64"; do
-            p=$(echo "$cand" | tr ';' '/')
-            if [ -d "$SDK/$p" ]; then IMG="$cand"; break; fi
-          done
-          if [ -n "$IMG" ]; then
-            echo "Using pre-installed image: $IMG"
-          else
-            IMG="system-images;android-34;google_apis;x86_64"
-            echo "--- downloading system image x86_64-34_r14.zip (1.6GB( ---"
-            mkdir -p "$SDK/system-images/android-34/google_apis"
-            curl -fLsS --retry 2 -C - -o /tmp/sysimg.zip https://dl.google.com/android/repository/sys-img/google_apis/x86_64-34_r14.zip
-            sudo unzip -q -o /tmp/sysimg.zip -d "$SDK/system-images/android-34/google_apis"
-            rm -f /tmp/sysimg.zip
-            test -f "$SDK/system-images/android-34/google_apis/x86_64/system.img" || { echo "IMAGE EXTRACT FAILED"; exit 1; }
-            echo "Downloaded+extracted: $IMG"
-          fi
-          if [ ! -x "$SDK/emulator/emulator" ]; then
-            echo "--- installing emulator + platform-tools via sdkmanager ---"
-            ( set +o pipefail
-              yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-            )
-            ( set +o pipefail
-              yes | "$CMDT/latest/bin/sdkmanager" "emulator" "platform-tools"
-            )
-          elif [ ! -x "$SDK/platform-tools/adb" ]; then
-            ( set +o pipefail
-              yes | "$CMDT/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-            )
-            ( set +o pipefail
-              yes | "$CMDT/latest/bin/sdkmanager" "platform-tools"
-            )
-          fi
-          echo "no" | avdmanager create avd -n smoke -k "$IMG" -d pixel_6 --force
-          echo "SDK_DIR=$SDK" >> "$GITHUB_ENV"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
 
-      - name: Fetch latest x86_64 test APK from build-apk.yml
+      - name: Boot emulator + run smoke ( KVM, same path as emu-lab(
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 1800
+          script: |
+            set -euo pipefail
+            cd "$GITHUB_WORKSPACE"
+            # --- fetch APK from latest successful build-apk run ---
+            R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$R" ] || { echo "no build-apk run on this branch"; exit 1; }
+            echo "latest build-apk run: $R"
+            for i in $(seq 1 180); do
+              C=$(gh run view "$R" --json status,conclusion --jq 'if .status=="completed" then .conclusion else "in_progress" end')
+              [ "$C" = "success" ] && break
+              [ "$C" != "in_progress" ] && { echo "latest build-apk run concluded: $C"; R=""; break; }
+              sleep 10
+            done
+            if [ -z "$R" ]; then
+              R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
+            fi
+            [ -n "$R" ] || { echo "no successful build-apk run found"; exit 1; }
+            echo "using build-apk run: $R"
+            A=""
+            for i in $(seq 1 30); do
+              A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x["id"] for x in d.get("artifacts",[]) if x.get("name","").startswith("vvttts")and not x.get("expired",False)]; print(a[0] if a else "")' || true)
+              [ -n "$A" ] && break
+              sleep 10
+            done
+            [ -n "$A" ] || { echo "no vvttts artifact on run $R"; exit 1; }
+            echo "artifact id: $A"
+            mkdir -p /tmp/apk && cd /tmp/apk
+            gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/actions/artifacts/$A/zip" > art.zip
+            unzip -q -o art.zip
+            APK=$(find . -name "*.apk" | head -1)
+            echo "APK=$APK" | tee /tmp/apk/path.env
+            ls -la
+            # --- install, launch, verify ---
+            adb install -r "$APK"
+            adb shell am start -W -n com.xw.vvttts/.ui.SettingsActivity
+            sleep 6
+            echo "=== resumed activity ==="
+            adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -3
+            adb shell uiautomator dump /sdcard/ui.xml >/dev/null
+            adb pull /sdcard/ui.xml /tmp/ui.xml >/dev/null
+            echo "=== settings labels in a11y tree ==="
+            grep -o 'text="[^"]*"' /tmp/ui.xml | sort -u | head -60
+            echo "=== crash scan ==="
+            if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts'; then
+              echo "CRASH DETECTED"
+              adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts' | tail -20
+              exit 1
+            fi
+            echo "SMOKE_OK"
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
-          R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-          [ -n "$R" ] || { echo "no build-apk run on this branch"; exit 1; }
-          echo "latest build-apk run: $R"
-          for i in $(seq 1 180); do
-            C=$(gh run view "$R" --json status,conclusion --jq 'if .status=="completed" then .conclusion else "in_progress" end')
-            [ "$C" = "success" ] && break
-            [ "$C" != "in_progress" ] && { echo "latest build-apk run concluded: $C"; R=""; break; }
-            sleep  10
-          done
-          if [ -z "$R" ]; then
-            R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
-          fi
-          [ -n "$R" ] || { echo "no successful build-apk run found"; exit 1; }
-          echo "using build-apk run: $R"
-          A=""
-          for i in $(seq 1 30); do
-            A=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$R/artifacts" | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x["id"] for x in d.get("artifacts",[]) if x.get("name","").startswith("vvttts") and not x.get("expired",False)]; print(a[0] if a else "")' || true)
-            [ -n "$A" ] && break
-            sleep  10
-          done
-          [ -n "$A" ] || { echo "no vvttts artifact on run $R"; exit 1; }
-          echo "artifact id: $A"
-          mkdir -p /tmp/apk && cd /tmp/apk
-          gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/actions/artifacts/$A/zip" > art.zip
-          unzip -q -o art.zip
-          APK=$(find . -name "*.apk" | head -1)
-          echo "APK=$APK" | tee /tmp/apk/path.env
-          ls -la
-
-      - name: Boot emulator ( software accel(
-        run: |
-          set -uo pipefail
-          SDK="${SDK_DIR:-$HOME/android-sdk}"
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$HOME/android-sdk/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
-          test -x "$SDK/emulator/emulator" || { echo "NO EMULATOR at $SDK/emulator"; exit 1; }
-          nohup "$SDK/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-accel -gpu swiftshader_indirect -no-snapshot -wipe-data >/tmp/emu.log 2>&1 &
-          EMUPID=$!
-          adb wait-for-device
-          ok=0
-          for i in $(seq 1 240); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r"' )" = "1" ]; then ok=1; break; fi
-            if ! kill -0 "$EMUPID" 2>/dev/null; then echo "EMULATOR DIED"; tail -20 /tmp/emu.log; exit 1; fi
-            sleep 5
-          done
-          if [ "$ok" != "1" ]; then echo "BOOT TIMEOUT"; tail -20 /tmp/emu.log; exit 1; fi
-          echo "BOOT_COMPLETED"
-
-      - name: Install, launch, verify
-        run: |
-          set -euo pipefail
-          export PATH="${SDK_DIR:-$HOME/android-sdk}/platform-tools:$PATH"
-          source /tmp/apk/path.env
-          adb install -r "$APK"
-          adb shell am start -W -n com.xw.vvtts/.ui.SettingsActivity
-          sleep 6
-          echo "=== resumed activity ==="
-          adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -3
-          adb shell uiautomator dump /sdcard/ui.xml >/dev/null
-          adb pull /sdcard/ui.xml /tmp/ui.xml >/dev/null
-          echo "=== settings labels in a11y tree ==="
-          grep -o 'text="[^"]*"' /tmp/ui.xml | sort -u | head -60
-          echo "=== crash scan ==="
-          if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvtts'; then
-            echo "CRASH DETECTED"
-            adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvtts' | tail -20
-            exit 1
-          fi
-          echo "SMOKE_OK"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload a11y dump
         if: always()
