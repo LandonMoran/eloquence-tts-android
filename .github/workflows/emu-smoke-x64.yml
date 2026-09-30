@@ -20,6 +20,10 @@ jobs:
             if [ -n "$root" ] && [ -d "$root/system-images" ]; then SDK="$root"; break; fi
           done
           echo "SDK=$SDK"
+          df -h / | tail -1
+          echo "--- preinstalled SDK contents ---"
+          ls "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}" 2>/dev/null | tr '\n' ' '; echo
+          du -sh "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}" 2>/dev/null || true
           if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
             curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
             mkdir -p "$SDK/cmdline-tools" /tmp/cmdtools
@@ -37,6 +41,13 @@ jobs:
             echo "Using pre-installed image: $IMG"
           else
             IMG="system-images;android-34;google_apis;x86_64"
+            # Runner image ships a ~10GB preinstalled SDK that fills the 14GB disk;
+            # freeing it before self-installing avoids silent ENOSPC death of sdkmanager.
+            if [ -d /usr/local/lib/android/sdk ]; then
+              echo "--- freeing preinstalled SDK to make room ---"
+              sudo rm -rf /usr/local/lib/android/sdk
+              df -h / | tail -1
+            fi
             yes | sdkmanager --licenses >/dev/null 2>&1 || true
             yes | sdkmanager "platform-tools" "emulator" "$IMG"
             test -d "$SDK/$(echo "$IMG" | tr ';' '/')" || { echo "SDK INSTALL FAILED:"; ls -R "$SDK/system-images" 2>/dev/null | head; exit 1; }
