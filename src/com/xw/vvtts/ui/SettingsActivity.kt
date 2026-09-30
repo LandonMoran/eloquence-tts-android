@@ -197,7 +197,6 @@ class SettingsActivity : Activity() {
         aboutBtnLocal.text = getString(R.string.about_row)
         aboutBtnLocal.setOnClickListener { showAboutDialog() }
         
-        mainContainer.addView(outer)  // Add the padded outer container
         scroll.addView(mainContainer)
         outer.addView(scroll)
         setContentView(outer)
