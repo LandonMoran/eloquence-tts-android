@@ -26,7 +26,7 @@ class VoiceProfile(context: Context) {
     }
 
     val preset: Int
-        get() = prefs.getInt(KEY_PRESET, 1)
+        get() = devicePrefs.getInt(KEY_PRESET, 1)
 
     fun setPreset(n: Int) {
         var v = n
@@ -37,13 +37,13 @@ class VoiceProfile(context: Context) {
 
     /** Whether the given param has a custom override for this preset */
     fun hasOverride(preset: Int, param: Int): Boolean {
-        return prefs.contains(overrideKey(preset, param))
+        return devicePrefs.contains(overrideKey(preset, param))
     }
 
     /** Get a preset's param value: custom override first, else KonaVoice default */
     fun getParam(preset: Int, param: Int): Int {
         val key = overrideKey(preset, param)
-        if (prefs.contains(key)) return prefs.getInt(key, 0)
+        if (devicePrefs.contains(key)) return devicePrefs.getInt(key, 0)
         val customVoice = KonaVoice.byPreset(preset)
         return customVoice.param(param)
     }

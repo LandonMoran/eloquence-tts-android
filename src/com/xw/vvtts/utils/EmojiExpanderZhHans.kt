@@ -14,17 +14,42 @@ package com.xw.vvtts.utils
 class EmojiExpanderZhHans {
     companion object {
         private val NAMES: Map<String, String> = buildMap {
-            putAll(EMOJI_ZHANS_01)
-            putAll(EMOJI_ZHANS_02)
-            putAll(EMOJI_ZHANS_03)
-            putAll(EMOJI_ZHANS_04)
-            putAll(EMOJI_ZHANS_05)
-            putAll(EMOJI_ZHANS_06)
-            putAll(EMOJI_ZHANS_07)
-            putAll(EMOJI_ZHANS_08)
-            putAll(EMOJI_ZHANS_09)
-            putAll(EMOJI_ZHANS_10)
+            putAll(EMOJI_ZHANS_01.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_02.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_03.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_04.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_05.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_06.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_07.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_08.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_09.mapKeys { (k, _) -> unescape(k) })
+            putAll(EMOJI_ZHANS_10.mapKeys { (k, _) -> unescape(k) })
         }
+
+        /** CLDR tables store emoji code points as literal text: backslash, then 'u',
+         *  then 4 hex digits (e.g. the 6-char sequence backslash-u-D-8-3-D). That breaks
+         *  longest-match: codePointAt(0) of such a key yields the backslash char, so
+         *  KEY_START_CPS never contains a real emoji code point and expand() silently
+         *  passes emoji through unexpanded (the engine has no emoji lexicon, so it stays
+         *  silent). Convert the literal escapes to real chars once, when the lookup table
+         *  loads, so the longest-match scan below runs on real sequences. */
+        private fun unescape(s: String): String {
+            if (!s.any { it.code == 0x5C }) return s
+            val sb = StringBuilder(s.length)
+            var i = 0
+            while (i < s.length) {
+                val c = s[i]
+                if (c.code == 0x5C && i + 5 < s.length && s[i + 1] == 'u') {
+                    sb.append(String(Character.toChars(Integer.parseInt(s.substring(i + 2, i + 6), 16))))
+                    i += 6
+                } else {
+                    sb.append(c)
+                    i += 1
+                }
+            }
+            return sb.toString()
+        }
+
         private val SORTED_KEYS: List<String> = NAMES.keys.sortedByDescending { it.length }
 
         /** Strip bare emoji components (no-name codepoints used inside sequences). */

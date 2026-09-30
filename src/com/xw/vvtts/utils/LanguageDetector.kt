@@ -416,13 +416,39 @@ class LanguageDetector {
             return if (dl >= 0) dl else englishDialect
         }
 
+        /** True when the segment has at least one letter and every letter belongs to a
+         *  Latin script block (Basic Latin, Latin-1 Supplement, Latin Extended A/B,
+         *  Latin Extended Additional, Combining Diacritical Marks). CJK/Hangul/
+         *  Hiragana/Katakana runs return false so genuine CJK text is left alone.
+         *  Pure-ASCII runs like "release" return true. */
+        private fun isAllLatinRun(text: String): Boolean {
+            var hasLetter = false
+            var i = 0
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                if (Character.isLetter(cp)) {
+                    hasLetter = true
+                    val block = Character.UnicodeBlock.of(cp)
+                    if (block != Character.UnicodeBlock.LATIN &&
+                        block != Character.UnicodeBlock.LATIN_EXTENDED_A &&
+                        block != Character.UnicodeBlock.LATIN_EXTENDED_B &&
+                        block != Character.UnicodeBlock.LATIN_EXTENDED_ADDITIONAL &&
+                        block != Character.UnicodeBlock.COMBINING_DIACRITICAL_MARKS) {
+                        return false
+                    }
+                }
+                i += Character.charCount(cp)
+            }
+            return hasLetter
+        }
+
         /** Emit the current run as a Segment;Latin runs get refined by Lingua */
         private fun flushSegment(sb: StringBuilder, type: Int, fallbackDialect: Int, out: MutableList<Segment>) {
             if (sb.length == 0) return
             val text = sb.toString()
             sb.setLength(0)
 
-            val dialect: Int
+            var dialect: Int
             if (type == 3) {
                 // Latin run:Lingua detection(which re-checks the whitelist inside)
                 dialect = detectLatin(text, fallbackDialect)
@@ -442,6 +468,17 @@ class LanguageDetector {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
             }
+            // HARD INVARIANT: a run whose letters are ALL Latin must never be spoken with a
+            // CJK dialect. "release" (pure A-Z) was once spoken as Chinese because
+            // detectLatin()/resolveDefaultLanguage() fall back to defaultDialect=zh on
+            // uncertain single-word runs and digit-run fallbacks, and a CJK branch can
+            // otherwise route Latin text into a CJK dialect. Force the en-US Latin floor
+            // whenever the resolved dialect is not itself Latin. The only intentional
+            // exception — fixed-dialect mode consciously pinned zh by the user — never
+            // reaches here: the fixed-language path short-circuits in segment() to emit the
+            // whole run with fixedDialect directly, so flushSegment always runs with detection
+            // ON.
+            if (isAllLatinRun(text) && !isLatinDialect(dialect)) dialect = englishDialect
             out.add(Segment(text, dialect))
         }
 
