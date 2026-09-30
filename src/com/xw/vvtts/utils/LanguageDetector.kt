@@ -438,6 +438,19 @@ class LanguageDetector {
             return hasLetter
         }
 
+        /** True when the run contains stray General-Punctuation-block characters that
+         *  Lingua's n-grams can't make sense of (em/en-dashes, curly quotes, bullets,
+         *  ellipses(. Spanish/Portuguese inverted marks(¿¡( and guillemets(«»( are
+         *  excluded:they're genuine language markers outside the General Punctuation block. */
+        private fun hasStrayGeneralPunct(text: String): Boolean {
+            var i = text.length
+            while (--i >= 0) {
+                val cp = text.codePointAt(i)
+                if (cp in  0x2010..0x202F) return true
+            }
+            return false
+        }
+
         /** Emit the current run as a Segment;Latin runs get refined by Lingua */
         private fun flushSegment(sb: StringBuilder, type: Int, fallbackDialect: Int, out: MutableList<Segment>) {
             if (sb.length == 0) return
@@ -474,7 +487,26 @@ class LanguageDetector {
             // reaches here: the fixed-language path short-circuits in segment() to emit the
             // whole run with fixedDialect directly, so flushSegment always runs with detection
             // ON.
-            if (isAllLatinRun(text) && !isLatinDialect(dialect)) dialect = englishDialect
+            val dl = resolveDefaultLanguage()
+            if (isAllLatinRun(text)) {
+                if (!isLatinDialect(dialect)) {
+                    // non-Latin guess on an all-Latin run ("release" -> zh):hard English floor
+                    dialect = englishDialect
+                } else if (hasStrayGeneralPunct(text)) {
+                    // Lingua's n-grams are unreliable on runs cluttered with stray
+                    // General-Punctuation-block chars("That em-dash —(U+" scored pt-BR;
+                    // "minutes copied — pure ASCII check" scored Italian(). The old floor
+                    // only covered non-Latin dialects,so these Latin misdetects passed.
+
+                    // Floor to the user's pinned Latin default when set(their voice),else
+                    // English. Finnish/Portuguese/etc-default users keep their own voice;
+                    // English-default users get clean en-US.no more random accents.
+
+                    val latinFloor = if (dl >= 0 && isLatinDialect(dl)) dl else englishDialect
+
+                    if (dialect != latinFloor) dialect = latinFloor
+                }
+            }
             out.add(Segment(text, dialect))
         }
 
