@@ -14,7 +14,7 @@ jobs:
 
       - name: Install Android SDK packages ( emulator + x86_64 image(
         run: |
-          set -euo pipelo
+          set -euo pipefail
           SDK="$HOME/android-sdk"
           if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
             curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
@@ -36,7 +36,7 @@ jobs:
 
       - name: Fetch latest x86_64 test APK from build-apk.yml
         run: |
-          set -euo pipelo
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE"
           R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId')
           echo "latest build-apk run: $R"
@@ -50,7 +50,7 @@ jobs:
 
       - name: Boot emulator ( software accel(
         run: |
-          set -uo pipelo
+          set -uo pipefail
           SDK="$HOME/android-sdk"
           export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
           nohup "$SDK/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-accel -gpu swiftshader_indirect -no-snapshot -wipe-data >/tmp/emu.log 2>&1 &
@@ -59,7 +59,7 @@ jobs:
           ok=0
           for i in $(seq 1 240); do
             if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r"')" = "1" ]; then ok=1; break; fi
-            if ! kill -0 " $EMUPID 2>/dev/null; then echo "EMULATOR DIED"; tail -20 /tmp/emu.log; exit 1; fi
+            if ! kill -0 "$EMUPID" 2>/dev/null; then echo "EMULATOR DIED"; tail -20 /tmp/emu.log; exit 1; fi
             sleep 5
           done
           if [ "$ok" != "1" ]; then echo "BOOT TIMEOUT"; tail -20 /tmp/emu.log; exit 1; fi
@@ -67,11 +67,11 @@ jobs:
 
       - name: Install, launch, verify
         run: |
-          set -euo pipelo
+          set -euo pipefail
           export PATH="$HOME/android-sdk/platform-tools:$PATH"
           source /tmp/apk/path.env
           adb install -r "$APK"
-          adb shell am start -W -n com.xw.vvttts/.ui.SettingsActivity 2>/dev/null || adb shell am start -W -n com.xw.vvtts/.ui.SettingsActivity
+          adb shell am start -W -n com.xw.vvtts/.ui.SettingsActivity
           sleep 6
           echo "=== resumed activity ==="
           adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -3
@@ -80,9 +80,9 @@ jobs:
           echo "=== settings labels in a11y tree ==="
           grep -o 'text="[^"]*"' /tmp/ui.xml | sort -u | head -60
           echo "=== crash scan ==="
-          if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts'; then
+          if adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvtts'; then
             echo "CRASH DETECTED"
-            adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvttts' | tail -20
+            adb logcat -d | grep -iE 'FATAL EXCEPTION|StackOverflowError|ANR in com.xw.vvtts' | tail -20
             exit 1
           fi
           echo "SMOKE_OK"
