@@ -22,7 +22,7 @@ jobs:
             unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
             mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
           fi
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
           sdk() {
             for i in  1 2 3; do
               if "$SDK/cmdline-tools/latest/bin/sdkmanager" "$@"; then return 0; fi
@@ -52,7 +52,7 @@ jobs:
         run: |
           set -uo pipefail
           SDK="$HOME/android-sdk"
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK" PATH="$SDK/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
           nohup "$SDK/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-accel -gpu swiftshader_indirect -no-snapshot -wipe-data >/tmp/emu.log 2>&1 &
           EMUPID=$!
           adb wait-for-device
