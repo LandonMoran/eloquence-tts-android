@@ -94,7 +94,7 @@ class VvTtsService : TextToSpeechService() {
         // later: the reported "two voices at once" / "1-10s dead time" /
         // lock-screen speech arriving late on unlock. Reboot clears them naturally
         // ( process death kills the queue(; unbind/destroy must too.
-        generation++
+        bumpGeneration()
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
@@ -111,7 +111,7 @@ class VvTtsService : TextToSpeechService() {
         // utterance so nothing flushes seconds later when the user is already
         // elsewhere (the "two voices overlapping" and "late 1-10s speech"
         // reports(.
-        generation++
+        bumpGeneration()
         return super.onUnbind(intent)
     }
 
@@ -233,7 +233,7 @@ class VvTtsService : TextToSpeechService() {
         // by 10-20s and breaks ("keeps up a moment, then dies"(. In-flight
         // speech still runs to completion (the engine cannot abandon it(; only jobs
         // waiting behind it -- thus already stale -- are dropped.
-        generation++
+        bumpGeneration()
         val g = generation
         deliveryExecutor.execute(Runnable {
             if (g == generation) {
@@ -337,10 +337,12 @@ class VvTtsService : TextToSpeechService() {
 
             val pace = Pace(engine!!.getCoreSampleRate())
             for (seg in segments) {
-                // In-flight utterances run to completion: stop/swap only drops
-                // queued (not yet started) jobs (the pre-run gate above(; cutting the
-                // current one mid-stream left the lock screen silent and buffered
-                // tails overlapping fresh speech at unlock.
+                                // A superseded utterance stops delivering new chunks:the framework
+                // audio already handed keeps playing; we just stop feeding it so the
+                // newest request speaks promptly instead of waiting out the prior
+                // utterance's real-time pacing remainder ( the ~10s lag on fast
+                // lock->unlock->swipe). In no case is start+done left dangling( finally(.
+                if (g != generation) break
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
@@ -368,11 +370,12 @@ class VvTtsService : TextToSpeechService() {
                     // playback  otherwise swipes/stops drown in the framework's queue
                     var offset = 0
                     while (offset < bytes.size) {
+                        if (g != generation) break
                         val len = Math.min(max, bytes.size - offset)
                         callback.audioAvailable(bytes, offset, len)
                         offset += len
                         pace.handed(len)
-                        hold(pace)
+                        hold(pace, g)
                     }
                 }
             }
@@ -411,9 +414,17 @@ class VvTtsService : TextToSpeechService() {
     }
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-    @Volatile private var generation = 0
-        override fun onStop() {
+    @Volatile private var generation =  ​0
+        // The pacing hold waits on this monitor so a generation bump wakes it,and
+        // the superseded utterance stops pacing at real-time ( the 10s lag on fast
+        // lock->unlock->swipeand the first-boot lock-screen silence(.
+        private val paceLock = Object()
+        private fun bumpGeneration() {
             generation++
+            synchronized(paceLock) { paceLock.notifyAll() }
+        }
+            override fun onStop() {
+            bumpGeneration()
             if (engine != null) engine!!.stop()
         }
 
@@ -484,15 +495,21 @@ class VvTtsService : TextToSpeechService() {
             fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
         }
 
-        private fun hold(pace: Pace) {
-            var over = pace.aheadMs() - PACE_LEAD_MS
-            while (over > 0L) {
-                try {
-                    Thread.sleep(minOf(over, 20L))
-                } catch (interrupted: InterruptedException) {
-                    break
+        private fun hold(pace: Pace, g: Int) {
+            // Wait until the playhead is caught up -- or a generation bump wakes us;
+            // the bump returns hold early, so the caller's gate check aborts the
+            // superseded utterance instead of sleeping out its real-time remainder
+            // (that sleep is what caused the ~10s lag and the first-boot lock-screen silence(.
+            synchronized(paceLock) {
+                var over = pace.aheadMs() - PACE_LEAD_MS
+                while (over > 0L && g == generation) {
+                    try {
+                        paceLock.wait(minOf(over, 20L))
+                    } catch (interrupted: InterruptedException) {
+                        break
+                    }
+                    over = pace.aheadMs() - PACE_LEAD_MS
                 }
-                over = pace.aheadMs() - PACE_LEAD_MS
             }
         }
 
