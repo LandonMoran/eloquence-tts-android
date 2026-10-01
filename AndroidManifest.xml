@@ -18,14 +18,16 @@
              ( before first unlock(. Settings are mirrored to device-protected storage
              by the service each time it starts unlocked; the first-ever locked start
              uses defaults. -->
+        <!-- 2026-10-01 regression: a cold `:tts` process could reply to a voice
+            query with an exception-status parcel before it was ready, which Settings
+            decodes as an NPE. Fix: never-throw guards on all voice-family methods
+            ( voiceSafe( so cold queries reply validly;the `:tts` isolation stays
+            so synthesis load never janks the app's UI thread or dies with it. -->
         <service
             android:name=".services.VvTtsService"
             android:label="Eloquence TTS"
             android:exported="true"
-            <!-- 2026-10-01 regression: the :tts child process surfaced as
-                 Settings NPE (Parcel.createExceptionOrNull( on Android  ‌17 voice
-                 queries bound before the cold process was ready. Keeping the engine
-                 in the app process restores the previously-working configuration. -->
+            android:process=":tts"
             android:stopWithTask="false"
             android:permission="android.permission.BIND_TEXT_TO_SPEECH"
             android:directBootAware="true">
