@@ -1,4 +1,5 @@
 package com.xw.vvtts.ui
+import com.xw.vvtts.update.UpdateActions
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -70,167 +71,136 @@ class SettingsActivity : Activity() {
         if ("chinese" == autotest) {
             Handler(Looper.getMainLooper()).postDelayed({ testSpeech() }, 3000)
         } else if ("german" == autotest) {
-                    // Legacy hook: compare three English voices (validates voice params)
-                    Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
-                } else if ("crash" == autotest) {
-                    val hkText = intent?.getStringExtra("crashtext")
-                        ?: "Hello, this is a speech synthesis test."
-                    Handler(Looper.getMainLooper()).postDelayed({ testCrash(hkText) }, 3000)
-                }
+            // Legacy hook: compare three English voices (validates voice params)
+            Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
+        } else if ("crash" == autotest) {
+            val hkText = intent?.getStringExtra("crashtext")
+                    ?: "Hello, this is a speech synthesis test."
+            Handler(Looper.getMainLooper()).postDelayed({ testCrash(hkText) }, 3000)
+        }
         // Apply the current role config automatically
-        // ---- Tab bar (RadioGroup so TalkBack announces "radio button, checked") ----
-                val outer = LinearLayout(this)
-                outer.orientation = LinearLayout.VERTICAL
-                outer.setPadding(dp(16), dp(16), dp(16), dp(16))
-                val title = TextView(this)
-                title.text = getString(R.string.title_main)
-                title.textSize =  24f
-                title.setTextColor(getColor(R.color.m3_on_surface))
-                val tlLp = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                tlLp.setMargins(dp(4), dp(4),0,dp(8))
-                title.layoutParams = tlLp
-                outer.addView(title)
-                val tabGroup = RadioGroup(this)
-                tabGroup.orientation = RadioGroup.HORIZONTAL
-                val tabIds = intArrayOf(1,2,3,4,5)
-                val tabLabels = arrayOf(
-                    getString(R.string.tab_voice),
-                    getString(R.string.tab_speech),
-                    getString(R.string.tab_reading),
-                    getString(R.string.tab_detection),
-                    getString(R.string.tab_tools),
-                )
-                for (i in tabIds.indices) {
-                    val rb = RadioButton(this)
-                    rb.id = tabIds[i]
-                    rb.text = if (i == 3) getString(R.string.tab_detection_short) else tabLabels[i]
-                    rb.contentDescription = tabLabels[i]
-                    rb.textSize =  14f
-                    rb.minHeight = dp(48)
-                    rb.setPadding(dp(8), dp(4), dp(8), dp(4))
-                    tabGroup.addView(rb, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                }
-                outer.addView(tabGroup)
-                // ---- Scroll + per-tab panels ----
-                val scroll = ScrollView(this)
-                val panels = LinearLayout(this)
-                panels.orientation = LinearLayout.VERTICAL
-                val panelVoice = LinearLayout(this)
-                panelVoice.orientation = LinearLayout.VERTICAL
-                panelVoice.setPadding(0, dp(8),0,0)
-                val panelSpeech = LinearLayout(this)
-                panelSpeech.orientation = LinearLayout.VERTICAL
-                panelSpeech.setPadding(0, dp(8),0,0)
-                val panelReading = LinearLayout(this)
-                panelReading.orientation = LinearLayout.VERTICAL
-                panelReading.setPadding(0, dp(8),0,0)
-                val panelDetection = LinearLayout(this)
-                panelDetection.orientation = LinearLayout.VERTICAL
-                panelDetection.setPadding(0, dp(8),0,0)
-                val panelTools = LinearLayout(this)
-                panelTools.orientation = LinearLayout.VERTICAL
-                panelTools.setPadding(0, dp(8),0,0)
-                val allPanels = arrayOf(panelVoice, panelSpeech, panelReading, panelDetection, panelTools)
-                tabGroup.setOnCheckedChangeListener { _, checkedId ->
-                    for (i in allPanels.indices) {
-                        allPanels[i].visibility = if (tabIds[i] == checkedId) View.VISIBLE else View.GONE
-                }
-                }
-                // ---- Voice tab: preset voice + spoken voice + test ----
-                addSectionHeader(panelVoice, R.string.sec_voice)
-                val presetBtnLocal = addRow(this, panelVoice)
-                presetBtn = presetBtnLocal
-                presetRow = presetBtnLocal.parent as? LinearLayout
-                presetBtnLocal.setOnClickListener {
-                    startActivityForResult(Intent(this, VoiceProfileActivity::class.java), REQ_PROFILE)
-                }
-                refreshPresetButton(presetBtnLocal)
-                val voiceBtnLocal = addRow(this, panelVoice)
-                voiceBtn = voiceBtnLocal
-                voiceBtnLocal.setOnClickListener { showVoiceDialog() };
-                refreshVoiceButton(voiceBtnLocal)
-                val langSwitchLocal = addSwitchRow(panelVoice, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
-                                    LanguageDetector.setDetectionEnabled(on)
-                                    voiceConfig!!.setAutoDetect(on)
-                                    if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
-                                    saveLanguageSettings()
-                                    refreshLanguageUi()
-                                    voiceBtn?.let { refreshVoiceButton(it) }
-                                    updateChineseGuard()
-                                }
-                                langSwitch = langSwitchLocal
-                                val langFixedBtnLocal = addRow(this, panelVoice)
-                                langFixedBtn = langFixedBtnLocal
-                                langFixedBtnLocal.setOnClickListener { showLanguageDialog() }
-                                addFilledButton(panelVoice, R.string.test, dp(16)).setOnClickListener { testSpeech() };
-                                refreshLanguageUi()
-                                // ---- Voice character: head size/roughness/breathiness/inflection (IBMTTS-style) ----
-                                val charSectionLocal = LinearLayout(this)
-                                charSectionLocal.orientation = LinearLayout.VERTICAL
-                                addSectionHeader(charSectionLocal, R.string.sec_voice_char)
-                                addVoiceCharSliders(charSectionLocal)
-                                addNoteRow(charSectionLocal, R.string.voice_char_note)
-                                val resetPresetBtnLocal = addRow(this, charSectionLocal)
-                                resetPresetBtnLocal.text = getString(R.string.reset_preset_button)
-                                resetPresetBtnLocal.setOnClickListener {
-                                    val vp = voiceProfile
-                                    if (vp == null) return@setOnClickListener
-                                    vp.resetPreset(vp.preset)
-                                    refreshVoiceCharSliders()
-                                    Toast.makeText(this, getString(R.string.reset_preset_done, VoiceProfile.PRESET_NAMES[vp.preset - 1]), Toast.LENGTH_SHORT).show()
-                                }
-                                panelVoice.addView(charSectionLocal)
-                                charSection = charSectionLocal
-                                addChineseVoiceGuard(panelVoice)
-                                updateChineseGuard()
-                // ---- Speech tab: pitch/volume ----
-                addSectionHeader(panelSpeech, R.string.sec_speech)
-                pitchVal = addSeekBar(panelSpeech, getString(R.string.pitch), voiceConfig!!.pitch,0,100) { v ->
-                    voiceConfig!!.setPitch(v)
-                    pitchVal!!.text = getString(R.string.pitch_fmt, v)
-                };
-                volumeVal = addSeekBar(panelSpeech, getString(R.string.volume), voiceConfig!!.volume,0,100) { v ->
-                    voiceConfig!!.setVolume(v)
-                    volumeVal!!.text = getString(R.string.volume_fmt, v)
-                };
-                // ---- Reading tab: punctuation ----
-                addSectionHeader(panelReading, R.string.sec_reading)
-                val punctBtnLocal = addRow(this, panelReading)
-                punctBtn = punctBtnLocal
-                punctBtnLocal.setOnClickListener { showPunctuationDialog() };
-                refreshPunctButton(punctBtnLocal)
-                val numberBtnLocal = addRow(this, panelReading)
-                numberBtn = numberBtnLocal
-                numberBtnLocal.setOnClickListener { showNumberDialog() };
-                refreshNumberButton(numberBtnLocal)
-                // ---- Detection tab: language picker + detection settings ----
-                val langDetectBtn = addRow(this, panelDetection)
-                langDetectBtn.text = getString(R.string.lang_detect_button)
-                langDetectBtn.setOnClickListener { showDetectionSettingsDialog() };
-                // ---- Tools tab: dictionary, reset, about ----
-                addSectionHeader(panelTools, R.string.sec_dictionary)
-                val dictBtnLocal = addRow(this, panelTools)
-                dictBtnLocal.text = getString(R.string.user_dict_button)
-                dictBtnLocal.setOnClickListener { showDictMenuDialog() };
-                addSectionHeader(panelTools, R.string.sec_maintenance)
-                val resetBtnLocal = addRow(this, panelTools)
-                resetBtnLocal.text = getString(R.string.reset_button)
-                resetBtnLocal.setOnClickListener { confirmResetDefaults() };
-                val aboutBtnLocal = addRow(this, panelTools)
-                aboutBtnLocal.text = getString(R.string.about_row)
-                aboutBtnLocal.setOnClickListener { showAboutDialog() };
-                panels.addView(panelVoice)
-                panels.addView(panelSpeech)
-                panels.addView(panelReading)
-                panels.addView(panelDetection)
-                panels.addView(panelTools)
-                scroll.addView(panels)
-                outer.addView(scroll)
-                setContentView(outer)
-                tabGroup.check(tabIds[0])
-            }
-
+        
+        // ---- SINGLE SCREEN SETTINGS ----
+        val outer = LinearLayout(this)
+        outer.orientation = LinearLayout.VERTICAL
+        outer.setPadding(dp(16), dp(16), dp(16), dp(16))
+        
+        val scroll = ScrollView(this)
+        val mainContainer = LinearLayout(this)
+        mainContainer.orientation = LinearLayout.VERTICAL
+        
+        // Title
+        val title = TextView(this)
+        title.text = getString(R.string.title_main)
+        title.textSize = 24f
+        title.setTextColor(getColor(R.color.m3_on_surface))
+        val tlLp = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        tlLp.setMargins(dp(4), dp(4), 0, dp(8))
+        title.layoutParams = tlLp
+        mainContainer.addView(title)
+        
+        // ===== SPEECH SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_speech)
+        pitchVal = addSeekBar(mainContainer, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100) { v ->
+            voiceConfig!!.setPitch(v)
+            pitchVal!!.text = getString(R.string.pitch_fmt, v)
+        }
+        volumeVal = addSeekBar(mainContainer, getString(R.string.volume), voiceConfig!!.volume, 0, 100) { v ->
+            voiceConfig!!.setVolume(v)
+            volumeVal!!.text = getString(R.string.volume_fmt, v)
+        }
+        
+        // ===== VOICE SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_voice)
+        val presetBtnLocal = addRow(this, mainContainer)
+        presetBtn = presetBtnLocal
+        presetRow = presetBtnLocal.parent as? LinearLayout
+        presetBtnLocal.setOnClickListener {
+            startActivityForResult(Intent(this, VoiceProfileActivity::class.java), REQ_PROFILE)
+        }
+        refreshPresetButton(presetBtnLocal)
+        val voiceBtnLocal = addRow(this, mainContainer)
+        voiceBtn = voiceBtnLocal
+        voiceBtnLocal.setOnClickListener { showVoiceDialog() }
+        refreshVoiceButton(voiceBtnLocal)
+        val langSwitchLocal = addSwitchRow(mainContainer, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
+            LanguageDetector.setDetectionEnabled(on)
+            voiceConfig!!.setAutoDetect(on)
+            if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
+            saveLanguageSettings()
+            refreshLanguageUi()
+            voiceBtn?.let { refreshVoiceButton(it) }
+            updateChineseGuard()
+        }
+        langSwitch = langSwitchLocal
+        val langFixedBtnLocal = addRow(this, mainContainer)
+        langFixedBtn = langFixedBtnLocal
+        langFixedBtnLocal.setOnClickListener { showLanguageDialog() }
+        val testBtnLocal = addFilledButton(mainContainer, R.string.test, dp(16))
+        testBtnLocal.setOnClickListener { testSpeech() }
+        
+        // ---- Voice character: head size/roughness/breathiness/inflection (IBMTTS-style) ----
+        val charSectionLocal = LinearLayout(this)
+        charSectionLocal.orientation = LinearLayout.VERTICAL
+        addSectionHeader(charSectionLocal, R.string.sec_voice_char)
+        addVoiceCharSliders(charSectionLocal)
+        addNoteRow(charSectionLocal, R.string.voice_char_note)
+        val resetPresetBtnLocal = addRow(this, charSectionLocal)
+        resetPresetBtnLocal.text = getString(R.string.reset_preset_button)
+        resetPresetBtnLocal.setOnClickListener {
+            val vp = voiceProfile
+            if (vp == null) return@setOnClickListener
+            vp.resetPreset(vp.preset)
+            refreshVoiceCharSliders()
+            Toast.makeText(this, getString(R.string.reset_preset_done, VoiceProfile.PRESET_NAMES[vp.preset - 1]), Toast.LENGTH_SHORT).show()
+        }
+        mainContainer.addView(charSectionLocal)
+        charSection = charSectionLocal
+        addChineseVoiceGuard(mainContainer)
+        updateChineseGuard()
+        
+        // ===== READING SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_reading)
+        val punctBtnLocal = addRow(this, mainContainer)
+        punctBtn = punctBtnLocal
+        punctBtnLocal.setOnClickListener { showPunctuationDialog() }
+        refreshPunctButton(punctBtnLocal)
+        val numberBtnLocal = addRow(this, mainContainer)
+        numberBtn = numberBtnLocal
+        numberBtnLocal.setOnClickListener { showNumberDialog() }
+        refreshNumberButton(numberBtnLocal)
+        
+        // ===== LANGUAGE / DICTIONARY SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_dictionary)
+        val langDetectBtn = addRow(this, mainContainer)
+        langDetectBtn.text = getString(R.string.lang_detect_button)
+        langDetectBtn.setOnClickListener { showDetectionSettingsDialog() }
+        val dictBtnLocal = addRow(this, mainContainer)
+        dictBtnLocal.text = getString(R.string.user_dict_button)
+        dictBtnLocal.setOnClickListener { showDictMenuDialog() }
+        
+        // ===== UPDATES SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_updates)
+        val updateBtnLocal = addRow(this, mainContainer)
+        updateBtnLocal.text = getString(R.string.update_button)
+        updateBtnLocal.setOnClickListener {
+            UpdateActions.showCheckDialog(this)
+        }
+        
+        // ===== MAINTENANCE SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_maintenance)
+        val resetBtnLocal = addRow(this, mainContainer)
+        resetBtnLocal.text = getString(R.string.reset_button)
+        resetBtnLocal.setOnClickListener { confirmResetDefaults() }
+        val aboutBtnLocal = addRow(this, mainContainer)
+        aboutBtnLocal.text = getString(R.string.about_row)
+        aboutBtnLocal.setOnClickListener { showAboutDialog() }
+        
+        scroll.addView(mainContainer)
+        outer.addView(scroll)
+        setContentView(outer)
+    }
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL

@@ -416,13 +416,76 @@ class LanguageDetector {
             return if (dl >= 0) dl else englishDialect
         }
 
+        /** True when the segment has at least one letter and every letter belongs to a
+         *  Latin script block (Basic Latin, Latin-1 Supplement, Latin Extended A/B,
+         *  Latin Extended Additional, Combining Diacritical Marks). CJK/Hangul/
+         *  Hiragana/Katakana runs return false so genuine CJK text is left alone.
+         *  Pure-ASCII runs like "release" return true. */
+        private fun isAllLatinRun(text: String): Boolean {
+            var hasLetter = false
+            var i = 0
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                if (Character.isLetter(cp)) {
+                    hasLetter = true
+                    val cpIsLatin = (cp in  0x0000..0x024F) || (cp in  0x1E00..0x1EFF)
+                    if (!cpIsLatin) {
+                        return false
+                    }
+                }
+                i += Character.charCount(cp)
+            }
+            return hasLetter
+        }
+
+        /** True when the run contains stray General-Punctuation-block characters that
+         *  Lingua's n-grams can't make sense of (em/en-dashes, curly quotes, bullets,
+         *  ellipses(. Spanish/Portuguese inverted marks(¿¡( and guillemets(«»( are
+         *  excluded:they're genuine language markers outside the General Punctuation block. */
+        private fun hasStrayGeneralPunct(text: String): Boolean {
+            var i = text.length
+            while (--i >= 0) {
+                val cp = text.codePointAt(i)
+                if (cp in  0x2010..0x202F) return true
+            }
+            return false
+        }
+
+        /** True when non-letter noise (emoji, ASCII/General punctuation, digits,
+         *  symbols( outweighs the letters in a Latin run. Lingua's n-grams can't
+         *  make sense of stretched ad-copy like \"TB Storage 🚀, 💬 Comment
+         *  \"Gemini\" and DM u/Top_Deal'\" — pure ASCII/emoji clutter on short words —
+         *  and hasStrayGeneralPunct() misses it because emoji live far outside
+         *  U+2010..U+202F and ASCII punct/digits aren't in that block either. Treat
+         *  noise-dominated runs the same as dash-cluttered ones:floor them to the
+         *  pinned Latin default. Genuine language markers outside the General-Punctuation
+         *  block are NOT noise:Spanish/Portuguese inverted marks,guillemets,and
+         *  combining diacritics that belong to neighboring letters. */
+        private fun isNoiseCluttered(text: String): Boolean {
+            var letters = 0
+            var noise =  0
+            var i =  0
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                if (Character.isLetter(cp)) {
+                    letters++
+                } else if (!Character.isWhitespace(cp)) {
+                    val isLangMarker = (cp ==  0x00A1 || cp ==  0x00BF || cp ==  0x00AB || cp ==   0x00BB) ||
+                        cp in  0x0300..0x036F
+                    if (!isLangMarker) noise++
+                }
+                i += Character.charCount(cp)
+            }
+            return letters >  0 && noise *  5 >= letters
+        }
+
         /** Emit the current run as a Segment;Latin runs get refined by Lingua */
         private fun flushSegment(sb: StringBuilder, type: Int, fallbackDialect: Int, out: MutableList<Segment>) {
             if (sb.length == 0) return
             val text = sb.toString()
             sb.setLength(0)
 
-            val dialect: Int
+            var dialect: Int
             if (type == 3) {
                 // Latin run:Lingua detection(which re-checks the whitelist inside)
                 dialect = detectLatin(text, fallbackDialect)
@@ -441,6 +504,40 @@ class LanguageDetector {
             } else {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
+            }
+            // HARD INVARIANT: a run whose letters are ALL Latin must never be spoken with a
+            // CJK dialect. "release" (pure A-Z) was once spoken as Chinese because
+            // detectLatin()/resolveDefaultLanguage() fall back to defaultDialect=zh on
+            // uncertain single-word runs and digit-run fallbacks, and a CJK branch can
+            // otherwise route Latin text into a CJK dialect. Force the en-US Latin floor
+            // whenever the resolved dialect is not itself Latin. The only intentional
+            // exception — fixed-dialect mode consciously pinned zh by the user — never
+            // reaches here: the fixed-language path short-circuits in segment() to emit the
+            // whole run with fixedDialect directly, so flushSegment always runs with detection
+            // ON.
+            val dl = resolveDefaultLanguage()
+            if (isAllLatinRun(text)) {
+                if (!isLatinDialect(dialect)) {
+                    // non-Latin guess on an all-Latin run ("release" -> zh):hard English floor
+                    dialect = englishDialect
+                } else if (hasStrayGeneralPunct(text) || isNoiseCluttered(text)) {
+                    // Lingua's n-grams are unreliable on runs cluttered with stray
+                    // General-Punctuation-block chars("That em-dash —(U+" scored pt-BR;
+                    // "minutes copied — pure ASCII check" scored Italian(). The old floor
+                    // only covered non-Latin dialects,so these Latin misdetects passed.
+
+                    // Noise-dominated runs (emoji/digit/ASCII-punct-heavy ad-copy like
+                    // "TB Storage 🚀, 💬 Comment "Gemini" and DM u/Top_Deal'" scored
+                    // Italian live on-device) now floor the same way as dash-cluttered ones.
+
+                    // Floor to the user's pinned Latin default when set(their voice),else
+                    // English. Finnish/Portuguese/etc-default users keep their own voice;
+                    // English-default users get clean en-US.no more random accents.
+
+                    val latinFloor = if (dl >= 0 && isLatinDialect(dl)) dl else englishDialect
+
+                    if (dialect != latinFloor) dialect = latinFloor
+                }
             }
             out.add(Segment(text, dialect))
         }
@@ -480,7 +577,13 @@ class LanguageDetector {
             if (text.length <	10) {
                 val dl = resolveDefaultLanguage()
                 if (isLatinDialect(dl)) return dl
-                return if (isLatinDialect(fallbackDialect)) fallbackDialect else englishDialect
+                if (isLatinDialect(fallbackDialect)) return fallbackDialect
+                // Pure-ASCII short words are English (loanwords(: they must never
+                // follow a non-Latin context nor a pinned zh/ja/ko default: "release"
+                // was read as Chinese behind a Chinese run (and when the zh pin leaked(.
+                // Latin contexts (de/fr/... keep following the previous segment as before.
+                if (text.all { it ->it <= '\u007F' }) return englishDialect
+                return englishDialect
 
 
 
@@ -498,12 +601,23 @@ class LanguageDetector {
                 fallbackDialect == englishDialect
 
             if (enContext) {
-                var ascii = true
+                // Pure-ASCII runs are obviously English——but so are runs whose only
+                // non-ASCII chars are non-letters: emoji, arrows, symbols. Two live
+                // misdetects prove the point:“TB Storage (rocket(, (speech-bubble( Comment “Gemini” and DM
+                // u/Top_Deal'” scored Italian,and“…ready. (warning( [Coding task changes are
+                // ready,but delivery needs attention](“ scored German——both were en-context
+                // runs whose letters are ALL Basic Latin. Lingua's n-grams can't digest
+                // the clutter,so it invents a random European language. Their letters
+                // being all Basic Latin means the noise cannot belong to a different Latin
+                // orthography——English is the only sane read. A non-ASCII LETTER ( ä, ß,
+                // é( still means real foreign text and falls through to Lingua as before.
+                var nonAsciiLetter = false
                 var i = text.length
                 while (--i >= 0) {
-                    if (text[i] > '\u007F') { ascii = false; break }
+                    val c = text[i]
+                    if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
                 }
-                if (ascii) return englishDialect
+                if (!nonAsciiLetter) return englishDialect
             }
             // Unambiguous accent markers (ñ=Spanish, ß=German,and the Polish
             // ogonek/acute letters) nail the language for accented runs——skip Lingua's

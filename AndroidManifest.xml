@@ -21,6 +21,7 @@
             android:name=".services.VvTtsService"
             android:label="Eloquence TTS"
             android:exported="true"
+            android:process=":tts"
             android:stopWithTask="false"
             android:permission="android.permission.BIND_TEXT_TO_SPEECH"
             android:directBootAware="true">

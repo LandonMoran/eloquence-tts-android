@@ -10,23 +10,30 @@ import android.content.SharedPreferences
  * user custom values live in SharedPreferences; reset removes the overrides.
  */
 class VoiceProfile(context: Context) {
+    private val appContext: Context = context.applicationContext ?: context
     private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    // Write-through to device-protected storage so a reboot cannot revert
-    //the preset gets read by the lock-screen start, so a reboot must not revert it
+        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Write-through to device-protected storage so a reboot cannot revert
+        //the preset gets read by the lock-screen start, so a reboot must not revert it
     private val devicePrefs: SharedPreferences =
-        context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        appContext.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // A fresh context owns a fresh SharedPreferences cache, so this reloads the
+        // XML from disk - picks up writes made in the UI process, whose edits the
+        // long-lived singletons above can never see (SharedPreferences caches are
+        // per-process and per-ContextImpl).
+    private fun freshDevicePrefs(): SharedPreferences =
+        appContext.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
         val ea = prefs.edit()
         block(ea)
-        ea.apply()
+        ea.commit()
         val eb = devicePrefs.edit()
         block(eb)
-        eb.apply()
+        eb.commit()
     }
 
     val preset: Int
-        get() = prefs.getInt(KEY_PRESET, 1)
+        get() = freshDevicePrefs().getInt(KEY_PRESET, 1)
 
     fun setPreset(n: Int) {
         var v = n
@@ -37,12 +44,13 @@ class VoiceProfile(context: Context) {
 
     /** Whether the given param has a custom override for this preset */
     fun hasOverride(preset: Int, param: Int): Boolean {
-        return prefs.contains(overrideKey(preset, param))
+        return freshDevicePrefs().contains(overrideKey(preset, param))
     }
 
     /** Get a preset's param value: custom override first, else KonaVoice default */
     fun getParam(preset: Int, param: Int): Int {
         val key = overrideKey(preset, param)
+        val prefs = freshDevicePrefs()
         if (prefs.contains(key)) return prefs.getInt(key, 0)
         val customVoice = KonaVoice.byPreset(preset)
         return customVoice.param(param)
@@ -59,7 +67,7 @@ class VoiceProfile(context: Context) {
             for (p in 0..7) {
                 e.remove(overrideKey(preset, p))
             }
-        }
+    }
     }
 
     companion object {
@@ -76,7 +84,7 @@ class VoiceProfile(context: Context) {
         const val PARAM_SPEED =  6         // Speed  0-250
         const val PARAM_VOLUME =  7        // Volume  0-100
 
-        // Sliders shown in the edit dialog (gender is a separate radio — official voice switch;
+        // Sliders shown in the edit dialog (gender is a separate radio - official voice switch;
         // pitchBase/speed/volume are controlled from the main screen, not duplicated here)
         val EDITABLE_PARAMS = intArrayOf(
             PARAM_HEAD_SIZE, PARAM_PITCH_FLUC, PARAM_ROUGHNESS, PARAM_BREATHINESS,
@@ -89,7 +97,7 @@ class VoiceProfile(context: Context) {
 
         private fun overrideKey(preset: Int, param: Int): String {
             return "override_$preset" + "_" + param
-        }
+    }
 
         /** Parameter display name */
         fun paramName(param: Int): String {
@@ -104,6 +112,6 @@ class VoiceProfile(context: Context) {
                 PARAM_VOLUME -> "Volume"
                 else -> "Parameter $param"
             }
-        }
+    }
     }
 }

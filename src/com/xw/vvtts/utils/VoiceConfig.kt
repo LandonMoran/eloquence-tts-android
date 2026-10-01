@@ -40,18 +40,18 @@ class VoiceConfig(context: Context) {
     }
 
     val voice: String
-        get() = prefs.getString(KEY_VOICE, "en-US")!!
+        get() = devicePrefs.getString(KEY_VOICE, "en-US")!!
     val rate: Int
-        get() = prefs.getInt(KEY_RATE, 100)
+        get() = devicePrefs.getInt(KEY_RATE, 100)
     val pitch: Int
-        get() = prefs.getInt(KEY_PITCH, 50)
+        get() = devicePrefs.getInt(KEY_PITCH, 50)
     val volume: Int
-        get() = prefs.getInt(KEY_VOLUME, 100)
+        get() = devicePrefs.getInt(KEY_VOLUME, 100)
     /** DSP mode: 0 = standard (raw engine output), 1 = enhanced (de-hiss + limiter). Default: standard. */
     val dspMode: Int
-        get() = prefs.getInt(KEY_DSP_MODE, 0)
+        get() = devicePrefs.getInt(KEY_DSP_MODE, 0)
     val isAutoDetect: Boolean
-        get() = prefs.getBoolean(KEY_AUTO_DETECT, true)
+        get() = devicePrefs.getBoolean(KEY_AUTO_DETECT, true)
 
     fun setVoice(v: String) { writeBoth { it.putString(KEY_VOICE, v) } }
     fun setRate(r: Int) { writeBoth { it.putInt(KEY_RATE, r) } }
@@ -62,18 +62,18 @@ class VoiceConfig(context: Context) {
 
     fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT,  b) } }
         val punctEnabled: Boolean
-            get() = prefs.getBoolean(KEY_PUNCT,  false)
+            get() = devicePrefs.getBoolean(KEY_PUNCT,  false)
 
         fun setNumberEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_NUMBER_ENABLED,  b) } }
         val numberEnabled: Boolean
-            get() = prefs.getBoolean(KEY_NUMBER_ENABLED,  false)
+            get() = devicePrefs.getBoolean(KEY_NUMBER_ENABLED,  false)
         fun setNumberModePref(v: Int) { writeBoth { it.putInt(KEY_NUMBER_MODE,  v) } }
         val numberModePref: Int
-            get() = prefs.getInt(KEY_NUMBER_MODE,  0)
+            get() = devicePrefs.getInt(KEY_NUMBER_MODE,  0)
 
     /** Dictionary: newline-separated "word|spoken" lines in creation order. */
     fun dictEntries(): List<DictEntry> {
-            val raw = prefs.getString(KEY_DICT,  "") ?: ""
+            val raw = devicePrefs.getString(KEY_DICT,  "") ?: ""
             val out = ArrayList<DictEntry>()
             for (line in raw.split("\n")) {
                 parseDictLine(line)?.let { out.add(it) }
@@ -102,7 +102,7 @@ class VoiceConfig(context: Context) {
             val w = word.trim()
             val s = spoken.trim()
             if (w.isEmpty() || s.isEmpty()) return
-            val cur = prefs.getString(KEY_DICT,  "") ?: ""
+            val cur = devicePrefs.getString(KEY_DICT,  "") ?: ""
             val kept = ArrayList<String>()
             for (l in cur.split("\n")) {
                 if (l.isBlank()) continue
@@ -115,7 +115,7 @@ class VoiceConfig(context: Context) {
         }
 
     fun removeDictEntry(word: String) {
-            val cur = prefs.getString(KEY_DICT,  "") ?: ""
+            val cur = devicePrefs.getString(KEY_DICT,  "") ?: ""
             val kept = ArrayList<String>()
             for (l in cur.split("\n")) {
                 if (l.isBlank()) continue
