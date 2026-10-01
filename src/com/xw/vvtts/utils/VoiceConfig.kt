@@ -17,7 +17,7 @@ data class DictEntry(
 )
 
 /** Voice settings (UI rate/pitch/volume + language selection.)) */
-class VoiceConfig(context: Context) {
+class VoiceConfig(private val context: Context) {
     /** Supported language definitions (Apple Kona full table).)*/
     class Lang(
         /** BCP-47 */
