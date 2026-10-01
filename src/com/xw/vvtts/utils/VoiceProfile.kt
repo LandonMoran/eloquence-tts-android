@@ -2,6 +2,10 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
+import java.io.File
+import java.io.FileInputStream
 
 /**
  * Voice profile configuration.
@@ -13,16 +17,48 @@ class VoiceProfile(context: Context) {
     private val appContext: Context = context.applicationContext ?: context
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        // Write-through to device-protected storage so a reboot cannot revert
-        //the preset gets read by the lock-screen start, so a reboot must not revert it
+        // Disk-backed XML reads (mtime-guarded): SharedPreferences caches are
+        // per-process, so the settings UI's edits never reach this long-lived service
     private val devicePrefs: SharedPreferences =
         appContext.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        // A fresh context owns a fresh SharedPreferences cache, so this reloads the
-        // XML from disk - picks up writes made in the UI process, whose edits the
-        // long-lived singletons above can never see (SharedPreferences caches are
-        // per-process and per-ContextImpl).
-    private fun freshDevicePrefs(): SharedPreferences =
-        appContext.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private var cachedMap: Map<String, String>? = null
+    private var cachedMtime: Long = -1L
+    private fun readMap(): Map<String, String> {
+        val f = if (File(appContext.getDataDir(), "shared_prefs/$PREFS.xml").exists()) File(appContext.getDataDir(), "shared_prefs/$PREFS.xml")
+                  else File(appContext.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
+        val mt = if (f.exists()) f.lastModified() else -1L
+        if (cachedMap != null && mt == cachedMtime) return cachedMap!!
+        val map = HashMap<String, String>()
+        if (f.exists()) {
+            try {
+                val parser = Xml.newPullParser()
+                parser.setInput(FileInputStream(f), null)
+                var t = parser.eventType
+                var curKey: String? = null
+                while (t != XmlPullParser.END_DOCUMENT) {
+                    if (t == XmlPullParser.START_TAG) {
+                        val n = parser.getAttributeValue(null, "name")
+                        val v = parser.getAttributeValue(null, "value")
+                        if (parser.name == "string") {
+                            curKey = n
+                        } else if (n != null && v != null) {
+                            map[n] = v
+                        }
+                    } else if (t == XmlPullParser.TEXT) {
+                        val k = curKey
+                        if (k != null) {
+                            map[k] = parser.text
+                            curKey = null
+                        }
+                    }
+                    t = parser.next()
+                }
+            } catch (ignore: Throwable) {}
+        }
+        cachedMap = map
+        cachedMtime = mt
+        return map
+    }
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
         val ea = prefs.edit()
         block(ea)
@@ -33,7 +69,7 @@ class VoiceProfile(context: Context) {
     }
 
     val preset: Int
-        get() = freshDevicePrefs().getInt(KEY_PRESET, 1)
+        get() = readMap()[KEY_PRESET]?.toIntOrNull() ?: 1
 
     fun setPreset(n: Int) {
         var v = n
@@ -44,14 +80,14 @@ class VoiceProfile(context: Context) {
 
     /** Whether the given param has a custom override for this preset */
     fun hasOverride(preset: Int, param: Int): Boolean {
-        return freshDevicePrefs().contains(overrideKey(preset, param))
+        return readMap().containsKey(overrideKey(preset, param))
     }
 
     /** Get a preset's param value: custom override first, else KonaVoice default */
     fun getParam(preset: Int, param: Int): Int {
         val key = overrideKey(preset, param)
-        val prefs = freshDevicePrefs()
-        if (prefs.contains(key)) return prefs.getInt(key, 0)
+        val v = readMap()[key]
+        if (v != null) return v.toIntOrNull() ?: 0
         val customVoice = KonaVoice.byPreset(preset)
         return customVoice.param(param)
     }
