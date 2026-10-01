@@ -127,7 +127,7 @@ class VvTtsService : TextToSpeechService() {
     private fun prefsDirsChanged(): Boolean {
 
         var changed = false
-        for (dir in prefsDirs() {
+        for (dir in prefsDirs()) {
             val m = dir.lastModified()
             val prev = prefsDirMtimes[dir]
             if (prev == null) { prefsDirMtimes[dir] = m; continue }
