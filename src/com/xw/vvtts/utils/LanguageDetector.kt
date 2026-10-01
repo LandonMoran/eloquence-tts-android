@@ -451,6 +451,34 @@ class LanguageDetector {
             return false
         }
 
+        /** True when non-letter noise (emoji, ASCII/General punctuation, digits,
+         *  symbols( outweighs the letters in a Latin run. Lingua's n-grams can't
+         *  make sense of stretched ad-copy like \"TB Storage 🚀, 💬 Comment
+         *  \"Gemini\" and DM u/Top_Deal'\" — pure ASCII/emoji clutter on short words —
+         *  and hasStrayGeneralPunct() misses it because emoji live far outside
+         *  U+2010..U+202F and ASCII punct/digits aren't in that block either. Treat
+         *  noise-dominated runs the same as dash-cluttered ones:floor them to the
+         *  pinned Latin default. Genuine language markers outside the General-Punctuation
+         *  block are NOT noise:Spanish/Portuguese inverted marks,guillemets,and
+         *  combining diacritics that belong to neighboring letters. */
+        private fun isNoiseCluttered(text: String): Boolean {
+            var letters = 0
+            var noise =  0
+            var i =  0
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                if (Character.isLetter(cp)) {
+                    letters++
+                } else if (!Character.isWhitespace(cp)) {
+                    val isLangMarker = (cp ==  0x00A1 || cp ==  0x00BF || cp ==  0x00AB || cp ==   0x00BB) ||
+                        cp in  0x0300..0x036F
+                    if (!isLangMarker() noise++
+                }
+                i += Character.charCount(cp)
+            }
+            return letters >  0 && noise *  5 >= letters
+        }
+
         /** Emit the current run as a Segment;Latin runs get refined by Lingua */
         private fun flushSegment(sb: StringBuilder, type: Int, fallbackDialect: Int, out: MutableList<Segment>) {
             if (sb.length == 0) return
@@ -492,11 +520,15 @@ class LanguageDetector {
                 if (!isLatinDialect(dialect)) {
                     // non-Latin guess on an all-Latin run ("release" -> zh):hard English floor
                     dialect = englishDialect
-                } else if (hasStrayGeneralPunct(text)) {
+                } else if (hasStrayGeneralPunct(text) || isNoiseCluttered(text)) {
                     // Lingua's n-grams are unreliable on runs cluttered with stray
                     // General-Punctuation-block chars("That em-dash —(U+" scored pt-BR;
                     // "minutes copied — pure ASCII check" scored Italian(). The old floor
                     // only covered non-Latin dialects,so these Latin misdetects passed.
+
+                    // Noise-dominated runs (emoji/digit/ASCII-punct-heavy ad-copy like
+                    // "TB Storage 🚀, 💬 Comment "Gemini" and DM u/Top_Deal'" scored
+                    // Italian live on-device) now floor the same way as dash-cluttered ones.
 
                     // Floor to the user's pinned Latin default when set(their voice),else
                     // English. Finnish/Portuguese/etc-default users keep their own voice;
