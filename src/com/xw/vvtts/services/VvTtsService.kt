@@ -19,6 +19,8 @@ import com.xw.vvtts.utils.EmojiExpanderZhHant
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
+import java.io.File
+import java.util.HashMap
 import java.util.Locale
 
 /**
@@ -32,7 +34,7 @@ class VvTtsService : TextToSpeechService() {
     private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
     // Settings are mirrored once at startup and re-read only when something
-        // actually changed. UI edits land via the prefs listener. Re-reading per
+        // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
         // which could drop a per-utterance zh pin on EVERY TalkBack swipe; the
         // dirty gate removes that whole per-swipe cost.
@@ -116,8 +118,28 @@ class VvTtsService : TextToSpeechService() {
     }
 
 
+    private fun prefsDirs(): List<File> {
+        val dirs = mutableListOf(File(applicationContext.getDataDir(), "shared_prefs")))
+        deviceCtx?.let { dirs += File(it.getDataDir(), "shared_prefs") }
+        return dirs
+    }
+
+    private fun prefsDirsChanged(): Boolean {
+
+        var changed = false
+        for (dir in prefsDirs() {
+            val m = dir.lastModified()
+            val prev = prefsDirMtimes[dir]
+            if (prev == null) { prefsDirMtimes[dir] = m; continue }
+            if (m != prev) { prefsDirMtimes[dir] = m; changed = true }
+        }
+        return changed
+    }
+
+    private val prefsDirMtimes = HashMap<File, Long>()
+
     private fun refreshSettings() {
-        if (!settingsDirty) return
+        if (!settingsDirty && !prefsDirsChanged()) return
         // Clear BEFORE re-reading: a prefs write that lands during the read
         // sets dirty=true again via the listener, so it must not be wiped by a
         // stale clear afterthe read completes (lost-update race(.
