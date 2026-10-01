@@ -22,7 +22,10 @@
             android:name=".services.VvTtsService"
             android:label="Eloquence TTS"
             android:exported="true"
-            android:process=":tts"
+            <!-- 2026-10-01 regression: the :tts child process surfaced as
+                 Settings NPE (Parcel.createExceptionOrNull( on Android  ‌17 voice
+                 queries bound before the cold process was ready. Keeping the engine
+                 in the app process restores the previously-working configuration. -->
             android:stopWithTask="false"
             android:permission="android.permission.BIND_TEXT_TO_SPEECH"
             android:directBootAware="true">
