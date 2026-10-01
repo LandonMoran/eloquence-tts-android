@@ -2,6 +2,10 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
+import java.io.File
+import java.io.FileInputStream
 
 /** One user-dictionary rule: written word -> spoken form. Case-sensitive rules only
  *  match the exact written casing; others match any casing ( mirrors the factory's per-entry flag.
@@ -13,7 +17,7 @@ data class DictEntry(
 )
 
 /** Voice settings (UI rate/pitch/volume + language selection.)) */
-class VoiceConfig(context: Context) {
+class VoiceConfig(private val context: Context) {
     /** Supported language definitions (Apple Kona full table).)*/
     class Lang(
         /** BCP-47 */
@@ -33,25 +37,65 @@ class VoiceConfig(context: Context) {
     // next unlocked service start, which is what made the voice revert at lock-screen).
     private val devicePrefs: SharedPreferences =
         context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private var cachedMap: Map<String, String>? = null
+    private var cachedMtime: Long = -1L
+    private fun readMap(): Map<String, String> {
+        val appCtx = context.applicationContext ?: context
+        val f = if (File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml").exists()) File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml")
+                  else File(context.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
+        val mt = if (f.exists()) f.lastModified() else -1L
+        if (cachedMap != null && mt == cachedMtime) return cachedMap!!
+        val map = HashMap<String, String>()
+        if (f.exists()) {
+            try {
+                val parser = Xml.newPullParser()
+                parser.setInput(FileInputStream(f), null)
+                var t = parser.eventType
+                var curKey: String? = null
+                while (t != XmlPullParser.END_DOCUMENT) {
+                    if (t == XmlPullParser.START_TAG) {
+                        val n = parser.getAttributeValue(null, "name")
+                        val v = parser.getAttributeValue(null, "value")
+                        if (parser.name == "string") {
+                            curKey = n
+                        } else if (n != null && v != null) {
+                            map[n] = v
+                        }
+                    } else if (t == XmlPullParser.TEXT) {
+                        val k = curKey
+                        if (k != null) {
+                            map[k] = parser.text
+                            curKey = null
+                        }
+                    }
+                    t = parser.next()
+                }
+            } catch (ignore: Throwable) {}
+        }
+        cachedMap = map
+        cachedMtime = mt
+        return map
+    }
+
 
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
-        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.apply()
-        val b = devicePrefs.edit(); block(b); b.apply()
+        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.commit()
+        val b = devicePrefs.edit(); block(b); b.commit()
     }
 
     val voice: String
-        get() = devicePrefs.getString(KEY_VOICE, "en-US")!!
+        get() = readMap()[KEY_VOICE] ?: "en-US"
     val rate: Int
-        get() = devicePrefs.getInt(KEY_RATE, 100)
+        get() = readMap()[KEY_RATE]?.toIntOrNull() ?: 100
     val pitch: Int
-        get() = devicePrefs.getInt(KEY_PITCH, 50)
+        get() = readMap()[KEY_PITCH]?.toIntOrNull() ?: 50
     val volume: Int
-        get() = devicePrefs.getInt(KEY_VOLUME, 100)
+        get() = readMap()[KEY_VOLUME]?.toIntOrNull() ?: 100
     /** DSP mode: 0 = standard (raw engine output), 1 = enhanced (de-hiss + limiter). Default: standard. */
     val dspMode: Int
-        get() = devicePrefs.getInt(KEY_DSP_MODE, 0)
+        get() = readMap()[KEY_DSP_MODE]?.toIntOrNull() ?: 0
     val isAutoDetect: Boolean
-        get() = devicePrefs.getBoolean(KEY_AUTO_DETECT, true)
+        get() = readMap()[KEY_AUTO_DETECT]?.toBoolean() ?: true
 
     fun setVoice(v: String) { writeBoth { it.putString(KEY_VOICE, v) } }
     fun setRate(r: Int) { writeBoth { it.putInt(KEY_RATE, r) } }
@@ -62,18 +106,18 @@ class VoiceConfig(context: Context) {
 
     fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT,  b) } }
         val punctEnabled: Boolean
-            get() = devicePrefs.getBoolean(KEY_PUNCT,  false)
+            get() = readMap()[KEY_PUNCT]?.toBoolean() ?: false
 
         fun setNumberEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_NUMBER_ENABLED,  b) } }
         val numberEnabled: Boolean
-            get() = devicePrefs.getBoolean(KEY_NUMBER_ENABLED,  false)
+            get() = readMap()[KEY_NUMBER_ENABLED]?.toBoolean() ?: false
         fun setNumberModePref(v: Int) { writeBoth { it.putInt(KEY_NUMBER_MODE,  v) } }
         val numberModePref: Int
-            get() = devicePrefs.getInt(KEY_NUMBER_MODE,  0)
+            get() = readMap()[KEY_NUMBER_MODE]?.toIntOrNull() ?: 0
 
     /** Dictionary: newline-separated "word|spoken" lines in creation order. */
     fun dictEntries(): List<DictEntry> {
-            val raw = devicePrefs.getString(KEY_DICT,  "") ?: ""
+            val raw = readMap()[KEY_DICT] ?: ""
             val out = ArrayList<DictEntry>()
             for (line in raw.split("\n")) {
                 parseDictLine(line)?.let { out.add(it) }
@@ -102,7 +146,7 @@ class VoiceConfig(context: Context) {
             val w = word.trim()
             val s = spoken.trim()
             if (w.isEmpty() || s.isEmpty()) return
-            val cur = devicePrefs.getString(KEY_DICT,  "") ?: ""
+            val cur = readMap()[KEY_DICT] ?: ""
             val kept = ArrayList<String>()
             for (l in cur.split("\n")) {
                 if (l.isBlank()) continue
@@ -115,7 +159,7 @@ class VoiceConfig(context: Context) {
         }
 
     fun removeDictEntry(word: String) {
-            val cur = devicePrefs.getString(KEY_DICT,  "") ?: ""
+            val cur = readMap()[KEY_DICT] ?: ""
             val kept = ArrayList<String>()
             for (l in cur.split("\n")) {
                 if (l.isBlank()) continue
