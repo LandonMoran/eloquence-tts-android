@@ -601,12 +601,23 @@ class LanguageDetector {
                 fallbackDialect == englishDialect
 
             if (enContext) {
-                var ascii = true
+                // Pure-ASCII runs are obviously English——but so are runs whose only
+                // non-ASCII chars are non-letters: emoji, arrows, symbols. Two live
+                // misdetects prove the point:“TB Storage (rocket(, (speech-bubble( Comment “Gemini” and DM
+                // u/Top_Deal'” scored Italian,and“…ready. (warning( [Coding task changes are
+                // ready,but delivery needs attention](“ scored German——both were en-context
+                // runs whose letters are ALL Basic Latin. Lingua's n-grams can't digest
+                // the clutter,so it invents a random European language. Their letters
+                // being all Basic Latin means the noise cannot belong to a different Latin
+                // orthography——English is the only sane read. A non-ASCII LETTER ( ä, ß,
+                // é( still means real foreign text and falls through to Lingua as before.
+                var nonAsciiLetter = false
                 var i = text.length
                 while (--i >= 0) {
-                    if (text[i] > '\u007F') { ascii = false; break }
+                    val c = text[i]
+                    if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
                 }
-                if (ascii) return englishDialect
+                if (!nonAsciiLetter) return englishDialect
             }
             // Unambiguous accent markers (ñ=Spanish, ß=German,and the Polish
             // ogonek/acute letters) nail the language for accented runs——skip Lingua's
