@@ -89,37 +89,17 @@ jobs:
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
           ABI: x86_64
 
-      - name: Boot emulator
-        run: |
-          SDK="$HOME/android-sdk"
-          echo "no" | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd \
-            -n test -k "system-images;android-35;google_apis;x86_64" --device "pixel_2" --force
-          "$SDK/emulator/emulator" -avd test -no-window -no-audio -no-snapshot \
-            -gpu swiftshader_indirect -no-boot-anim -memory 2048 -cores 2 -accel on &
-          "$SDK/platform-tools/adb" wait-for-device
-          BOOT_DONE=0
-          for i in $(seq 1 900); do
-            BOOT="$("$SDK/platform-tools/adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-            if [ "$BOOT" = "1" ]; then BOOT_DONE=1; echo "BOOT_COMPLETED after ${i}x2s"; break; fi
-            sleep 2
-          done
-          if [ "$BOOT_DONE" != "1" ]; then echo "EMULATOR_BOOT_TIMEOUT"; exit 1; fi
-          "$SDK/platform-tools/adb" shell input keyevent 82
-          echo "BOOT_DONE"
-
-      - name: Install and trigger test button path (autotest hook)
-        run: |
-          SDK="$HOME/android-sdk"
-          "$SDK/platform-tools/adb" install -r vvttts_signed.apk
-          "$SDK/platform-tools/adb" logcat -c
-          "$SDK/platform-tools/adb" shell am start -n com.xw.vvttts/.ui.SettingsActivity --es autotest chinese
-          sleep 120
-          "$SDK/platform-tools/adb" shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" || true
-          "$SDK/platform-tools/adb" logcat -d -v threadtime > logcat-full.txt || true
-          echo "=== FATAL / CRASH LINES ===="
-          grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process com.xw.vvttts" logcat-full.txt | head -40 || echo "NO_CRASH_MARKERS"
-          echo "=== TAIL ===="
-          tail -25 logcat-full.txt
+      - name: Boot emulator + run crash test ( test button path)
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 1800
+          script: bash "${GITHUB_WORKSPACE}/.github/scripts/crash_test.sh"
 
       - name: Upload logcat
         uses: actions/upload-artifact@v4
