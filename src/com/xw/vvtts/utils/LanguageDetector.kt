@@ -472,7 +472,7 @@ class LanguageDetector {
                 } else if (!Character.isWhitespace(cp)) {
                     val isLangMarker = (cp ==  0x00A1 || cp ==  0x00BF || cp ==  0x00AB || cp ==   0x00BB) ||
                         cp in  0x0300..0x036F
-                    if (!isLangMarker() noise++
+                    if (!isLangMarker) noise++
                 }
                 i += Character.charCount(cp)
             }
