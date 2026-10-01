@@ -119,7 +119,7 @@ class VvTtsService : TextToSpeechService() {
 
 
     private fun prefsDirs(): List<File> {
-        val dirs = mutableListOf(File(applicationContext.getDataDir(), "shared_prefs")))
+        val dirs = mutableListOf(File(applicationContext.getDataDir(), "shared_prefs"))
         deviceCtx?.let { dirs += File(it.getDataDir(), "shared_prefs") }
         return dirs
     }
