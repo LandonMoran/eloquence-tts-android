@@ -1,0 +1,63 @@
+name: oracle-decompile
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: XAPK zip URL (empty = embedded default(
+        required: false
+        default: ""
+      target:
+        description: Split APK to decompile (empty = base.apk = Java wiring((
+        required: false
+        default: ""
+  push:
+    branches: [feat/ngram-tables]
+
+permissions:
+  contents: read
+
+jobs:
+  jadx:
+    runs-on: ubuntu-24.04-arm
+    env:
+      # Oracle fingerprint: factory.zip md5 7e4274e9f140e5cc249765cda3f27694
+      FACTORY_URL: "https://files.catbox.moe/3g38bc.zip"
+      TARGET_APK: "${{ inputs.target }}"
+    steps:
+      - name: Fetch oracle XAPK
+        run: |
+          set -o pipefail
+          URL="${FACTORY_URL:-https://files.catbox.moe/3g38bc.zip}"
+          TGT="${TARGET_APK:-base.apk}"
+          echo "fetching $URL (target=$TGT)"
+          curl -sSL -o factory.zip "$URL"
+          unzip -oq factory.zip -d splits "*.apk"
+          ls -lh splits
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Decompile with jadx
+        run: |
+          set -o pipefail
+          URL="${FACTORY_URL:-https://files.catbox.moe/3g38bc.zip}"
+          TGT="${TARGET_APK:-base.apk}"
+          curl -sSL -o /tmp/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip
+          unzip -q /tmp/jadx.zip -d /tmp/jadx
+          /tmp/jadx/bin/jadx -d out --show-bad-code --threads-count 4 "splits/$TGT" || echo "jadx reported non-fatal errors; packaging partial sources"; find out -name '*.java' | wc -l
+
+      - name: Package sources
+        run: |
+          tar czf decompiled.tgz out
+          du -sh out
+
+      - name: Upload decompiled sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-sources
+          path: decompiled.tgz
+          if-no-files-found: error

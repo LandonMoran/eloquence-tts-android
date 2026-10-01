@@ -2,6 +2,7 @@ package com.xw.vvtts.engine
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.SystemClock
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.DictEntry
@@ -23,6 +24,7 @@ import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.UUID
 import com.xw.vvtts.utils.CrashCodeDefender
 
 class EloquenceEngine(context: Context) {
@@ -35,13 +37,17 @@ class EloquenceEngine(context: Context) {
      *  native loadUserDictionary hook; our ECI build has no dict API, so the substitution
      *  pass is the Kotlin-side equivalent. Fresh read per utterance, so edits apply immediately. */
     private val userDictionary by lazy { VoiceConfig(appContext) }
-    private var core: VvttsCore? = null          // In-house bridge (multi-language
+    @Volatile private var core: VvttsCore? = null          // In-house bridge (multi-language
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
     private var initialized = false
-    @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "elq-synth").apply { isDaemon = true }
+    }
     @Volatile private var hangDetected = false
-    private val HANG_TIMEOUT_S = 30L
+        @Volatile private var retireUntilMs = 0L
+        private val HANG_TIMEOUT_S = 30L
+        private val ZOMBIE_GRACE_MS = 12000L
     @Volatile private var stopped = false
     @Volatile private var pendingVoice: Int? = null
     @Volatile private var pendingSapi = ""
@@ -50,7 +56,11 @@ class EloquenceEngine(context: Context) {
     @Volatile private var sampleRateSet = false
     private var lastNativePitch = 0
     @Volatile private var pendingSpeedFactor = 1.0f
-    @Volatile private var pendingEciVoice = -1
+    // Voice-copy state is per-dialect: each dialect owns a cached handle, so a
+    // single global would skip setStandardVoice on a fresh handle that reuses the
+    // same eciVoiceNumber after a dialect switch, leaving the new dialect speaking
+    // the engine-default voice. Keyed by dialect (stable across shutdown/reopen).
+    private val pendingEciVoiceByDialect = ConcurrentHashMap<Int, Int>()
     @Volatile private var pendingEciDialect = DIALECT_ZH_CN
     @Volatile private var warmedUp = false
     @Volatile private var pendingSapiMark = ""
@@ -402,6 +412,7 @@ class EloquenceEngine(context: Context) {
             for (h in coreHandles.values) VvttsCore.shutdown(h)
             coreHandles.clear()
         }
+        pendingEciVoiceByDialect.clear()
         initialized = false
         core = null
     }
@@ -514,10 +525,10 @@ class EloquenceEngine(context: Context) {
             // every utterance speaks engine default=Reed; params tune but never pick the voice.
 
 
-            if (voice.eciVoiceNumber != pendingEciVoice) {
+            if (voice.eciVoiceNumber != pendingEciVoiceByDialect[dialect]) {
 
                 VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
-                pendingEciVoice = voice.eciVoiceNumber
+                pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
             }
 
             val vp = voiceProfile
@@ -594,6 +605,7 @@ class EloquenceEngine(context: Context) {
                 return@synthWithTimeout null
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
+            val outFile = File(storageContext.cacheDir, "core_pcm_out_" + UUID.randomUUID())
             if (!sameAsLast) {
             // Second param write right before synthesis — an addText/internal reset on this
             // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
@@ -608,6 +620,7 @@ class EloquenceEngine(context: Context) {
                         var pcm = VvttsCore.synth(handle, dialect, encoded, charset, null)
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
+            runCatching { outFile.delete() }
             if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)
             pcm
         }
@@ -735,12 +748,18 @@ class EloquenceEngine(context: Context) {
     // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
     // so THIS request fails fast — a frozen native call cannot take down the whole TTS.
     private fun synthWithTimeout(block: () -> ShortArray?): ShortArray? {
+        val nowMin = SystemClock.elapsedRealtime()
+        if (nowMin < retireUntilMs) {
+            Log.w(TAG, "TTS_HANG: zombie grace until " + retireUntilMs + " (" + (retireUntilMs - nowMin) + " ms left); skipping to avoid doubling the retired native worker")
+            return null
+        }
         val future = try {
             synthExecutor.submit<ShortArray?> { block() }
         } catch (e: RejectedExecutionException) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
-            synthExecutor.submit<ShortArray?> { block() }
+            retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
+            return null
         }
         return try {
             future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS)
@@ -752,6 +771,7 @@ class EloquenceEngine(context: Context) {
                 Log.e(TAG, "    " + t.name + ": " + st.joinToString(" | "))
             }
             rotateEngine()
+            retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
             null
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -770,9 +790,20 @@ class EloquenceEngine(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "rotate: shutdown failed", e)
         }
+        // Best-effort: stop any in-flight render on the retired handles so a
+        // fresh open isn't competing with a zombie session. VvttsCore.stop is
+        // flag-based (non-blocking(, and this cross-thread usage mirrors stop().
+        // (The frozen worker's own native state can't be freed safely — that
+        // memory is released once per hang event, unavoidably.)
+        try {
+            for (h in coreHandles.values) VvttsCore.stop(h)
+        } catch (e: Exception) {
+            Log.e(TAG, "rotate: stop handles failed", e)
+        }
         synthExecutor = Executors.newSingleThreadExecutor()
         coreHandles.clear()
         lastParamSig = null
+        pendingEciVoiceByDialect.clear() // fresh handles start at engine-default voices; drop stale cache
         hangDetected = true
     }
 }

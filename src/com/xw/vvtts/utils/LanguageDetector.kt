@@ -85,7 +85,7 @@ class LanguageDetector {
         // results changes (whitelist / en/es/fr dialect pins). The fallback/ASCII
         // short-run paths are context-dependent and already cheap,so they never
         // touch this cache.
-        private val latinCache = HashMap<String, Int>()
+        private val latinCache = LinkedHashMap<String, Int>(128)
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
 
@@ -100,6 +100,8 @@ class LanguageDetector {
 
         fun setFrenchDialect(dialect: Int) { frenchDialect = dialect; invalidateLatinCache() }
         fun getFrenchDialect() = frenchDialect
+
+        @Volatile private var transientEnabled: Set<String>? = null
 
         fun setEnabledLanguages(langs: Set<String>?) {
             val en = enabledLanguages
@@ -125,8 +127,16 @@ class LanguageDetector {
 
         fun getEnabledLanguages(): Set<String> = enabledLanguages
 
+        /** Per-utterance pin (e.g. zh from a picker row(,applied on top of the whitelist
+         * without rebuilding Lingua. Cleared from the finally block. */
+        fun setTransientEnabledLangs(langs: Set<String>?) {
+            transientEnabled = langs
+        }
+
         /** Whether a language code is in the detection whitelist */
         fun isLanguageEnabled(code: String): Boolean {
+            val te = transientEnabled
+            if (te != null && te.contains(code)) return true
             val en = enabledLanguages
             if (en == null) return false
             return en.contains(code)
@@ -394,6 +404,16 @@ class LanguageDetector {
             }
         }
 
+        /** Numeric runs must not feed the engine an unshipped dialect (Hangul/Kana\n raw seeds crash the native voice-table walk). */
+        private fun isShippedDialect(d: Int): Boolean {
+            return when (d) {
+                DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_US, DIALECT_ES_MX,
+                DIALECT_FR_FR, DIALECT_FR_CA, DIALECT_DE_DE, DIALECT_IT_IT, DIALECT_ZH_CN,
+                DIALECT_PT_BR, DIALECT_JA_JP, DIALECT_FI_FI, DIALECT_PL_PL -> true
+                else -> false
+            }
+        }
+
         /** Character type -> ECI dialect(no whitelist check here;flushSegment handles the whitelist uniformly) */
         private fun typeToDialect(type: Int, fallbackDialect: Int): Int {
             return when (type) {
@@ -499,7 +519,8 @@ class LanguageDetector {
                 // reaches here: segment() returns the whole run with the fixed dialect directly.
 
                 val dl = resolveDefaultLanguage()
-                dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fallbackDialect
+                val fb = if (isShippedDialect(fallbackDialect)) fallbackDialect else englishDialect
+                dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fb
 
             } else {
                 // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
@@ -551,14 +572,14 @@ class LanguageDetector {
                 when (text[i]) {
                     // Spanish: ñ/Ñ are unique among shipped languages
                     '\u00F1', '\u00D1' ->
-                        if (isLanguageEnabled("es")) return spanishDialect else return -1
+                        if (isLanguageEnabled("es")) return spanishDialect else continue
                     // German: ß is unique among shipped languages
                     '\u00DF' ->
-                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else return -1
+                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else continue
                     // Polish: Ąą Ęę Ćć Śś Źź Żż Ńń (ogonek/acutes) are Polish-only among shipped languages
                     '\u0105', '\u0104', '\u0119', '\u0118', '\u0107', '\u0106',
                     '\u015A', '\u015B', '\u0179', '\u017A', '\u017B', '\u017C', '\u0143', '\u0144' ->
-                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else return -1
+                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else continue
                 }
             }
             return -1
@@ -628,6 +649,38 @@ class LanguageDetector {
 
              val accentHinted = accentHint(text)
             if (accentHinted >= 0) return accentHinted
+            // Primary path:in-RAM unigram/bigram tables from the shipped 66KB
+            // asset. The 10% margin gate inside NgramScorer.detect() sends
+            // ambiguous runs back here -- only then does Lingua's heavier n-gram
+            // scan run. Both paths share the same LRU cache:re-announcing a seen
+            // UI string short-circuits before either scan runs.
+            synchronized(latinCache) {
+                val hit = latinCache[text]
+                if (hit != null) return hit
+            }
+            val effEnabled = transientEnabled?.let { enabledLanguages + it } ?: enabledLanguages
+            val ngramId = NgramScorer.detect(text, effEnabled)
+
+            if (ngramId >= 0) {
+                val dialect = when (ngramId) {
+                    0 -> englishDialect
+                    1 -> DIALECT_DE_DE
+                    2 -> frenchDialect
+                    3 -> spanishDialect
+                    4 -> DIALECT_IT_IT
+                    5 -> DIALECT_PT_BR
+                    6 -> DIALECT_FI_FI
+                    7 -> DIALECT_PL_PL
+                    else -> -1
+                }
+                if (dialect >=0) {
+                    synchronized(latinCache) {
+                        if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
+                        latinCache[text] = dialect
+                    }
+                    return dialect
+                }
+            }
             val ld = getLingua()
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
@@ -635,15 +688,8 @@ class LanguageDetector {
                 return if (isLatinDialect(dl)) dl else englishDialect
             }
 
-            // Recent Lingua decisions are repeats-safe:re-announcing the same UI
-            // string (label,nname, word( used to re-run the whole n-gram scan.
-            // Skip it——the biggest per-swipe win for TalkBack. Only actual Lingua
-            // decisions are cached;fallback/ASCII/short-run paths are context-dependent
-            // and already cheap,so they never touch it.
-            synchronized(latinCache) {
-                val hit = latinCache[text]
-                if (hit != null) return hit
-            }
+            // Lingua still handles ambiguous text;its decisions land in the same
+            // cache as the n-gram path above.
 
             try {
                 val lang = ld.detectLanguageOf(text)
@@ -660,7 +706,7 @@ class LanguageDetector {
                 }
                 val detectedDialect = languageToDialect(lang)
                 synchronized(latinCache) {
-                    if (latinCache.size >= LATIN_CACHE_MAX) latinCache.clear()
+                    if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
                     latinCache[text] = detectedDialect
                 }
                 return detectedDialect

@@ -17,11 +17,13 @@ import com.xw.vvtts.utils.EmojiExpander
 import com.xw.vvtts.utils.EmojiExpanderZhHans
 import com.xw.vvtts.utils.EmojiExpanderZhHant
 import com.xw.vvtts.utils.LanguageDetector
+import com.xw.vvtts.utils.NgramScorer
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
 import java.util.HashMap
 import java.util.Locale
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Eloquence TTS service (openevv port, single engine).
@@ -68,21 +70,25 @@ class VvTtsService : TextToSpeechService() {
         // engine writes only eci.ini to filesDir/eloquence/, going to the same
         // device-protected area keeps it writable while locked ( voice banks are in the .so ).
         val device = createDeviceProtectedStorageContext()
-        if (getSystemService(UserManager::class.java).isUserUnlocked()) mirrorPrefsToDevice(device)
+        if (getSystemService(UserManager::class.java)?.isUserUnlocked == true) mirrorPrefsToDevice(device)
         voiceConfig = VoiceConfig(device)
         voiceProfile = VoiceProfile(device)
         deviceCtx = device
         refreshSettings()
         registerAllPrefsListeners(device)
         registerAllPrefsListeners(applicationContext!!)
-        engine = EloquenceEngine(device)
-        engine!!.setVoiceProfile(voiceProfile)
-        val ok = engine!!.initialize()
+        val eng = acquireProcessEngine(device)
+        engine = eng
+        eng.setVoiceProfile(voiceProfile)
+        val ok = eng.isInitialized()
         // Restore the language-detection settings from device-protected storage
         restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
-        // Preload Lingua (background thread)
+        // Preload Lingua (background thread(
         LanguageDetector.preloadLingua()
-        // Warm the engine handle for the user's fixed dialect so the first
+        // Preload the in-RAM n-gram tables (66KB asset,milliseconds(--primary detector
+        // for Latin runs means Lingua only fires on ambiguous text.
+        Thread { NgramScorer.load(this) }.start()
+                // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
         engine!!.warmupDialect(LanguageDetector.getFixedDialect())
         Log.e(TAG, "onCreate engine initialized=$ok")
@@ -100,6 +106,8 @@ class VvTtsService : TextToSpeechService() {
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
+        stopping = true
+        deliveryExecutor.shutdownNow()
         try {
             if (engine != null) engine!!.stop()
         } catch (ignore: Throwable) {
@@ -145,7 +153,7 @@ class VvTtsService : TextToSpeechService() {
         // stale clear afterthe read completes (lost-update race(.
         settingsDirty = false
         try {
-            val unlocked = getSystemService(UserManager::class.java).isUserUnlocked()
+            val unlocked = getSystemService(UserManager::class.java)?.isUserUnlocked == true
             val active = if (unlocked) {
                 applicationContext
             } else {
@@ -165,18 +173,22 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onGetLanguage(): Array<String> {
-        // Keep in sync with onGetVoices / onIsLanguageAvailable /
-        // onGetDefaultVoiceNameFor (ISO 639-1); only dialects actually
-        // linked in this build are listed.
-
-        return arrayOf(
-            "en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh"
-        )
+        // Framework contract: exactly 3 elements — [language, country, variant]
+        // of the language currently used by the engine (country/variant may be
+        // ""; variant must be "" when country is). NOT a catalog: the picker
+        // reads indices 0..2, so a 10-element list yields garbage locales.
+        // Truth = the active voice (BCP-47, defaults "en-US"); style matches
+        // onGetDefaultVoiceNameFor (lowercase language, uppercase country).
+        val activeVoice = voiceConfig?.voice ?: "en-US"
+        val dash = activeVoice.indexOf('-')
+        val lang = if (dash > 0) activeVoice.substring(0, dash) else activeVoice
+        val country = if (dash > 0) activeVoice.substring(dash + 1).substringBefore('-') else ""
+        return arrayOf(lang.lowercase(), country.uppercase(), "")
     }
 
 
 
-    override fun onGetDefaultVoiceNameFor(language: String, country: String, variant: String): String {
+    override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         val lang = (language ?: "").lowercase()
         val c = (country ?: "").uppercase()
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
@@ -186,7 +198,7 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
-        if (lang.startsWith("pt")) return if ("BR" == c) "pt-BR" else "pt-PT"
+        if (lang.startsWith("pt")) return "pt-BR"
         if (lang.startsWith("fi")) return "fi-FI"
         if (lang.startsWith("zh")) return "zh-CN"
         return "en-US"
@@ -227,61 +239,85 @@ class VvTtsService : TextToSpeechService() {
         return voices
     }
 
-    override fun onIsLanguageAvailable(language: String, country: String, variant: String): Int {
+    override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
         val lang = language.lowercase()
         val supported = lang.startsWith("en") || lang.startsWith("de")
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
                 || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
                 || lang.startsWith("zh")
+        if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
         val hasVariant = variant != null && variant.isNotEmpty()
-        if (hasCountry || hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
+        if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
         if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
         return TextToSpeech.LANG_AVAILABLE
     }
 
-    override fun onLoadLanguage(language: String, country: String, variant: String): Int {
+    override fun onLoadLanguage(language: String?, country: String?, variant: String?): Int {
         return onIsLanguageAvailable(language, country, variant)
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
-        // Screen-reader pacing:a new request supersedes any queued-but-not-yet-
-        // started utterance. TalkBack swipes enqueue faster than playback drains;
-        // a plain FIFO piles up an unbounded backlog until speech trails focus
-        // by 10-20s and breaks ("keeps up a moment, then dies"(. In-flight
-        // speech still runs to completion (the engine cannot abandon it(; only jobs
-        // waiting behind it -- thus already stale -- are dropped.
-        bumpGeneration()
-        val g = generation
-        deliveryExecutor.execute(Runnable {
-            if (g == generation) {
-                runSynthesis(request, callback, g)
-            } else {
-                // Keep the framework's utterance contract: silently complete dropped
-                // jobs so the client isn't left waiting on onSynthesizeText.
-                try {
-                    callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
-                    callback.done()
-                } catch (ignore: Throwable) {}
-            }
-        })
+        val schedAt = SystemClock.elapsedRealtime()
+        try {
+            val gen = generation  // snapshot: a stop() while queued must drop this task
+            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
+        } catch (e: RejectedExecutionException) {
+            Log.w(TAG, "service shutting down;dropping utterance", e)
+            // Framework contract: every onSynthesizeText must terminate the
+            // callback. runSynthesis never runs on this path, so no start()/done()
+            // pair can fire — error() is the designated failure termination.
+            callback.error(TextToSpeech.ERROR_SYNTHESIS)
+        }
     }
 
-    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, g: Int) {
+    private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
+        val t0 = SystemClock.elapsedRealtime()
+        Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
         var text: String? = request.text
-        Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang=" + request.language)
+        // A stop() bumped the generation: this utterance was queued before the
+        // stop, the framework already canceled it, so it must not speak (ghost
+        // speech after cancellation) and must not clear the stopping flag.
+        // error() is the designated failure termination (never started).
+        if (gen != generation) {
+            Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {
+            }
+            return
+        }
+        // The stop flag is cleared only here, once the utterance actually
+        // dequeues:clearing it in onSynthesizeText() would let previous
+        // utterance (still draining on the single-thread executor( resume
+        // after a TalkBack re-swipes, causing overlapping speech.
+        stopping = false
+        // An onStop() can race in between the queue-time generation snapshot
+        // (taken in onSynthesizeText()and this reset:it bumps generationand
+        // sets stopping = true. Re-check so a just-issued cancellation isn't
+        // cleared, which would let a stale utterance drain in full (ghost speech(.
+        // Restore the stop flag and drop the utterance via error() instead.
+        if (gen != generation) {
+            stopping = true
+            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation)
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {}
+            return
+        }
+        Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
+        refreshSettings()
         val savedDefault = LanguageDetector.getDefaultLanguage()
-        val savedLangs = LanguageDetector.getEnabledLanguages()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
@@ -298,7 +334,7 @@ class VvTtsService : TextToSpeechService() {
             LanguageDetector.setDefaultLanguage(EloquenceEngine.DIALECT_ZH_CN)
 
 
-            LanguageDetector.setEnabledLanguages(LanguageDetector.getEnabledLanguages() + "zh")
+            LanguageDetector.setTransientEnabledLangs(LanguageDetector.getEnabledLanguages() + "zh")
 
 
             LanguageDetector.setFixedDialect(EloquenceEngine.DIALECT_ZH_CN)
@@ -328,9 +364,9 @@ class VvTtsService : TextToSpeechService() {
 
             // emoji expansion now happens per-segment, pitched to the segment's detected dialect
 
-            refreshSettings()
         // Auto-detect + chunk
             val segments = LanguageDetector.segment(text)
+            Log.i("SPD", "segmented n=" + segments.size + " dt=" + (SystemClock.elapsedRealtime() - t0) + "ms")
             for (seg in segments) {
                 Log.i("VvTts", "seg dialect=" + Integer.toHexString(seg.dialect) + " len=" + seg.text.length)
             }
@@ -358,13 +394,23 @@ class VvTtsService : TextToSpeechService() {
             val volume = voiceConfig!!.volume
 
             val pace = Pace(engine!!.getCoreSampleRate())
-            for (seg in segments) {
-                                // A superseded utterance stops delivering new chunks:the framework
-                // audio already handed keeps playing; we just stop feeding it so the
-                // newest request speaks promptly instead of waiting out the prior
-                // utterance's real-time pacing remainder ( the ~10s lag on fast
-                // lock->unlock->swipe). In no case is start+done left dangling( finally(.
-                if (g != generation) break
+                        val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
+            // Start the framework's audio pipe BEFORE synthesis: first-audio
+            // latency must not include the first segment's native synth time.
+            // The finally block still emits the start+done pair exactly once.
+            if (!started) {
+                callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
+                started = true
+            }
+                        for (seg in segments) {
+                            // Bail on either signal: stop() (framework( or a generation bump
+                            // (a newer utterance superseded ours while we were mid-queue(.
+                            if (stopping || gen != generation) break
+                            if (SystemClock.elapsedRealtime() > uttDeadline) {
+
+                                Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
+                                break
+                            }
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
@@ -372,33 +418,47 @@ class VvTtsService : TextToSpeechService() {
                 // inside EloquenceEngine.preprocess for zh segments. Do not repeat it
                 // here: a second pass after symbols were expanded defeats the
                 // date/time boundary detection (2024-03-15 -> mangled readings).
-                val expanded = when (seg.dialect) {
-                    LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(segText)
-                    LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(segText)
-                    else -> EmojiExpander.expand(segText)
-                }
-                if (expanded != null && expanded.isNotEmpty()) {
-                    segText = expanded
-                }
-                val pcm = engine!!.synthesizeCore(segText, seg.dialect, volume, preset, pitch, rate)
-                if (pcm != null && pcm.size > 0) {
-                    if (!started) {
-                        callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
-                        started = true
+                // Synthesize long segments into small, sentence-aware pieces: each
+                // piece is one bounded native call (~200 ms worst case), so the
+                // stop/generation checkpoint between pieces means a swipe lands
+                // within a couple hundred ms instead of waiting out a single
+                // uninterruptible synth of the whole segment (the "one second
+                // between swipes" / "fast swipes get clogged" regression).
+                for (chunkText in splitSynthChunks(segText)) {
+                    if (stopping || gen != generation) break
+                    if (SystemClock.elapsedRealtime() > uttDeadline) break
+                    var textToSynth: String = chunkText
+                    val expanded = when (seg.dialect) {
+                        LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(chunkText)
+                        LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(chunkText)
+                        else -> EmojiExpander.expand(chunkText)
                     }
+                    if (expanded != null && expanded.isNotEmpty()) {
+                        textToSynth = expanded
+                    }
+                    val t3 = SystemClock.elapsedRealtime()
+                    val pcm = engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
+                    if (pcm != null && pcm.size > 0) {
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
                     // Pace the handoff: never run more than 300 ms of audio ahead of
                     // playback  otherwise swipes/stops drown in the framework's queue
-                    var offset = 0
-                    while (offset < bytes.size) {
-                        if (g != generation) break
-                        val len = Math.min(max, bytes.size - offset)
-                        callback.audioAvailable(bytes, offset, len)
-                        offset += len
-                        pace.handed(len)
-                        hold(pace, g)
+                    // Guard: a 0/negative buffer-size report from the framework would
+                    // make `offset += len` never advance -> infinite loop. Skip
+                    // delivery (finally still terminates the pair cleanly).
+                    if (max > 0) {
+                        var offset = 0
+                        while (offset < bytes.size) {
+                            if (stopping) break
+                            val len = Math.min(max, bytes.size - offset)
+                            callback.audioAvailable(bytes, offset, len)
+                            offset += len
+                            pace.handed(len)
+                            hold(pace)
+                        }
                     }
+                }
                 }
             }
         } catch (e: Throwable) {
@@ -406,17 +466,36 @@ class VvTtsService : TextToSpeechService() {
         } finally {
                     // Revert the per-utterance override (preserve app-pref state)
                     LanguageDetector.setDefaultLanguage(savedDefault)
-                    LanguageDetector.setEnabledLanguages(savedLangs)
+                    LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
-                    try {
-                        // Playback contract: start() must precede done((),the framework throws
-                        // otherwise. One pair per utterance  every path funnels here, so
-                        // all silent/empty/early returns get the pair exactly once
-                        if (!started) {
+                    if (!started) {
+                        // Playback contract: start() must precede done(), the framework
+                        // throws otherwise. One pair per utterance; every path funnels
+                        // here, so all silent/empty/early returns get the pair exactly
+                        // once. If start() itself fails, done() would also throw (it
+                        // requires a prior start), so error() is the contract's failure
+                        // termination -- otherwise the callback is left unterminated.
+                        try {
                             callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "callback.start failed; terminating with error()", e)
+                            try {
+                                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                            } catch (ignore: Throwable) {
+                            }
+                            return
                         }
+                    }
+                    try {
                         callback.done()
-                    } catch (ignore: Throwable) {
+                    } catch (e: Throwable) {
+                        // done() after a successful start must not leave a dangling
+                        // utterance: error() is the fallback termination.
+                        Log.e(TAG, "callback.done failed; terminating with error()", e)
+                        try {
+                            callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                        } catch (ignore: Throwable) {
+                        }
                     }
                 }
     }
@@ -436,17 +515,20 @@ class VvTtsService : TextToSpeechService() {
     }
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-    @Volatile private var generation =  0
-        // The pacing hold waits on this monitor so a generation bump wakes it,and
-        // the superseded utterance stops pacing at real-time ( the 10s lag on fast
-        // lock->unlock->swipeand the first-boot lock-screen silence(.
-        private val paceLock = Object()
-        private fun bumpGeneration() {
-            generation++
-            synchronized(paceLock) { paceLock.notifyAll() }
-        }
-            override fun onStop() {
-            bumpGeneration()
+    @Volatile private var stopping = false
+    /** Bumped by onStop(); utterances queued before the bump are stale (the
+     *  framework already canceled them) and must not speak after the stop. */
+    @Volatile private var generation = 0L
+    /** Drop every queued utterance on teardown/unbind: called from onDestroy
+     *  and onUnbind so nothing flushes seconds after the service dies (two-voices
+     *  overlap, late lock-screen speech(. */
+    private fun bumpGeneration() {
+        stopping = true
+        generation++
+    }
+        override fun onStop() {
+            stopping = true
+            generation++  // invalidate utterances already queued pre-stop
             if (engine != null) engine!!.stop()
         }
 
@@ -517,21 +599,15 @@ class VvTtsService : TextToSpeechService() {
             fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
         }
 
-        private fun hold(pace: Pace, g: Int) {
-            // Wait until the playhead is caught up -- or a generation bump wakes us;
-            // the bump returns hold early, so the caller's gate check aborts the
-            // superseded utterance instead of sleeping out its real-time remainder
-            // (that sleep is what caused the ~10s lag and the first-boot lock-screen silence(.
-            synchronized(paceLock) {
-                var over = pace.aheadMs() - PACE_LEAD_MS
-                while (over > 0L && g == generation) {
-                    try {
-                        paceLock.wait(minOf(over, 20L))
-                    } catch (interrupted: InterruptedException) {
-                        break
-                    }
-                    over = pace.aheadMs() - PACE_LEAD_MS
+        private fun hold(pace: Pace) {
+            var over = pace.aheadMs() - PACE_LEAD_MS
+            while (over > 0L && !stopping) {
+                try {
+                    Thread.sleep(minOf(over, 20L))
+                } catch (interrupted: InterruptedException) {
+                    break
                 }
+                over = pace.aheadMs() - PACE_LEAD_MS
             }
         }
 
@@ -542,12 +618,96 @@ class VvTtsService : TextToSpeechService() {
 
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
             private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
-            // Pacing lead: max audio ms handed ahead of playback. At 300ms the single
-            // delivery worker held its thread for the real-time duration of most TalkBack
-            // utterances, so fast swipes stacked behind the previous utterance's playback (
-            // the clogged-swipe ~1s+ symptom(. The factory hands audio at synth speed with
-            // no pacing hold at all; 3000ms covers TalkBack-sized utterances so the worker
-            // hands off instantly for them, while capping buffered audio ~265KB for longer reads..
-            private const val PACE_LEAD_MS = 3000L
+            // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
+                        private const val PACE_LEAD_MS = 300L
+                        // Per-utterance wall-clock budget: if synthesis (hang-cascades, 30s
+                        // watchdog rotations stacking behind each other( blows past this, we
+                        // truncate rather than let one utterance stall the whole TalkBack pipeline.
+                        private const val UTT_BUDGET_MS = 12000L
+                        // Synth chunk caps: the first piece is smaller so first audio
+                        // lands fast; later pieces cap the worst-case wait for a swipe,
+                        // which now lands within one bounded native call instead of a
+                        // whole segment.
+                        private const val CHUNK_FIRST = 40
+                        private const val CHUNK_MAX = 60
+
+            // === Process-scoped engine reuse ===
+            // TextToSpeechService is created/destroyed each time the framework binds the
+            // engine (TalkBack swipe bursts re-bind constantly(. A per-onCreate engine
+            // would tear down warm LPC handles and every re-bind would re-pay the full
+            // native eciNewEx voice-bank load — the big hover-to-speech delay after any
+            // pause. Holding one engine per process keeps all dialects warm: re-binds
+            // reuse live handles, first-swipe-after-idle latency drops to near zero.
+
+            private val engineLock = Any()
+            @Volatile private var processEngine: EloquenceEngine? = null
+
+
+            private fun acquireProcessEngine(ctx: Context): EloquenceEngine {
+                processEngine?.let { return it }
+                synchronized(engineLock) {
+                    val cur = processEngine
+                    if (cur != null) return cur
+                    val fresh = EloquenceEngine(ctx)
+                    if (fresh.initialize()) processEngine = fresh
+                    return fresh
+                }
+            }
+
+            /**
+             * Split a long segment into sentence-aware pieces capped at CHUNK_MAX
+             * chars (the first piece at CHUNK_FIRST so first audio lands fast).
+             * Splits only at punctuation/whitespace so words, dates and number
+             * runs stay intact - a '-'/'/' or '.' inside a date is never a split
+             * point. Used per-utterance so a swipe (stop/generation bump) lands
+             * within one bounded native synth call instead of waiting out a
+             * giant segment.
+             */
+            private fun splitSynthChunks(text: String): List<String> {
+                val chunks = mutableListOf<String>()
+                val n = text.length
+                if (n <= CHUNK_MAX) return listOf(text)
+                var start = 0
+                while (start < n) {
+                    val cap = if (chunks.isEmpty()) CHUNK_FIRST else CHUNK_MAX
+                    var end = start + cap
+                    if (end >= n) {
+                        chunks.add(text.substring(start))
+                        break
+                    }
+                    var cut = -1
+                    var i = end
+                    while (i > start + 1 && cut < 0) {
+                        val c = text[i - 1]
+                        val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
+                            || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
+                            || c == '！' || c == '？' || c == '、'
+                        if (isBoundary) {
+                            val prev = if (i >= 2) text[i - 2] else ' '
+                            val next = if (i < n) text[i] else ' '
+                            // Never split '.'/',' inside numbers/decimals: "1,234.5"
+                            // an "3.14" must survive as one token.
+                            val digitGuard = (c == '.' && (prev.isDigit() || next.isDigit()))
+                                || (c == ',' && prev.isDigit() && next.isDigit())
+                            if (!digitGuard) cut = i
+                        }
+                        i--
+                    }
+                    if (cut < 0) {
+                        // No boundary in range: force-cut, backing off digit/symbol
+                        // runs so dates/numbers are never split mid-run.
+
+                        cut = end
+                        while (cut > start + 1 && (text[cut - 1].isDigit() || text[cut - 1] == ':'
+                                || text[cut - 1] == '/' || text[cut - 1] == '-' || text[cut - 1] == '.')) {
+                            cut--
+                        }
+                    }
+                    chunks.add(text.substring(start, cut))
+                    start = cut
+                    while (start < n && text[start].isWhitespace()) start++
+                }
+                return chunks
+            }
         }
     }

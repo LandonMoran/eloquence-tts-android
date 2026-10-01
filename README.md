@@ -8,7 +8,8 @@
 
 - **14 种语言**：简体中文、繁体中文（台湾）、日文、韩文、英式/美式英语、德语、法语（法国/加拿大）、西班牙语（西班牙/墨西哥）、意大利语、葡萄牙语（巴西）、芬兰语
 - **8 个发音角色**：Reed / Sandy / Glen / Rocko / Bobby / Shelly / Grandpa / Grandma，通过 ECI voice param 机制切换
-- **多语言自动检测**：Unicode 区块 + Lingua 统计双层检测，混合语言文本自动分片，各用各的引擎朗读
+- **多语言自动检测**：Unicode 规则 → 内存 n-gram 统计 → Lingua 三层检测，混合语言文本自动分片，各用各的引擎朗读
+- **自动更新**：基于 GitHub Releases 的检查/下载/安装通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）
 - **零延迟**：本地引擎，按下就出声，无云端往返
 - **自定义捏声**：长按发音角色可调节性别、头部大小、情感起伏、粗糙度、气息感等音色参数
 - **语速 / 音调 / 音量**：可独立调节，试听实时生效
@@ -48,7 +49,7 @@ python3 oracle/merge_build.py
 bash build.sh
 ```
 
-产物为 `vvtts_signed.apk`。CI（`.github/workflows/build-apk.yml`）在 `fix/**` push 时自动构建。
+产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
 
 
 
@@ -67,7 +68,7 @@ bash build.sh
 
 - `oracle/table/*.consolidated.tsv`：一行一个汉字 + 真人 PCM，采集自参考 Eloquence 引擎
 - `oracle/merge_build.py`：把 consolidated TSV + legacy 行确定性合并成 `oracle_chs.c`（16,913 字）
-- `oracle-dump` workflow（arm64 CI）可重采缺失字（如 百 / 零 / 八。，产物 `corpus/zh-cn-hanzi.tsv`，再由 `oracle-assemble` 合并回表
+产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
 - 数字 0-9 由 `TextNormalizer` 归一为汉字（零一二…（，经同一语音库朗读
 
 ###角色切换
@@ -76,7 +77,7 @@ bash build.sh
 
 ###多语言检测
 
-双层架构：Unicode 规则层（O(n) 判定假名/谚文/汉字/拉丁（+ Lingua 统计层（拉丁 10 语言互分。
+三层架构：Unicode 规则层（O(n) 判定假名/谚文/汉字/拉丁）+ 内存 n-gram 层 + Lingua 统计层（拉丁 10 语言互分
 
 
 
@@ -90,5 +91,6 @@ bash build.sh
 
 ## Roadmap
 
-- [ ] 重采 百 / 零 / 八 PCM（`oracle-dump` + `oracle-assemble`（，合上最后一个数字静音口
-- [ ] 发布说明见 `RELEASES.md`（草稿，未发布。）
+- [ ] 重采 百 / 零 / 八 PCM（`oracle-dump` + `oracle-assemble`），合上最后一个数字静音口
+- [x] 首个发布：v1.0 · versionCode 1（版本策略见 `RELEASES.md`）
+- 发布变更说明见 `RELEASES.md`（随每次发布更新）
