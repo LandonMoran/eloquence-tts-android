@@ -19,7 +19,11 @@ if grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrac
   echo "CRASH_MARKERS_FOUND"
   exit 1
 else
-  echo "NO_CRASH_MARKERS"
+  if ! grep -qE "CHS_ORACLE.*build_pcm samples=[1-9][0-9]*" logcat-full.txt;then
+          echo "NO_SYNTH_SAMPLES — zh synthesis produced zero audio;failing"
+          exit 1
+        fi
+        echo "NO_CRASH_MARKERS"
 fi
 echo "=== TAIL ===="
 tail -25 logcat-full.txt

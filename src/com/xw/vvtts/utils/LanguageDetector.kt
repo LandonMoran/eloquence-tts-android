@@ -316,7 +316,6 @@ class LanguageDetector {
                             flushSegment(current, currentType, lastDialect, result)
                         }
                         currentType = 5
-                        current = StringBuilder()
                     }
                     current.append(text, i, unitEnd)
                     continue
@@ -328,7 +327,6 @@ class LanguageDetector {
                         flushSegment(current, currentType, lastDialect, result)
                     }
                     currentType = type
-                    current = StringBuilder()
                 }
                 current.append(text, i, unitEnd)
 

@@ -75,10 +75,10 @@ class VoiceProfile(context: Context) {
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
         val ea = prefs.edit()
         block(ea)
-        ea.commit()
+        ea.apply()
         val eb = devicePrefs.edit()
         block(eb)
-        eb.commit()
+        eb.apply()
     }
 
     val preset: Int

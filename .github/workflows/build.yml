@@ -61,16 +61,6 @@ jobs:
           curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar /tmp/annotations-24.1.0.jar
 
-      # CI-only dev keystore: generated per build, never committed (gitignored).
-      # Sideloads fine; not a release identity.
-      - name: Generate keystore
-        run: |
-          keytool -genkeypair -v \
-            -keystore vvtts.jks -storepass android123 -keypass android123 \
-            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=CI Build,O=Home,C=US"
-
-      - name: Use committed CI keystore
         run: |
           cp vvttts-ci.jks vvttts.jks
           ls -la vvttts.jks
@@ -107,8 +97,8 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
           KEYSTORE: vvtts.jks
-          KS_PASS: android123
-          KEY_PASS: android123
+          KS_PASS: ${{ secrets.KS_PASS }}
+          KEY_PASS: ${{ secrets.KS_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
 
       - name: Upload APKs

@@ -92,8 +92,8 @@ class VoiceConfig(private val context: Context) {
 
 
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
-        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.commit()
-        val b = devicePrefs.edit(); block(b); b.commit()
+        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.apply()
+        val b = devicePrefs.edit(); block(b); b.apply()
     }
 
     val voice: String

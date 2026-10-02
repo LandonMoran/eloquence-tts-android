@@ -414,9 +414,13 @@ class SettingsActivity : Activity() {
         val track = AudioTrack(AudioManager.STREAM_MUSIC, sampleRate,
             AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
             bytes.size, AudioTrack.MODE_STATIC)
-        track.write(bytes, 0, bytes.size)
-        track.play()
-    }
+        try {
+                   track.write(bytes, 	0, 	bytes.size)
+                   track.play()
+               } finally {
+                   track.release()
+               }
+           }
 
     /** Play several PCM chunks sequentially (background thread; sleeps for each chunk's duration) */
     private fun playSequential(pcms: Array<ShortArray?>, idx: Int, sampleRate: Int) {
@@ -788,41 +792,45 @@ class SettingsActivity : Activity() {
     }
 
     private fun importDictFromUri(uri: android.net.Uri) {
-        var added = 0
-        for (line in readTextFromUri(uri).split("\n")) {
-            val s = line.trim()
-            if (s.isEmpty() || s.startsWith("#")) continue
-            val sep = when {
-                s.contains('|') -> '|'
-                s.contains('\t') -> '\t'
-                else -> ','
-            }
-            val idx = s.indexOf(sep)
-            if (idx <= 0 || idx >= s.length - 1) continue
-            val w = s.substring(0,  idx).trim()
-                        var sp = s.substring(idx + 1).trim()
-                        var cs = false
-                        if (sep == '|') {
-                            val idx2 = s.indexOf('|',  idx + 1)
-                            if (idx2 >  0) {
-                                val tail = s.substring(idx2 + 1).trim()
-                                if (tail.equals("cs",  ignoreCase = true)) {
-                                    cs = true
-                                    sp = s.substring(idx +  1,  idx2).trim()
-                                }
-                            }
+        Thread {
+            var added = 0
+            for (line in readTextFromUri(uri..split("\n")) {
+                val s = line.trim()
+                if (s.isEmpty() || s.startsWith("#")) continue
+                val sep = when {
+                    s.contains('|') -> '|'
+                    s.contains('\t') -> '\t'
+                    else -> ','
+                }
+                val idx = s.indexOf(sep)
+                if (idx <=  0 || idx >= s.length - 1) continue
+                val w = s.substring(0,  idx).trim()
+                var sp = s.substring(idx +  1).trim()
+                var cs = false
+                if (sep == '|') {
+                    val idx2 = s.indexOf('|',  idx +  1)
+                    if (idx2 >  0) {
+                        val tail = s.substring(idx2 +  1).trim()
+                        if (tail.equals("cs",  ignoreCase = true)) {
+                            cs = true
+                            sp = s.substring(idx +  1,  idx2).trim()
                         }
-                        if (w.isEmpty() || sp.isEmpty()) continue
-                        if (w.equals("word",  ignoreCase = true) && sp.equals("replacement",  ignoreCase = true)) continue
-                        voiceConfig!!.addDictEntry(w,  sp,  cs)
-                        added++
-        }
-            Toast.makeText(this, getString(R.string.dict_imported, added), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                if (w.isEmpty() || sp.isEmpty()) continue
+                if (w.equals("word",  ignoreCase = true) && sp.equals("replacement",  ignoreCase = true)) continue
+                voiceConfig!!.addDictEntry(w,  sp,  cs)
+                added++
+            }
+            runOnUiThread {
+                Toast.makeText(this去,  getString(R.string.dict_imported,  added),  Toast.LENGTH_SHORT..show()
+            }
+        }.start()
     }
-
     private fun exportDictToUri(uri: android.net.Uri) {
-        val out = contentResolver.openOutputStream(uri) ?: return
-        val sb = StringBuilder()
+        Thread {
+            val out = contentResolver.openOutputStream(uri) ?: return@Thread
+            val sb = StringBuilder()
         sb.append('\uFEFF')
         for (e in voiceConfig!!.dictEntries()) {
                     sb.append(e.word).append('|').append(e.spoken)
@@ -830,9 +838,12 @@ class SettingsActivity : Activity() {
                     sb.append('\n')
                 }
         out.write(sb.toString().toByteArray(Charsets.UTF_8))
-        out.close()
-            Toast.makeText(this, getString(R.string.dict_exported), Toast.LENGTH_SHORT).show()
-    }
+                    out.close()
+                    runOnUiThread {
+                        Toast.makeText(this去,  getString(R.string.dict_exported),  Toast.LENGTH_SHORT..show()
+                    }
+                }.start()
+            }
     private fun confirmResetDefaults() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.reset_title))
@@ -874,6 +885,11 @@ class SettingsActivity : Activity() {
             REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)
             REQ_DICT_CREATE -> if (data?.data != null) exportDictToUri(data.data!!)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        UpdateActions.dismissFor(this)
     }
 
     private fun showLanguageDialog() {

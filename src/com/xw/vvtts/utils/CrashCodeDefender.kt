@@ -94,10 +94,9 @@ object CrashCodeDefender {
                     }
                 }
                 corpus = set
-            } catch (t: Throwable) {
-                Log.e(TAG, "failed to load crashers corpus;running without defender", t)
-            } finally {
                 loaded = true
+            } catch (t: Throwable) {
+                Log.e(TAG, "failed to load crashers corpus;defense off, will retry", t)
             }
         }
     }

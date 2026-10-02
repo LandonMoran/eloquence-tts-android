@@ -15,8 +15,20 @@ object UpdateActions {
     /** Re-entrancy guard for the download flow. */
     private val downloadBusy = AtomicBoolean(false)
 
+    /** The in-flight progress dialog; dying activities dismiss it via dismissFor((). */
+    @Volatile private var currentDialog: ProgressDialog? = null
+
     /** Returns whether this activity is neither finishing nor destroyed. */
     private fun Activity.alive() = !isFinishing && !isDestroyed
+
+    /** If a progress dialog is bound to this activity, dismiss it (call from onDestroy(. */
+    fun dismissFor(activity: Activity) {
+        val d = currentDialog
+        if (d != null && d.context === activity) {
+            runCatching { d.dismiss() }
+            currentDialog = null
+        }
+    }
 
     /** Shows progress while checking for updates in a background thread, then offers an available update. */
     fun showCheckDialog(activity: Activity) {
@@ -25,6 +37,7 @@ object UpdateActions {
         progress.setMessage(activity.getString(R.string.checking_updates))
         progress.setCancelable(false)
         progress.show()
+        currentDialog = progress
         Thread {
             val res = ElqUpdateChecker.check(activity)
             activity.runOnUiThread {
@@ -68,6 +81,7 @@ object UpdateActions {
         progress.setMessage(activity.getString(R.string.update_downloading_fmt, 0))
         progress.setCancelable(false)
         progress.show()
+        currentDialog = progress
         Thread {
             try {
                 val apk = File(activity.cacheDir, "elq-update.apk")
@@ -84,9 +98,11 @@ object UpdateActions {
             }
             val result = ElqUpdateInstaller.install(activity, apk)
 if (result is ElqUpdateInstaller.Result.UserActionRequired) {
-val conf = result.confirmIntent
-if (conf != null) runCatching { activity.startActivity(conf) }
-}
+                val conf = result.confirmIntent
+                if (conf != null) activity.runOnUiThread {
+                    if (activity.alive()) runCatching { activity.startActivity(conf) }
+                }
+            }
 activity.runOnUiThread {
 if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
 progress.dismiss()
