@@ -462,7 +462,7 @@ class VvTtsService : TextToSpeechService() {
                     if (pcm != null && pcm.size > 0) {
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
-                    // Pace the handoff: never run more than 300 ms of audio ahead of
+                    // Pace the handoff: never run more than PACE_LEAD_MS of audio ahead of
                     // playback  otherwise swipes/stops drown in the framework's queue
                     // Guard: a 0/negative buffer-size report from the framework would
                     // make `offset += len` never advance -> infinite loop. Skip
@@ -638,8 +638,11 @@ class VvTtsService : TextToSpeechService() {
 
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
             private const val VOICE_PROFILE_PREFS = "vvtts_voice_profile"
-            // Pacing lead: max audio ms delivered ahead of playback (evvdroid:300(.
-                        private const val PACE_LEAD_MS = 300L
+            // Pacing lead: max audio ms delivered ahead of playback. 300 ms did not
+            // cover TalkBack-sized utterances (synthetic gaps between chunks/utterances
+            // reappeared(; restored to the pre-merge 3000 ms. hold() polls every ~20ms
+            // and exits as soon as stopping trips, so a swipe/stop stays responsive.
+                        private const val PACE_LEAD_MS = 3000L
                         // Per-utterance wall-clock budget: if synthesis (hang-cascades, 30s
                         // watchdog rotations stacking behind each other( blows past this, we
                         // truncate rather than let one utterance stall the whole TalkBack pipeline.
