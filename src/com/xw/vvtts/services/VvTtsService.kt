@@ -660,7 +660,7 @@ class VvTtsService : TextToSpeechService() {
                         // whole segment.
                         private const val CHUNK_FIRST =  70
                         private const val CHUNK_MAX = 110
-                        private const val CHUNK_SENTENCE_GRACE =  50
+                        private const val CHUNK_SENTENCE_GRACE = 120
                         private const val MIN_CHUNK_SENTENCE =  40
 
             // === Process-scoped engine reuse ===
