@@ -330,7 +330,7 @@ class VvTtsService : TextToSpeechService() {
             return
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
-                if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false))) {
+                if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                     Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.text?.length ?: 0))
                 }
 
@@ -462,7 +462,7 @@ class VvTtsService : TextToSpeechService() {
                     val t3 = SystemClock.elapsedRealtime()
                     val pcm = engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
-                    if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false))) {
+                    if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
                     }
                     if (pcm != null && pcm.size > 0) {
@@ -728,7 +728,7 @@ class VvTtsService : TextToSpeechService() {
                         while (j > start + 1 && cut < 0) {
                             val c = text[j - 1]
                             val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
-                                || c == ';' || c == '!' || c == '?' || c == '。' || c == '。“'
+                                || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
                                 || c == '！' || c == '？' || c == '、'
                             if (isBoundary) {
                                 val prev = if (j >= 2) text[j - 2] else ' '
