@@ -37,8 +37,8 @@ class VoiceConfig(private val context: Context) {
     // next unlocked service start, which is what made the voice revert at lock-screen).
     private val devicePrefs: SharedPreferences =
         context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private var cachedMap: Map<String, String>? = null
-    private var cachedMtime: Long = -1L
+    @Volatile private var cachedMap: Map<String, String>? = null
+    @Volatile private var cachedMtime: Long = -1L
     /**
      * Reads voice preferences from XML, reusing the cached map while the file timestamp is unchanged.
      *
@@ -156,8 +156,8 @@ class VoiceConfig(private val context: Context) {
         }
 
     fun addDictEntry(word: String,  spoken: String,  caseSensitive: Boolean = false) {
-            val w = word.trim()
-            val s = spoken.trim()
+            val w = word.trim().replace('\n', ' ').replace('|', ' ')
+            val s = spoken.trim().replace('\n', ' ').replace('|', ' ')
             if (w.isEmpty() || s.isEmpty()) return
             val cur = readMap()[KEY_DICT] ?: ""
             val kept = ArrayList<String>()

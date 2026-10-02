@@ -8,8 +8,12 @@ import android.net.Uri
 import android.widget.Toast
 import com.xw.vvtts.R
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 object UpdateActions {
+
+    /** Re-entrancy guard for the download flow. */
+    private val downloadBusy = AtomicBoolean(false)
 
     /** Returns whether this activity is neither finishing nor destroyed. */
     private fun Activity.alive() = !isFinishing && !isDestroyed
@@ -42,7 +46,7 @@ object UpdateActions {
                             startUpdateDownload(activity, res.downloadUrl)
                         } else if (res.htmlUrl != null) {
                             runCatching {
-                                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.htmlUrl ?: ""))))
+                                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.htmlUrl ?: "")))
                             }
                         }
                     }
@@ -59,12 +63,14 @@ object UpdateActions {
             return
         }
         if (!activity.alive()) return
+        if (!downloadBusy.compareAndSet(false, true)) return
         val progress = ProgressDialog(activity)
         progress.setMessage(activity.getString(R.string.update_downloading_fmt, 0))
         progress.setCancelable(false)
         progress.show()
         Thread {
-            val apk = File(activity.cacheDir, "elq-update.apk")
+            try {
+                val apk = File(activity.cacheDir, "elq-update.apk")
             val ok = ElqUpdateDownloader.download(url, apk) { done, total ->
                 val pct = if (total > 0) (done * 100 / total).toInt() else 0
                 activity.runOnUiThread { progress.setMessage(activity.getString(R.string.update_downloading_fmt, pct)) }
@@ -77,23 +83,27 @@ object UpdateActions {
                 return@Thread
             }
             val result = ElqUpdateInstaller.install(activity, apk)
-            activity.runOnUiThread {
-                if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
-                progress.dismiss()
-                apk.delete()
-                when (result) {
-                    is ElqUpdateInstaller.Result.UserActionRequired -> {
-                        val conf = result.confirmIntent
-                        if (conf != null) runCatching { activity.startActivity(conf) }
-                    }
-                    is ElqUpdateInstaller.Result.Success -> {
-                        Toast.makeText(activity, activity.getString(R.string.update_install_ok), Toast.LENGTH_SHORT).show()
-                    }
-                    is ElqUpdateInstaller.Result.Failed -> {
-                        Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, result.message), Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        }.start()
-    }
+if (result is ElqUpdateInstaller.Result.UserActionRequired) {
+val conf = result.confirmIntent
+if (conf != null) runCatching { activity.startActivity(conf) }
+}
+activity.runOnUiThread {
+if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
+progress.dismiss()
+apk.delete()
+when (result) {
+is ElqUpdateInstaller.Result.Success -> {
+Toast.makeText(activity, activity.getString(R.string.update_install_ok), Toast.LENGTH_SHORT).show()
+}
+is ElqUpdateInstaller.Result.Failed -> {
+Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, result.message), Toast.LENGTH_LONG).show()
+}
+}
+}
+}
+} finally {
+downloadBusy.set(false)
+}
+}.start()
+
 }

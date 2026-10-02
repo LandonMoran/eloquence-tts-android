@@ -57,7 +57,7 @@ object ElqUpdateChecker {
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
         var conn: HttpURLConnection? = null
         try {
-            val c = URL(apiUrl?.openConnection() as HttpURLConnection
+            val c = URL(apiUrl?.openConnection() as HttpURLConnection)
             conn = c
             c.requestMethod = "GET"
             c.connectTimeout = 15000
@@ -82,7 +82,7 @@ object ElqUpdateChecker {
             if (target == null) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
-            val latestCode = target.tagName?.removePrefix("v")?.toIntOrNull() ?: -1
+            val latestCode = parseVersionCode(target.tagName) ?: -1
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
                 hasUpdate = latestCode > localVersionCode,
@@ -99,6 +99,11 @@ object ElqUpdateChecker {
         } finally {
             runCatching { conn?.disconnect() }
         }
+    }
+
+    private fun parseVersionCode(tag: String?): Int? {
+        val m = Regex("""(\d{4,})""").find(tag ?: "") ?: return null
+        return m.groupValues[1].toIntOrNull()
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {

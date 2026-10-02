@@ -23,20 +23,21 @@ object ElqUpdateDownloader {
             if (code !in 200..299) return false
             val total = c.contentLengthLong
             val input = c.inputStream
-            val output = FileOutputStream(dest)
-            val buf = ByteArray(64 * 1024)
-            var done = 0L
-            while (true) {
-                val n = input.read(buf)
-                if (n < 0) break
-                output.write(buf, 0, n)
-                done += n
-                onProgress?.invoke(done, total)
+            input.use { inp ->
+                FileOutputStream(dest).use { output ->
+                    val buf = ByteArray(64 * 1024)
+                    var done = 0L
+                    while (true) {
+                        val n = inp.read(buf)
+                        if (n < 0) break
+                        output.write(buf, 0, n)
+                        done += n
+                        onProgress?.invoke(done, total)
+                    }
+                    output.flush()
+                }
             }
-            output.flush()
-            output.close()
-            input.close()
-            return dest.length() > 0
+            return if (total > 0) dest.length() >= total else dest.length() > 0
         } catch (e: Exception) {
             Log.e(TAG, "download failed", e)
             runCatching { dest.delete() }

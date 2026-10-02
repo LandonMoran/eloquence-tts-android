@@ -55,6 +55,7 @@ object ElqUpdateInstaller {
             /** Converts an install status broadcast into a result, releases the waiting caller and unregisters this receiver. */
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action != ACTION_INSTALL_STATUS) return
+                if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != sessionId) return
                 val status = intent.getIntExtra(
                     PackageInstaller.EXTRA_STATUS,
                     PackageInstaller.STATUS_FAILURE
@@ -93,23 +94,28 @@ object ElqUpdateInstaller {
         } catch (t: Throwable) {
             return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
-        try {
-            val session = pm.packageInstaller.openSession(sessionId)
-            try {
-                apkFile.inputStream().use { input ->
-                    session.openWrite("base.apk", 0, apkFile.length()).use { output ->
-                        input.copyTo(output, 64 * 1024)
-                        session.fsync(output)
+        var committed = false
+                try {
+                    val session = pm.packageInstaller.openSession(sessionId)
+                    try {
+                        apkFile.inputStream().use { input ->
+                            session.openWrite("base.apk", 0, apkFile.length()).use { output ->
+                                input.copyTo(output, 64 * 1024)
+                                session.fsync(output)
+                            }
+                        }
+                        session.commit(commitIntent(appContext, sessionId.intentSender))
+                        committed = true
+                    } finally {
+                        session.close()
                     }
+                } catch (e: Exception) {
+                    runCatching { appContext.unregisterReceiver(receiver) }
+                    if (!committed) {
+                        runCatching { pm.packageInstaller.abandonSession(sessionId) }
+                    }
+                    return Result.Failed(null, e.message ?: e.javaClass.simpleName)
                 }
-                session.commit(commitIntent(appContext, sessionId).intentSender)
-            } finally {
-                session.close()
-            }
-        } catch (e: Exception) {
-            runCatching { appContext.unregisterReceiver(receiver) }
-            return Result.Failed(null, e.message ?: e.javaClass.simpleName)
-        }
         try {
             val ok = latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             if (!ok) {
@@ -134,3 +140,4 @@ object ElqUpdateInstaller {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
     }
+}

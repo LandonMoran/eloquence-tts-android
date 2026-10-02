@@ -147,6 +147,12 @@ class TextNormalizer {
             val sb = StringBuilder(input.length)
             for (i in input.indices) {
                 val c = input[i]
+                if (c == '-' && i > 0 && i + 1 < input.length &&
+                    input[i - 1].isDigit() && input[i + 1].isDigit()
+                ) {
+                    sb.append(c)
+                    continue
+                }
                 val name = SYMBOL_NAMES[c]
                 if (name != null) {
                     sb.append(name)
