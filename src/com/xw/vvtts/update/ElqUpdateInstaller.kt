@@ -23,6 +23,12 @@ object ElqUpdateInstaller {
     private const val ACTION_INSTALL_STATUS = "com.xw.vvtts.action.APP_UPDATE_INSTALL_STATUS"
     private const val INSTALL_TIMEOUT_MINUTES = 5L
 
+    /**
+     * Writes and commits [apkFile] through PackageInstaller, registering the status receiver before commit.
+     *
+     * Blocks for up to five minutes after commit; call from a background thread.
+     * Returns a confirmation intent requiring user action, success, or failure including timeout.
+     */
     fun install(context: Context, apkFile: File): Result {
         val appContext = context.applicationContext ?: context
         val pm = appContext.packageManager
@@ -46,6 +52,7 @@ object ElqUpdateInstaller {
         var result: Result? = null
         val filter = IntentFilter(ACTION_INSTALL_STATUS)
         val receiver = object : BroadcastReceiver() {
+            /** Converts an install status broadcast into a result, releases the waiting caller and unregisters this receiver. */
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action != ACTION_INSTALL_STATUS) return
                 val status = intent.getIntExtra(
@@ -117,6 +124,7 @@ object ElqUpdateInstaller {
         return result ?: Result.Failed(null, "install timed out")
     }
 
+    /** Creates a mutable broadcast PendingIntent targeting this package, keyed by [sessionId], for install status. */
     private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
         val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
         return PendingIntent.getBroadcast(

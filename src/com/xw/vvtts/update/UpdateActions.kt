@@ -9,8 +9,10 @@ import java.io.File
 
 object UpdateActions {
 
+    /** Returns whether this activity is neither finishing nor destroyed. */
     private fun Activity.alive() = !isFinishing && !isDestroyed
 
+    /** Shows progress while checking for updates in a background thread, then offers an available update. */
     fun showCheckDialog(activity: Activity) {
         if (!activity.alive()) return
         val progress = ProgressDialog(activity)
@@ -42,6 +44,7 @@ object UpdateActions {
         }.start()
     }
 
+    /** Downloads an APK and requests installation in a background thread, presenting progress and the result. */
     private fun startUpdateDownload(activity: Activity, url: String?) {
         if (url == null) {
             Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "no download link"), Toast.LENGTH_LONG).show()

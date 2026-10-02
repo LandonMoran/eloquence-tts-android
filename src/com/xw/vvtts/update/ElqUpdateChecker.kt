@@ -42,6 +42,12 @@ object ElqUpdateChecker {
         val error: String? = null
     )
 
+    /**
+     * Checks GitHub releases synchronously and compares the latest stable release tag with the installed version.
+     *
+     * Returns release metadata with a nullable compatible APK URL, or an error result when the check fails.
+     * Call from a background thread because this performs network I/O.
+     */
     fun check(context: Context): UpdateResult {
         val localVersionCode = try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode

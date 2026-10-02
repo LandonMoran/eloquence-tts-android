@@ -39,6 +39,12 @@ class VoiceConfig(private val context: Context) {
         context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private var cachedMap: Map<String, String>? = null
     private var cachedMtime: Long = -1L
+    /**
+     * Reads voice preferences from XML, reusing the cached map while the file timestamp is unchanged.
+     *
+     * Falls back to device-protected storage if the app preference file is absent.
+     * Closes the input stream after parsing and preserves an existing cache if reading fails.
+     */
     private fun readMap(): Map<String, String> {
         val appCtx = context.applicationContext ?: context
         val f = if (File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml").exists()) File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml")

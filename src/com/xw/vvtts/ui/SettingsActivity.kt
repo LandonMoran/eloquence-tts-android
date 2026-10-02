@@ -55,6 +55,7 @@ class SettingsActivity : Activity() {
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
     private val REQ_DICT_CREATE = 703
+    /** Initializes settings and the shared engine, builds the settings screen and schedules requested autotests. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
@@ -278,10 +279,12 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Starts sample speech synthesis and playback on a new background thread. */
     private fun testSpeech() {
         Thread { testSpeechImpl() }.start()
     }
 
+    /** Synthesizes and plays a sample using the current voice settings, falling back to English for unshipped dialects. */
     private fun testSpeechImpl() {
         if (engine == null || !engine!!.isInitialized()) {
             Toast.makeText(this, getString(R.string.engine_not_ready), Toast.LENGTH_SHORT).show()
@@ -336,6 +339,7 @@ class SettingsActivity : Activity() {
         Thread { testCrashImpl(text) }.start()
     }
 
+    /** Synthesizes [text] for crash diagnostics using English or shipped Simplified Chinese, and logs the outcome. */
     private fun testCrashImpl(text: String) {
                 if (engine == null || !engine!!.isInitialized()) return
                 Log.i("CRASHHOOK", "start:" + text)

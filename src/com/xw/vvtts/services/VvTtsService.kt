@@ -133,6 +133,7 @@ class VvTtsService : TextToSpeechService() {
         return dirs
     }
 
+    /** Records preference directory timestamps and reports changes, including the first observation. */
     private fun prefsDirsChanged(): Boolean {
 
         var changed = false
@@ -177,12 +178,14 @@ class VvTtsService : TextToSpeechService() {
     // ANY of these methods (cold-init NPE, disk read, parse( is marshalled
     // into the AIDL reply as an exception-status and the Android 17 Settings
     // page dies decoding it (Parcel.createExceptionOrNull -> Collection.toArray(.
+    /** Runs a voice query and logs any thrown failure before returning [fallback]. */
     private inline fun <T> voiceSafe(fallback: T, block: () -> T): T {
         return try { block() } catch (t: Throwable) {
             Log.w(TAG, "voice query failed;returning safe fallback", t)
             fallback
         }
     }
+    /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
         return voiceSafe(arrayOf("en", "", "")) {
         // Framework contract: exactly 3 elements — [language, country, variant]
@@ -201,6 +204,7 @@ class VvTtsService : TextToSpeechService() {
 
 
 
+    /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
         val lang = (language ?: "").lowercase()
@@ -219,6 +223,7 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
         return voiceSafe(emptyList()) {
         val voices = ArrayList<Voice>()
@@ -256,6 +261,7 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    /** Reports the supported language detail level, or LANG_NOT_SUPPORTED for unknown languages or failures. */
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
@@ -276,12 +282,14 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    /** Returns the availability of the requested language without loading a native voice. */
     override fun onLoadLanguage(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         return onIsLanguageAvailable(language, country, variant)
         }
     }
 
+    /** Queues synthesis with the current cancellation generation; reports an error if shutdown rejects it. */
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
         try {
@@ -296,6 +304,12 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * Synthesizes and delivers paced audio for a queued request, rejecting stale cancellation generations.
+     *
+     * @param gen Cancellation generation captured when the request was queued.
+     * @param schedAt Elapsed realtime in milliseconds when the request was scheduled, used for timing logs.
+     */
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
@@ -554,6 +568,7 @@ class VvTtsService : TextToSpeechService() {
         generation.incrementAndGet()
         Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
+        /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
