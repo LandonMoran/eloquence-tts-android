@@ -97,10 +97,10 @@ object ElqUpdateInstaller {
             val session = pm.packageInstaller.openSession(sessionId)
             try {
                 apkFile.inputStream().use { input ->
-                    val output = session.openWrite(\"base.apk\", 0, apkFile.length())
-                    input.copyTo(output, 64 * 1024)
-                    session.fsync(output)
-                    output.close()
+                    session.openWrite("base.apk", 0, apkFile.length()).use { output ->
+                        input.copyTo(output, 64 * 1024)
+                        session.fsync(output)
+                    }
                 }
                 session.commit(commitIntent(appContext, sessionId).intentSender)
             } finally {

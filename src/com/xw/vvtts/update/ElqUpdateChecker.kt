@@ -55,8 +55,10 @@ object ElqUpdateChecker {
             0
         }
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
+        var conn: HttpURLConnection? = null
         try {
-            val c = URL(apiUrl).openConnection() as HttpURLConnection
+            val c = URL(apiUrl?.openConnection() as HttpURLConnection
+            conn = c
             c.requestMethod = "GET"
             c.connectTimeout = 15000
             c.readTimeout = 15000

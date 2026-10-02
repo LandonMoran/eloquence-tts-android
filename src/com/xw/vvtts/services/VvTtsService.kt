@@ -443,7 +443,7 @@ class VvTtsService : TextToSpeechService() {
                         for (seg in segments) {
                             // Bail on either signal: stop() (framework( or a generation bump
                             // (a newer utterance superseded ours while we were mid-queue(.
-                            if (stopping || gen != generation) break
+                            if (stopping || gen != generation.get()) break
                             if (SystemClock.elapsedRealtime() > uttDeadline) {
 
                                 Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
@@ -463,7 +463,7 @@ class VvTtsService : TextToSpeechService() {
                 // uninterruptible synth of the whole segment (the "one second
                 // between swipes" / "fast swipes get clogged" regression).
                 for (chunkText in splitSynthChunks(segText)) {
-                    if (stopping || gen != generation) break
+                    if (stopping || gen != generation.get()) break
                     if (SystemClock.elapsedRealtime() > uttDeadline) break
                     var textToSynth: String = chunkText
                     val expanded = when (seg.dialect) {
@@ -656,7 +656,7 @@ class VvTtsService : TextToSpeechService() {
 
         companion object {
             private const val TAG = "VvTtsService"
-            private const val PREFS_NAME = "vvttts_lang_settings"
+            private const val PREFS_NAME = "vvtts_lang_settings"
             // SharedPreferences files mirrored to device-protected storage for lock-screen starts.
 
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
@@ -731,7 +731,10 @@ class VvTtsService : TextToSpeechService() {
                     var i = Math.min(n, end + CHUNK_SENTENCE_GRACE)
                     val sentenceEnds = ".!?。！？"
                     while (i > start + MIN_CHUNK_SENTENCE) {
-                        if (sentenceEnds.indexOf(text[i - 1]) >= 0) {
+                        val c = text[i - 1]
+                        val nextIsDigit = i < n && text[i].isDigit()
+                        val prevIsDigit = i >= 2 && text[i - 2].isDigit()
+                        if (sentenceEnds.indexOf(c) >= 0 && !(c == '.' && (prevIsDigit || nextIsDigit)))) {
                             cut = i
                             break
                         }

@@ -67,7 +67,7 @@ class SettingsActivity : Activity() {
             processEngine = e
         }
         engine = e
-        engine!!.setVoiceProfile(voiceProfile
+        engine!!.setVoiceProfile(voiceProfile)
         // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
@@ -1204,6 +1204,6 @@ class SettingsActivity : Activity() {
     companion object {
     private var processEngine: EloquenceEngine? = null
         private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
-    private const val PREFS_NAME = "vvttts_lang_settings"
+    private const val PREFS_NAME = "vvtts_lang_settings"
     }
 }

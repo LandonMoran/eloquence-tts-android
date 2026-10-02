@@ -3,6 +3,8 @@ package com.xw.vvtts.update
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import com.xw.vvtts.R
 import java.io.File
@@ -35,8 +37,14 @@ object UpdateActions {
                 AlertDialog.Builder(activity)
                     .setTitle(activity.getString(R.string.update_available_fmt, res.latestTag ?: ""))
                     .setMessage(res.releaseNotes ?: "")
-                    .setPositiveButton(activity.getString(R.string.download_install)) { _, _ ->
-                        startUpdateDownload(activity, res.downloadUrl)
+                    .setPositiveButton(if (res.downloadUrl != null) activity.getString(R.string.download_install) else activity.getString(R.string.update_open_release)) { _, _ ->
+                        if (res.downloadUrl != null) {
+                            startUpdateDownload(activity, res.downloadUrl)
+                        } else if (res.htmlUrl != null) {
+                            runCatching {
+                                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.htmlUrl ?: ""))))
+                            }
+                        }
                     }
                     .setNegativeButton(activity.getString(R.string.cancel), null)
                     .show()
@@ -70,7 +78,7 @@ object UpdateActions {
             }
             val result = ElqUpdateInstaller.install(activity, apk)
             activity.runOnUiThread {
-                if (!activity.alive()) { progress.dismiss(); return@runOnUiThread }
+                if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
                 progress.dismiss()
                 apk.delete()
                 when (result) {
