@@ -188,6 +188,14 @@ class SettingsActivity : Activity() {
             UpdateActions.showCheckDialog(this)
         }
         
+        // ===== ADVANCED SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_advanced)
+        val extraLogSwitch = addSwitchRow(mainContainer, getString(R.string.extra_logging_row), getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) { on ->
+            getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).edit().putBoolean("extra_logging", on).apply()
+            Log.i("VvTtsSettings", "extra_logging -> " + on)
+        }
+        addNoteRow(mainContainer, R.string.extra_logging_note)
+
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)
         val resetBtnLocal = addRow(this, mainContainer)
@@ -1177,6 +1185,7 @@ class SettingsActivity : Activity() {
             .show()
     }
     companion object {
-        private const val PREFS_NAME = "vvtts_lang_settings"
+        private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
+    private const val PREFS_NAME = "vvttts_lang_settings"
     }
 }

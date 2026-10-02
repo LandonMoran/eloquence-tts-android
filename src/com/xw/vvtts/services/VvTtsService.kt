@@ -330,6 +330,9 @@ class VvTtsService : TextToSpeechService() {
             return
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
+                if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false))) {
+                    Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.text?.length ?: 0))
+                }
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
 
@@ -459,6 +462,9 @@ class VvTtsService : TextToSpeechService() {
                     val t3 = SystemClock.elapsedRealtime()
                     val pcm = engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
+                    if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false))) {
+                        Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
+                    }
                     if (pcm != null && pcm.size > 0) {
                     val bytes = shortsToBytes(pcm)
                     val max = callback.maxBufferSize
@@ -545,6 +551,7 @@ class VvTtsService : TextToSpeechService() {
     private fun bumpGeneration() {
         stopping = true
         generation++
+        Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
         override fun onStop() {
             stopping = true
@@ -651,8 +658,10 @@ class VvTtsService : TextToSpeechService() {
                         // lands fast; later pieces cap the worst-case wait for a swipe,
                         // which now lands within one bounded native call instead of a
                         // whole segment.
-                        private const val CHUNK_FIRST = 40
-                        private const val CHUNK_MAX = 60
+                        private const val CHUNK_FIRST =  70
+                        private const val CHUNK_MAX = 110
+                        private const val CHUNK_SENTENCE_GRACE =  50
+                        private const val MIN_CHUNK_SENTENCE =  40
 
             // === Process-scoped engine reuse ===
             // TextToSpeechService is created/destroyed each time the framework binds the
@@ -686,7 +695,7 @@ class VvTtsService : TextToSpeechService() {
              * within one bounded native synth call instead of waiting out a
              * giant segment.
              */
-            private fun splitSynthChunks(text: String): List<String> {
+                        private fun splitSynthChunks(text: String): List<String> {
                 val chunks = mutableListOf<String>()
                 val n = text.length
                 if (n <= CHUNK_MAX) return listOf(text)
@@ -699,27 +708,41 @@ class VvTtsService : TextToSpeechService() {
                         break
                     }
                     var cut = -1
-                    var i = end
-                    while (i > start + 1 && cut < 0) {
-                        val c = text[i - 1]
-                        val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
-                            || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
-                            || c == '！' || c == '？' || c == '、'
-                        if (isBoundary) {
-                            val prev = if (i >= 2) text[i - 2] else ' '
-                            val next = if (i < n) text[i] else ' '
-                            // Never split '.'/',' inside numbers/decimals: "1,234.5"
-                            // an "3.14" must survive as one token.
-                            val digitGuard = (c == '.' && (prev.isDigit() || next.isDigit()))
-                                || (c == ',' && prev.isDigit() && next.isDigit())
-                            if (!digitGuard) cut = i
+                    // Pass A: keep sentences whole - expand the cap up to the nearest real
+                    // sentence end (never beyond CHUNK_SENTENCE_GRACE extra chars(, so
+                    // phrasing/intonation survive instead of hard mid-sentence cuts. Only
+                    // hunt after a minimum length, so short texts still land fast..
+                    var i = Math.min(n, end + CHUNK_SENTENCE_GRACE)
+                    val sentenceEnds = ".!?。！？"
+                    while (i > start + MIN_CHUNK_SENTENCE) {
+                        if (sentenceEnds.indexOf(text[i - 1]) >= 0) {
+                            cut = i
+                            break
                         }
                         i--
                     }
+                    // Pass B: nearest boundary within the hard cap (word/clause splits
+                    // with the same digit guards so dates/numbers survive..
                     if (cut < 0) {
-                        // No boundary in range: force-cut, backing off digit/symbol
-                        // runs so dates/numbers are never split mid-run.
-
+                        var j = end
+                        while (j > start + 1 && cut < 0) {
+                            val c = text[j - 1]
+                            val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
+                                || c == ';' || c == '!' || c == '?' || c == '。' || c == '。“'
+                                || c == '！' || c == '？' || c == '、'
+                            if (isBoundary) {
+                                val prev = if (j >= 2) text[j - 2] else ' '
+                                val next = if (j < n) text[j] else ' '
+                                val digitGuard = (c == '.' && (prev.isDigit() || next.isDigit()))
+                                    || (c == ',' && prev.isDigit() && next.isDigit())
+                                if (!digitGuard) cut = j
+                            }
+                            j--
+                        }
+                    }
+                    // Pass C: no boundary in range: force-cut, backing off digit/symbol
+                    // runs so dates/numbers are never split mid-run..
+                    if (cut < 0) {
                         cut = end
                         while (cut > start + 1 && (text[cut - 1].isDigit() || text[cut - 1] == ':'
                                 || text[cut - 1] == '/' || text[cut - 1] == '-' || text[cut - 1] == '.')) {
