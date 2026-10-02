@@ -598,6 +598,8 @@ class LanguageDetector {
             if (text.length <	10) {
                 val dl = resolveDefaultLanguage()
                 if (isLatinDialect(dl)) return dl
+                val accentHinted = accentHint(text)
+                if (accentHinted >=  0) return accentHinted
                 if (isLatinDialect(fallbackDialect)) return fallbackDialect
                 // Pure-ASCII short words are English (loanwords(: they must never
                 // follow a non-Latin context nor a pinned zh/ja/ko default: "release"

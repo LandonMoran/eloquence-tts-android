@@ -9,7 +9,10 @@ import java.io.File
 
 object UpdateActions {
 
+    private fun Activity.alive() = !isFinishing && !isDestroyed
+
     fun showCheckDialog(activity: Activity) {
+        if (!activity.alive()) return
         val progress = ProgressDialog(activity)
         progress.setMessage(activity.getString(R.string.checking_updates))
         progress.setCancelable(false)
@@ -17,6 +20,7 @@ object UpdateActions {
         Thread {
             val res = ElqUpdateChecker.check(activity)
             activity.runOnUiThread {
+                if (!activity.alive()) { progress.dismiss(); return@runOnUiThread }
                 progress.dismiss()
                 if (res.error != null) {
                     Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, res.error), Toast.LENGTH_LONG).show()
@@ -43,6 +47,7 @@ object UpdateActions {
             Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "no download link"), Toast.LENGTH_LONG).show()
             return
         }
+        if (!activity.alive()) return
         val progress = ProgressDialog(activity)
         progress.setMessage(activity.getString(R.string.update_downloading_fmt, 0))
         progress.setCancelable(false)
@@ -62,6 +67,7 @@ object UpdateActions {
             }
             val result = ElqUpdateInstaller.install(activity, apk)
             activity.runOnUiThread {
+                if (!activity.alive()) { progress.dismiss(); return@runOnUiThread }
                 progress.dismiss()
                 apk.delete()
                 when (result) {

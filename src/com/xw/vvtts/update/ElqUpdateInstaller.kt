@@ -42,38 +42,9 @@ object ElqUpdateInstaller {
         } catch (e: Exception) {
             return Result.Failed(null, e.message ?: e.javaClass.simpleName)
         }
-        try {
-            val session = pm.packageInstaller.openSession(sessionId)
-            try {
-                apkFile.inputStream().use { input ->
-                    val output = session.openWrite("base.apk", 0, apkFile.length())
-                    input.copyTo(output, 64 * 1024)
-                    session.fsync(output)
-                    output.close()
-                }
-                session.commit(commitIntent(appContext, sessionId).intentSender)
-            } finally {
-                session.close()
-            }
-        } catch (e: Exception) {
-            return Result.Failed(null, e.message ?: e.javaClass.simpleName)
-        }
-        return awaitStatus(appContext, sessionId)
-    }
-
-    private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
-        val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
-        return PendingIntent.getBroadcast(
-            context,
-            sessionId,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        )
-    }
-
-    private fun awaitStatus(context: Context, sessionId: Int): Result {
         val latch = CountDownLatch(1)
         var result: Result? = null
+        val filter = IntentFilter(ACTION_INSTALL_STATUS)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action != ACTION_INSTALL_STATUS) return
@@ -83,7 +54,12 @@ object ElqUpdateInstaller {
                 )
                 when (status) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                        val confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                        val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(Intent.EXTRA_INTENT)
+                        }
                         result = Result.UserActionRequired(confirm)
                     }
                     PackageInstaller.STATUS_SUCCESS -> {
@@ -95,21 +71,58 @@ object ElqUpdateInstaller {
                     }
                 }
                 latch.countDown()
-                runCatching { context.unregisterReceiver(this) }
+                runCatching { appContext.unregisterReceiver(this) }
             }
         }
-        val filter = IntentFilter(ACTION_INSTALL_STATUS)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(receiver, filter)
+        // Register BEFORE commit:the system broadcast can arrive the instant
+        // commit fires, and a late registration would miss it and sit out the
+        // entire install timeout (reported \"install hangs/never completes\").
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                appContext.registerReceiver(receiver, filter)
+            }
+        } catch (t: Throwable) {
+            return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
         try {
-            latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
-        } finally {
-            runCatching { context.unregisterReceiver(receiver) }
+            val session = pm.packageInstaller.openSession(sessionId)
+            try {
+                apkFile.inputStream().use { input ->
+                    val output = session.openWrite(\"base.apk\", 0, apkFile.length())
+                    input.copyTo(output, 64 * 1024)
+                    session.fsync(output)
+                    output.close()
+                }
+                session.commit(commitIntent(appContext, sessionId).intentSender)
+            } finally {
+                session.close()
+            }
+        } catch (e: Exception) {
+            runCatching { appContext.unregisterReceiver(receiver) }
+            return Result.Failed(null, e.message ?: e.javaClass.simpleName)
         }
+        try {
+            val ok = latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+            if (!ok) {
+                runCatching { appContext.unregisterReceiver(receiver) }
+                return Result.Failed(null, "install timed out")
+            }
+        } catch (t: Throwable) {
+            runCatching { appContext.unregisterReceiver(receiver) }
+            return Result.Failed(null, t.message ?: t.javaClass.simpleName)
+        }
+        runCatching { appContext.unregisterReceiver(receiver) }
         return result ?: Result.Failed(null, "install timed out")
     }
-}
+
+    private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
+        val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
+        return PendingIntent.getBroadcast(
+            context,
+            sessionId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+    }

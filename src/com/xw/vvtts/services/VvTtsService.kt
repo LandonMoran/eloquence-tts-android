@@ -1,5 +1,6 @@
 package com.xw.vvtts.services
 
+import java.util.concurrent.atomic.AtomicLong
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -138,7 +139,7 @@ class VvTtsService : TextToSpeechService() {
         for (dir in prefsDirs()) {
             val m = dir.lastModified()
             val prev = prefsDirMtimes[dir]
-            if (prev == null) { prefsDirMtimes[dir] = m; continue }
+            if (prev == null) { prefsDirMtimes[dir] = m; changed = true; continue }
             if (m != prev) { prefsDirMtimes[dir] = m; changed = true }
         }
         return changed
@@ -284,7 +285,7 @@ class VvTtsService : TextToSpeechService() {
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
         try {
-            val gen = generation  // snapshot: a stop() while queued must drop this task
+            val gen = generation.get()  // snapshot: a stop() while queued must drop this task
             deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
@@ -303,7 +304,7 @@ class VvTtsService : TextToSpeechService() {
         // stop, the framework already canceled it, so it must not speak (ghost
         // speech after cancellation) and must not clear the stopping flag.
         // error() is the designated failure termination (never started).
-        if (gen != generation) {
+        if (gen != generation.get()) {
             Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
             try {
                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
@@ -321,9 +322,9 @@ class VvTtsService : TextToSpeechService() {
         // sets stopping = true. Re-check so a just-issued cancellation isn't
         // cleared, which would let a stale utterance drain in full (ghost speech(.
         // Restore the stop flag and drop the utterance via error() instead.
-        if (gen != generation) {
+        if (gen != generation.get()) {
             stopping = true
-            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation)
+            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
             try {
                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
             } catch (ignore: Throwable) {}
@@ -544,18 +545,18 @@ class VvTtsService : TextToSpeechService() {
     @Volatile private var stopping = false
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
-    @Volatile private var generation = 0L
+    private val generation = AtomicLong(0)
     /** Drop every queued utterance on teardown/unbind: called from onDestroy
      *  and onUnbind so nothing flushes seconds after the service dies (two-voices
      *  overlap, late lock-screen speech(. */
     private fun bumpGeneration() {
         stopping = true
-        generation++
+        generation.incrementAndGet()
         Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
         override fun onStop() {
             stopping = true
-            generation++  // invalidate utterances already queued pre-stop
+            generation.incrementAndGet()  // invalidate utterances already queued pre-stop
             if (engine != null) engine!!.stop()
         }
 
@@ -640,7 +641,7 @@ class VvTtsService : TextToSpeechService() {
 
         companion object {
             private const val TAG = "VvTtsService"
-            private const val PREFS_NAME = "vvtts_lang_settings"
+            private const val PREFS_NAME = "vvttts_lang_settings"
             // SharedPreferences files mirrored to device-protected storage for lock-screen starts.
 
             private const val VOICE_CONFIG_PREFS = "vvtts_prefs"

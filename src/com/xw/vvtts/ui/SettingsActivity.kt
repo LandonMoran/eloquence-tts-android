@@ -59,9 +59,14 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
-        engine = EloquenceEngine(this)
-        engine!!.initialize()
-        engine!!.setVoiceProfile(voiceProfile)
+        var e = processEngine
+        if (e == null) {
+            e = EloquenceEngine(this)
+            e.initialize()
+            processEngine = e
+        }
+        engine = e
+        engine!!.setVoiceProfile(voiceProfile
         // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
@@ -274,6 +279,10 @@ class SettingsActivity : Activity() {
     }
 
     private fun testSpeech() {
+        Thread { testSpeechImpl() }.start()
+    }
+
+    private fun testSpeechImpl() {
         if (engine == null || !engine!!.isInitialized()) {
             Toast.makeText(this, getString(R.string.engine_not_ready), Toast.LENGTH_SHORT).show()
             return
@@ -324,6 +333,10 @@ class SettingsActivity : Activity() {
              *  Dialect follows the text: any Chinese segment routes through the
              *  real CHS oracle path (GB18030), everything else stays English. */
             private fun testCrash(text: String) {
+        Thread { testCrashImpl(text) }.start()
+    }
+
+    private fun testCrashImpl(text: String) {
                 if (engine == null || !engine!!.isInitialized()) return
                 Log.i("CRASHHOOK", "start:" + text)
                 var dialect = EloquenceEngine.DIALECT_EN_US
@@ -1185,6 +1198,7 @@ class SettingsActivity : Activity() {
             .show()
     }
     companion object {
+    private var processEngine: EloquenceEngine? = null
         private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
     private const val PREFS_NAME = "vvttts_lang_settings"
     }

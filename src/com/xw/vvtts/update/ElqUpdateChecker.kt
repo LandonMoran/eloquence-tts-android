@@ -49,10 +49,8 @@ object ElqUpdateChecker {
             0
         }
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
-        var conn: HttpURLConnection? = null
         try {
             val c = URL(apiUrl).openConnection() as HttpURLConnection
-            conn = c
             c.requestMethod = "GET"
             c.connectTimeout = 15000
             c.readTimeout = 15000
@@ -62,9 +60,11 @@ object ElqUpdateChecker {
             c.setRequestProperty("Accept-Encoding", "gzip, deflate")
             val code = c.responseCode
             if (code !in 200..299) {
+                c.disconnect()
                 return UpdateResult(currentVersionCode = localVersionCode, error = "HTTP $code")
             }
             val json = readBody(c)
+            c.disconnect()
             if (json.isEmpty()) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "Empty response")
             }
@@ -75,7 +75,7 @@ object ElqUpdateChecker {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
             val latestCode = target.tagName?.removePrefix("v")?.toIntOrNull() ?: -1
-            val apkUrl = pickAsset(target.assets) ?: target.htmlUrl
+            val apkUrl = pickAsset(target.assets)
             return UpdateResult(
                 hasUpdate = latestCode > localVersionCode,
                 currentVersionCode = localVersionCode,

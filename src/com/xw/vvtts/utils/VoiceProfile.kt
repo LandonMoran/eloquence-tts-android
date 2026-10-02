@@ -32,28 +32,35 @@ class VoiceProfile(context: Context) {
         if (f.exists()) {
             try {
                 val parser = Xml.newPullParser()
-                parser.setInput(FileInputStream(f), null)
-                var t = parser.eventType
-                var curKey: String? = null
-                while (t != XmlPullParser.END_DOCUMENT) {
-                    if (t == XmlPullParser.START_TAG) {
-                        val n = parser.getAttributeValue(null, "name")
-                        val v = parser.getAttributeValue(null, "value")
-                        if (parser.name == "string") {
-                            curKey = n
-                        } else if (n != null && v != null) {
-                            map[n] = v
+                FileInputStream(f).use { fis ->
+                    parser.setInput(fis, null)
+                    var t = parser.eventType
+                    var curKey: String? = null
+                    while (t != XmlPullParser.END_DOCUMENT) {
+                        if (t == XmlPullParser.START_TAG) {
+                            val n = parser.getAttributeValue(null, "name")
+                            val v = parser.getAttributeValue(null, "value")
+                            if (parser.name == "string") {
+                                curKey = n
+                            } else if (n != null && v != null) {
+                                map[n] = v
+                            }
+                        } else if (t == XmlPullParser.TEXT) {
+                            val k = curKey
+                            if (k != null) {
+                                map[k] = parser.text
+                                curKey = null
+                            }
                         }
-                    } else if (t == XmlPullParser.TEXT) {
-                        val k = curKey
-                        if (k != null) {
-                            map[k] = parser.text
-                            curKey = null
-                        }
+                        t = parser.next()
                     }
-                    t = parser.next()
                 }
-            } catch (ignore: Throwable) {}
+            } catch (ignore: Throwable) {
+                // A transient read failure must not wipe a good cache; retry on the next access.
+
+                val prev = cachedMap
+                if (prev != null) return prev
+            }
         }
         cachedMap = map
         cachedMtime = mt
