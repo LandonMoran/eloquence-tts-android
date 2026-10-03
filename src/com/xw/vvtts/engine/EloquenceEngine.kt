@@ -48,7 +48,7 @@ class EloquenceEngine(context: Context) {
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
     @Volatile private var engineEpoch = 0
         @Volatile private var retireUntilMs = 0L
-        private val HANG_TIMEOUT_S = 30L
+        private val HANG_TIMEOUT_S = 120L
         private val ZOMBIE_GRACE_MS = 12000L
     @Volatile private var stopped = false
     @Volatile private var pendingVoice: Int? = null
