@@ -98,38 +98,40 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onDestroy() {
-        // Drop every queued utterance on teardown. The delivery executor's
-        // thread keeps draining queued jobs even after the service dies ( hot-swap
-        // tears the service down via unbind/destroy without any stop(,( so the
-        // generation gate is the only thing that keeps them from flushing seconds
-        // later: the reported "two voices at once" / "1-10s dead time" /
-        // lock-screen speech arriving late on unlock. Reboot clears them naturally
-        // ( process death kills the queue(; unbind/destroy must too.
         bumpGeneration()
-        // No aggressive shutdown: TextToSpeechService gets created/destroyed,
-        // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
-        // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
         stopping = true
+        // #25: cancel the ACTIVE utterance BEFORE draining. The delivery thread may
+        // be parked inside a native call (up to HANG_TIMEOUT_S(; only the flag-based
+        // engine.stop() makes that call return early, so the executor can actually
+        // drain instead of timing out at 250 ms. The reference read is #12's
+        // currentEngine() — never wait on engineCallLock here:he synth path no
+        // longer holds it, and waiting would stall teardown behind native audio.
+
+
+        try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         deliveryExecutor.shutdown()
         try {
-            deliveryExecutor.awaitTermination(250, java.util.concurrent.TimeUnit.MILLISECONDS)
+            // Bounded drain:a healthy teardown finishes well under a second (native
+            // wind-down after stop() is flag-based(; a pathological native call gets
+            // cut off at this timeout instead of stalling process teardown forever.
+
+
+            deliveryExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS.
+)
         } catch (ignore: InterruptedException) {
             Thread.currentThread().interrupt()
-        }
-        try {
-            synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
-        } catch (ignore: Throwable) {
         }
         super.onDestroy()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        // Engine hot-swap ( switching TTS engines in Settings/at lock/unlock(
-        // unbinds the old engine without calling onStop(;drop every queued
-        // utterance so nothing flushes seconds later when the user is already
-        // elsewhere (the "two voices overlapping" and "late 1-10s speech"
-        // reports(.
         bumpGeneration()
+        // Hot-swap unbind: drop queued AND active speech. The ACTIVE utterance
+        // matters — without stop()the delivery thread stays parked up to
+        // HANG_TIMEOUT_S in native synthesis while the user has already moved on (and,
+        // sincethe engine is process-shared, that saturated worker blocks other
+        // binds' first speech too(.
+        try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         return super.onUnbind(intent)
     }
 
