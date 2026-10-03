@@ -185,6 +185,30 @@ class VvTtsService : TextToSpeechService() {
     // ANY of these methods (cold-init NPE, disk read, parse( is marshalled
     // into the AIDL reply as an exception-status and the Android 17 Settings
     // page dies decoding it (Parcel.createExceptionOrNull -> Collection.toArray(.
+    // #18: single source of truth for voice capability. Every advertised voice
+    // MUST have its native dialect linked in this build (member of
+    // EloquenceEngine.SHIPPED_DIALECTS(;the engine's shipped list remains the
+    // ground truth for what can synthesize — a voice advertised without its
+    // module would break the catalog == real-capability guarantee.
+
+    private data class CapableVoice(val voiceName: String, val locale: Locale, val dialect: Int)
+    private val CAPABLE_VOICES = listOf(
+        CapableVoice("en-US", Locale.US, EloquenceEngine.DIALECT_EN_US),
+        CapableVoice("en-GB", Locale.UK, EloquenceEngine.DIALECT_EN_GB),
+        CapableVoice("de-DE", Locale.GERMANY, EloquenceEngine.DIALECT_DE_DE),
+        CapableVoice("fr-FR", Locale.FRANCE, EloquenceEngine.DIALECT_FR_FR),
+        CapableVoice("fr-CA", Locale.CANADA_FRENCH, EloquenceEngine.DIALECT_FR_CA),
+        CapableVoice("es-ES", Locale("es", "ES"), EloquenceEngine.DIALECT_ES_ES),
+        CapableVoice("es-US", Locale("es", "US"), EloquenceEngine.DIALECT_ES_US),   // [2.1] esus
+        CapableVoice("es-MX", Locale("es", "MX"), EloquenceEngine.DIALECT_ES_MX),
+        CapableVoice("it-IT", Locale.ITALY, EloquenceEngine.DIALECT_IT_IT),
+        CapableVoice("ja-JP", Locale.JAPAN, EloquenceEngine.DIALECT_JA_JP),
+        CapableVoice("pl-PL", Locale("pl", "PL"), EloquenceEngine.DIALECT_PL_PL),   // [11.0] plpl
+        CapableVoice("pt-BR", Locale("pt", "BR"), EloquenceEngine.DIALECT_PT_BR),
+        CapableVoice("fi-FI", Locale("fi", "FI"), EloquenceEngine.DIALECT_FI_FI),
+        CapableVoice("zh-CN", Locale("zh", "CN"), EloquenceEngine.DIALECT_ZH_CN)
+    )
+
     /** Runs a voice query and logs any thrown failure before returning [fallback]. */
     private inline fun <T> voiceSafe(fallback: T, block: () -> T): T {
         return try { block() } catch (t: Throwable) {
@@ -216,6 +240,9 @@ class VvTtsService : TextToSpeechService() {
         return voiceSafe("en-US") {
         val lang = (language ?: "").lowercase()
         val c = (country ?: "").uppercase()
+        // #18: refuse to map languages with no shipped voice —the registry is the
+        // single source of truth (default en-US matches the pre-existing fallback).
+        if (CAPABLE_VOICES.none { it.locale.language.equals(lang, ignoreCase = true) }) return "en-US"
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
@@ -233,37 +260,14 @@ class VvTtsService : TextToSpeechService() {
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
         return voiceSafe(emptyList()) {
-        val voices = ArrayList<Voice>()
-        // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
-        voices.add(Voice("en-US", Locale.US,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("en-GB", Locale.UK,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("de-DE", Locale.GERMANY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fr-FR", Locale.FRANCE,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fr-CA", Locale.CANADA_FRENCH,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-ES", Locale("es", "ES"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-US", Locale("es", "US"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-MX", Locale("es", "MX"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("it-IT", Locale.ITALY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("ja-JP", Locale.JAPAN,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("pl-PL", Locale("pl", "PL"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("pt-BR", Locale("pt", "BR"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fi-FI", Locale("fi", "FI"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("zh-CN", Locale("zh", "CN"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        // Only advertise dialects actually linked in this build (build_native.sh LANGS)
+        val voices = ArrayList<Voice>(CAPABLE_VOICES.size)
+        // #18: catalog derives from the single voice registry — every advertised voice
+        // is by constructiona shipped native dialect (no advertise-only entries —the
+        // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
+        for (v in CAPABLE_VOICES) {
+            voices.add(Voice(v.voiceName, v.locale,
+                Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+        }
         return voices
         }
     }
@@ -273,10 +277,13 @@ class VvTtsService : TextToSpeechService() {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
         val lang = language.lowercase()
-        val supported = lang.startsWith("en") || lang.startsWith("de")
-                || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
-                || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
-                || lang.startsWith("zh")
+        // #18: availability derives from the voice registry —the same single source
+        // that drives the catalog;the engine's shipped whitelist remains the ground
+        // truth for what can synthesize,so availability can never advertise a
+        // language its native modules cannot speak.
+
+
+        val supported = CAPABLE_VOICES.any { it.locale.language.equals(lang, ignoreCase = true) }
         if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
