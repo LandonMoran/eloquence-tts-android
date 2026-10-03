@@ -362,6 +362,7 @@ class VvTtsService : TextToSpeechService() {
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
         refreshSettings()
+        synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
@@ -516,10 +517,11 @@ class VvTtsService : TextToSpeechService() {
             Log.e(TAG, "onSynthesizeText failed", e)
         } finally {
                     // Revert the per-utterance override (preserve app-pref state)
-                    LanguageDetector.setDefaultLanguage(savedDefault)
-                    LanguageDetector.setTransientEnabledLangs(null)
-                    LanguageDetector.setFixedDialect(savedFixed)
-                    if (!started) {
+                    LanguageDetector.setDefaultLanguage(savedDefault(
+                                        LanguageDetector.setTransientEnabledLangs(null(
+                                        LanguageDetector.setFixedDialect(savedFixed(
+                                        }
+                                        if (!started) {
                         // Playback contract: start() must precede done(), the framework
                         // throws otherwise. One pair per utterance; every path funnels
                         // here, so all silent/empty/early returns get the pair exactly
