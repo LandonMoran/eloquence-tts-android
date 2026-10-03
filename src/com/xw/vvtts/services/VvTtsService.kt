@@ -172,7 +172,18 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    // Never let a voice query escape to the binder: an exception thrown in
+    // ANY of these methods (cold-init NPE, disk read, parse( is marshalled
+    // into the AIDL reply as an exception-status and the Android 17 Settings
+    // page dies decoding it (Parcel.createExceptionOrNull -> Collection.toArray(.
+    private inline fun <T> voiceSafe(fallback: T, block: () -> T): T {
+        return try { block() } catch (t: Throwable) {
+            Log.w(TAG, "voice query failed;returning safe fallback", t)
+            fallback
+        }
+    }
     override fun onGetLanguage(): Array<String> {
+        return voiceSafe(arrayOf("en", "", "")) {
         // Framework contract: exactly 3 elements — [language, country, variant]
         // of the language currently used by the engine (country/variant may be
         // ""; variant must be "" when country is). NOT a catalog: the picker
@@ -183,12 +194,14 @@ class VvTtsService : TextToSpeechService() {
         val dash = activeVoice.indexOf('-')
         val lang = if (dash > 0) activeVoice.substring(0, dash) else activeVoice
         val country = if (dash > 0) activeVoice.substring(dash + 1).substringBefore('-') else ""
-        return arrayOf(lang.lowercase(), country.uppercase(), "")
+        arrayOf(lang.lowercase(), country.uppercase(), "")
+        }
     }
 
 
 
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
+        return voiceSafe("en-US") {
         val lang = (language ?: "").lowercase()
         val c = (country ?: "").uppercase()
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
@@ -202,9 +215,11 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("fi")) return "fi-FI"
         if (lang.startsWith("zh")) return "zh-CN"
         return "en-US"
+        }
     }
 
     override fun onGetVoices(): List<Voice> {
+        return voiceSafe(emptyList()) {
         val voices = ArrayList<Voice>()
         // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
         voices.add(Voice("en-US", Locale.US,
@@ -237,9 +252,11 @@ class VvTtsService : TextToSpeechService() {
             Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
         // Only advertise dialects actually linked in this build (build_native.sh LANGS)
         return voices
+        }
     }
 
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
+        return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
         val lang = language.lowercase()
         val supported = lang.startsWith("en") || lang.startsWith("de")
@@ -255,10 +272,13 @@ class VvTtsService : TextToSpeechService() {
         if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
         if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
         return TextToSpeech.LANG_AVAILABLE
+        }
     }
 
     override fun onLoadLanguage(language: String?, country: String?, variant: String?): Int {
+        return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         return onIsLanguageAvailable(language, country, variant)
+        }
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
