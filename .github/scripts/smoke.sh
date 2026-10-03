@@ -12,7 +12,7 @@ set -x
 cd "$GITHUB_WORKSPACE"
 # --- fetch APK from latest successful build-apk run ---
 for i in $(seq 1 60); do
-  R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+  R=$(gh run list --workflow build.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
   [ -n "$R" ] && break
   sleep 10
 done
@@ -25,7 +25,7 @@ for i in $(seq 1 180); do
   sleep 10
 done
 if [ -z "$R" ]; then
-  R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
+  R=$(gh run list --workflow build.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
 fi
 [ -n "$R" ] || { echo "no successful build-apk run found"; exit 1; }
 echo "using build-apk run: $R"

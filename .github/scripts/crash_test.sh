@@ -15,7 +15,8 @@ sleep 120
 "$ADB" logcat -d -v threadtime > logcat-full.txt || true
 echo "=== FATAL / CRASH LINES ===="
 if grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process $PKG" logcat-full.txt;then
-  grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process $PKG" logcat-full.txt | head -40
+  grep -nE -B3 -A60 "FATAL EXCEPTION" logcat-full.txt | head -120
+  grep -nE "SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process $PKG" logcat-full.txt | head -40
   echo "CRASH_MARKERS_FOUND"
   exit 1
 else
