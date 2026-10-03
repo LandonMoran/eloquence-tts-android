@@ -110,7 +110,7 @@ object UpdateActions {
             }
             if (!ok) {
                 activity.runOnUiThread {
-                    progress.dismiss()
+                    progress.dialog.dismiss()
                     Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "download failed"), Toast.LENGTH_LONG).show()
                 }
                 return@Thread
