@@ -172,6 +172,8 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     return eciDataProcessed;
 }
 
+#define VV_DRAIN_MAX_ITERS 40000  /* 0.5 ms each: ~20 s of drain before retirement */
+
 static void vv_wait_till_done(VvtsSession *s) {
     /* openevv's engine cannot abandon an utterance: eciStop stops the
      * samples but the synthesis thread still has to finish it.  A fixed
@@ -180,15 +182,25 @@ static void vv_wait_till_done(VvtsSession *s) {
      * is still speaking lets the caller read/resample s->pcm while the
      * synthesis callback writes into it -- corruption.  Separate the stop
      * request from the drain: poll eciSpeaking() until it actually goes
-     * quiet; only a missing/deleted handle can abort the wait. */
+     * quiet.  The generous bound exists only to guard against an engine
+     * wedge: if quiet cannot be proven within it, the session is retired
+     * rather than hanging the synthesis thread forever. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    while (s->hECI && eciSpeaking(s->hECI)) {
+    int iters = 0;
+    while (s->hECI && eciSpeaking(s->hECI) && iters < VV_DRAIN_MAX_ITERS) {
         /* Polling is what collects the engine's queued samples: the engine
          * posts chunks into the app queue and only a poll delivers them, so
          * a poll must keep coming until the engine reports quiet.  Keep the
          * poll short -- 500us -- or long utterances take seconds to come out. */
         struct timespec ts = {0, 500000L}; /* 0.5 ms */
         nanosleep(&ts, NULL);
+        iters++;
+    }
+    if (s->hECI && eciSpeaking(s->hECI)) {
+        /* Engine wedged: never reuse this session (its thread may still own
+         * it); retire the handle so nothing can drive it again. */
+        __android_log_print(ANDROID_LOG_ERROR, "SPD", "wait_till_done timeout: session retired");
+        s->hECI = NULL;
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
     s->synthBusy =  0;
