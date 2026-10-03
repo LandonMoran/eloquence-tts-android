@@ -93,7 +93,35 @@ class VvTtsService : TextToSpeechService() {
         Thread { NgramScorer.load(this) }.start()
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
-        if (eng.isInitialized()) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
+        // Background thread: binder queries (getLanguage/getVoices/onInit reply)
+        // can arrive while onCreate is still running; a long synchronous warmup
+        // would delay the init state the framework builds from. Synthesis locks
+        // engineCallLock, so a concurrent warmup is safe.
+        if (eng.isInitialized()) {
+            val warmDialect = try {
+                LanguageDetector.getFixedDialect()
+            } catch (t: Throwable) {
+                Log.w(TAG, "fixed dialect query failed; warming default", t)
+                LanguageDetector.DIALECT_EN_US
+            }
+            val warmEngine = eng
+            val warmGen = generation.get()
+            Thread {
+                // #21: lifecycle token - teardown (destroy/unbind( bumps the generation
+                // and sets stopping; if that landed before this worker ran, the startup
+                // warmup is moot - skipping avoids mutating engine state (or holding the
+                // engine lock) after the lifecycle already ended. (The executor-side
+                // epoch guard further covers a warmup already mid-flight at teardown.)
+                val staleWarmup = stopping || warmGen != generation.get()
+                if (!staleWarmup) {
+                    try {
+                        synchronized(engineCallLock) { warmEngine.warmupDialect(warmDialect) }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "background warmup failed", t)
+                    }
+                }
+            }.apply { isDaemon = true }.start()
+        }
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
