@@ -34,6 +34,11 @@ import java.util.concurrent.RejectedExecutionException
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
     private val engineCallLock = Any()          // serializes native engine calls: stop/synthesizeCore/warmupDialect
+    // #12: engineRefLock guards only the engine *reference* — never the long native
+    // waits — so lifecycle teardown never blocks behind a synthesis parked in
+    // native code for up to HANG_TIMEOUT_S.
+    private val engineRefLock = Any()
+    private fun currentEngine(): EloquenceEngine? = synchronized(engineRefLock) { engine }
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
@@ -485,7 +490,7 @@ class VvTtsService : TextToSpeechService() {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = synchronized(engineCallLock) { engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate) }
+                    val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
@@ -582,7 +587,9 @@ class VvTtsService : TextToSpeechService() {
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
+            // #12: no engineCallLock here — engine.stop() is flag-based (non-blocking(,
+            // so holding a lock while native audio winds down would stall onStop.
+            try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected
