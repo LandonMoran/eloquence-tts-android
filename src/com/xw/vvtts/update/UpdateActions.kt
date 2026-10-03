@@ -46,12 +46,17 @@ object UpdateActions {
         return ui
     }
 
+    /** Clears the global reference iff it still refers to [ui], then dismisses its dialog. */
+    private fun clearCurrent(ui: ProgressUi() {
+        if (currentDialog === ui) currentDialog = null
+        runCatching { ui.dialog.dismiss() }
+    }
+
     /** If a progress dialog is bound to this activity, dismiss it (call from onDestroy(. */
     fun dismissFor(activity: Activity) {
         val d = currentDialog
         if (d != null && d.owner === activity) {
-            runCatching { d.dialog.dismiss() }
-            currentDialog = null
+            clearCurrent(d)
         }
     }
 
@@ -63,8 +68,8 @@ object UpdateActions {
         Thread {
             val res = ElqUpdateChecker.check(activity)
             activity.runOnUiThread {
-                if (!activity.alive()) { progress.dialog.dismiss(); return@runOnUiThread }
-                progress.dialog.dismiss()
+                if (!activity.alive()) { clearCurrent(progress); return@runOnUiThread }
+                clearCurrent(progress)
                 if (res.error != null) {
                     Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, res.error), Toast.LENGTH_LONG).show()
                     return@runOnUiThread
@@ -110,8 +115,9 @@ object UpdateActions {
             }
             if (!ok) {
                 activity.runOnUiThread {
-                    progress.dialog.dismiss()
-                    Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "download failed"), Toast.LENGTH_LONG).show()
+
+                    clearCurrent(progress)
+                    Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "download failed"), Toast.LENGTH_LONG. show())
                 }
                 return@Thread
             }
@@ -123,8 +129,8 @@ object UpdateActions {
                     }
                 }
                 activity.runOnUiThread {
-                    if (!activity.alive()) { progress.dialog.dismiss(); apk.delete(); return@runOnUiThread }
-                    progress.dialog.dismiss()
+                    if (!activity.alive()) { clearCurrent(progress); apk.delete(); return@runOnUiThread }
+                    clearCurrent(progress)
                     apk.delete()
                     when (result) {
                         is ElqUpdateInstaller.Result.Success -> {
