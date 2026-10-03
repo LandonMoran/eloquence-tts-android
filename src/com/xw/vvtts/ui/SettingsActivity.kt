@@ -75,7 +75,7 @@ class SettingsActivity : Activity() {
         // Auto-test hook: am start --es autotest chinese
         val autotest = intent?.getStringExtra("autotest")
         if ("chinese" == autotest) {
-            Handler(Looper.getMainLooper()).postDelayed({ testSpeech() }, 3000)
+            Handler(Looper.getMainLooper()).postDelayed({ testZhOracle() }, 3000)
         } else if ("german" == autotest) {
             // Legacy hook: compare three English voices (validates voice params)
             Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
@@ -332,7 +332,35 @@ class SettingsActivity : Activity() {
                 }
             }
 
-            /** Crash-repro hook: synthesize one exact string through the real path.
+                    /** Zh-oracle hook: force real zh sample (你好。） through the GB18030 oracle path
+                     *  so CI can verify samples>0 via the CHS_ORACLE log. */
+                    private fun testZhOracle() {
+                        Thread {
+                            if (engine == null || !engine!!.isInitialized()) {
+                                toastOnUi(R.string.engine_not_ready()
+                                return@Thread
+                            }
+                            val text = "\u4f60\u597d\u3002"
+                            val dialect = EloquenceEngine.DIALECT_ZH_CN
+                            val preset = voiceProfile?.preset ?: 1
+                            val pcm = try {
+                                engine!!.synthesizeCore(text, dialect, voiceConfig!!.volume, preset,
+                                    voiceConfig!!.pitch, 100)
+                            } catch (t: Throwable) {
+                                Log.e("CRASHHOOK", "testZhOracle exception", t)
+                                null
+                            }
+                            Log.i("CRASHHOOK", "testZhOracle done samples=" + (pcm?.size ?: 0))
+                            if (pcm != null && pcm.size > 0) {
+                                playPcm(pcm, engine!!.getCoreSampleRate())
+                                toastOnUi(R.string.synth_ok)
+                            } else {
+                                toastOnUi(R.string.synth_failed)
+                            }
+                        }.start()
+                    }
+
+                    /** Crash-repro hook: synthesize one exact string through the real path.
              *  Dialect follows the text: any Chinese segment routes through the
              *  real CHS oracle path (GB18030), everything else stays English. */
             private fun testCrash(text: String) {
