@@ -185,7 +185,7 @@ class TextNormalizer {
                             sb.append(convertNumber(digits))
                             sb.append('点')
                             i++  // skip the separator (it became 点"
-                        } else if (start > 0 && (input[start -  1] == ':' || input[start -  1] == '')) {
+                        } else if (start > 0 && (input[start -  1] == ':' || input[start -  1] == '\uFF1A')) {
                             sb.append(convertNumber(digits))
                         } else {
                             sb.append(digits)
