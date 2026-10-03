@@ -2,9 +2,11 @@ package com.xw.vvtts.update
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.content.Intent
 import android.net.Uri
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
 import java.io.File
@@ -16,16 +18,39 @@ object UpdateActions {
     private val downloadBusy = AtomicBoolean(false)
 
     /** The in-flight progress dialog; dying activities dismiss it via dismissFor((). */
-    @Volatile private var currentDialog: ProgressDialog? = null
+    @Volatile private var currentDialog: ProgressUi? = null
+
+    /** Bindings for the in-flight progress dialog: owner activity + message view. */
+    private class ProgressUi(val owner: Activity, val dialog: AlertDialog, val message: TextView)
 
     /** Returns whether this activity is neither finishing nor destroyed. */
     private fun Activity.alive() = !isFinishing && !isDestroyed
 
+    /** Builds a legacy-free progress dialog (spinner + message) bound to an activity. */
+    private fun newProgress(activity: Activity, msg: String): ProgressUi {
+        val density = activity.resources.displayMetrics.density
+        val message = TextView(activity).apply { text = msg }
+        val bar = ProgressBar(activity, null, android.R.attr.progressBarStyle)
+        val wrap = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * density).toInt(), (12 * density).toInt(), (24 * density).toInt(), (12 * density).toInt())
+            addView(message)
+            addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        val dialog = AlertDialog.Builder(activity)
+            .setView(wrap)
+            .setCancelable(false)
+            .create()
+        val ui = ProgressUi(activity, dialog, message)
+        dialog.show()
+        return ui
+    }
+
     /** If a progress dialog is bound to this activity, dismiss it (call from onDestroy(. */
     fun dismissFor(activity: Activity) {
         val d = currentDialog
-        if (d != null && d.context === activity) {
-            runCatching { d.dismiss() }
+        if (d != null && d.owner === activity) {
+            runCatching { d.dialog.dismiss() }
             currentDialog = null
         }
     }
@@ -33,16 +58,13 @@ object UpdateActions {
     /** Shows progress while checking for updates in a background thread, then offers an available update. */
     fun showCheckDialog(activity: Activity) {
         if (!activity.alive()) return
-        val progress = ProgressDialog(activity)
-        progress.setMessage(activity.getString(R.string.checking_updates))
-        progress.setCancelable(false)
-        progress.show()
+        val progress = newProgress(activity, activity.getString(R.string.checking_updates))
         currentDialog = progress
         Thread {
             val res = ElqUpdateChecker.check(activity)
             activity.runOnUiThread {
-                if (!activity.alive()) { progress.dismiss(); return@runOnUiThread }
-                progress.dismiss()
+                if (!activity.alive()) { progress.dialog.dismiss(); return@runOnUiThread }
+                progress.dialog.dismiss()
                 if (res.error != null) {
                     Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, res.error), Toast.LENGTH_LONG).show()
                     return@runOnUiThread
@@ -77,17 +99,14 @@ object UpdateActions {
         }
         if (!activity.alive()) return
         if (!downloadBusy.compareAndSet(false, true)) return
-        val progress = ProgressDialog(activity)
-        progress.setMessage(activity.getString(R.string.update_downloading_fmt, 0))
-        progress.setCancelable(false)
-        progress.show()
+        val progress = newProgress(activity, activity.getString(R.string.update_downloading_fmt, 0))
         currentDialog = progress
         Thread {
             try {
                 val apk = File(activity.cacheDir, "elq-update.apk")
             val ok = ElqUpdateDownloader.download(url, apk) { done, total ->
                 val pct = if (total > 0) (done * 100 / total).toInt() else 0
-                activity.runOnUiThread { progress.setMessage(activity.getString(R.string.update_downloading_fmt, pct)) }
+                activity.runOnUiThread { progress.message.text = activity.getString(R.string.update_downloading_fmt, pct) }
             }
             if (!ok) {
                 activity.runOnUiThread {
@@ -104,8 +123,8 @@ object UpdateActions {
                     }
                 }
                 activity.runOnUiThread {
-                    if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
-                    progress.dismiss()
+                    if (!activity.alive()) { progress.dialog.dismiss(); apk.delete(); return@runOnUiThread }
+                    progress.dialog.dismiss()
                     apk.delete()
                     when (result) {
                         is ElqUpdateInstaller.Result.Success -> {

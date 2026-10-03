@@ -50,7 +50,7 @@ object ElqUpdateChecker {
      */
     fun check(context: Context): UpdateResult {
         val localVersionCode = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
         } catch (e: Exception) {
             0
         }
