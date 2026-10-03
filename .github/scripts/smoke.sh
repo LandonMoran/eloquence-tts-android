@@ -40,7 +40,7 @@ echo "artifact id: $A"
 mkdir -p /tmp/apk && cd /tmp/apk
 gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/actions/artifacts/$A/zip" > art.zip
 unzip -q -o art.zip
-APK=$(find . -name "vvttts-test-x86_64.apk" | head -1)
+APK=$(find . -name "vvtts-test-x86_64.apk" | head -1)
 echo "APK=$APK" | tee /tmp/apk/path.env
 ls -la
 # --- install, launch, verify ---

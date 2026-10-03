@@ -72,17 +72,9 @@ jobs:
           fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
           fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
 
-      - name: Restore keystore from secret
+      - name: Use committed CI keystore
         run: |
-          if [ -z "${{ secrets.KEYSTORE_B64 }}" ]; then
-            echo "::error::KEYSTORE_B64 secret not set — add it in the repo settings to enable signing"
-            exit 1
-          fi
-          if [ -z "${{ secrets.KS_PASS }}" ]; then
-            echo "::error::KS_PASS secret not set — add it in the repo settings to enable signing"
-            exit 1
-          fi
-          echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > vvttts.jks
+          cp vvttts-ci.jks vvttts.jks
           ls -la vvttts.jks
 
       - name: Build native bridge (x86_64)
