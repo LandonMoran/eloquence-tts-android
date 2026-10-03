@@ -17,8 +17,8 @@ if [ -n "${APP_PID:-}" ]; then
 	echo "=== NATIVE STACKS pid=$APP_PID ==="
 	"$ADB" root >/dev/null 2>&1 || true
 	sleep 2
-	"$ADB" shell debuggerd -b "$APP_PID" > native-stacks.txt 2>&1 || true
-	grep -aE 'elq-synth|#0[0-9] pc|backtrace|libvvttts|libeci|libevv' native-stacks.txt | head -100 || true
+	"$ADB" shell "for t in /proc/${APP_PID}/task/*; do tid=\${t##*/}; debuggerd -b \$tid; done" > native-stacks.txt 2>&1 || true
+	grep -aE 'libvvttts|libevv|openevv|elq-synth|Tid|backtrace' native-stacks.txt | head -120 || true
 else
 	echo "no app pid found for native dump"
 fi
