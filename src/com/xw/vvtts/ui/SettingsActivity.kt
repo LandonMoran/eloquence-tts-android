@@ -60,6 +60,10 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
+        // Parse autotest hook before engine init: zh oracle must skip the en warmup, whose
+        // forced-synthesis init phase recurses forever on x86_64 CI emulators only.
+        val autotest = intent?.getStringExtra("autotest")
+        EloquenceEngine.skipWarmupForAutotest = ("chinese" == autotest)
         var e = processEngine
         if (e == null) {
             e = EloquenceEngine(applicationContext)
@@ -73,7 +77,6 @@ class SettingsActivity : Activity() {
         // Restore language-detection settings from SharedPreferences
         restoreLanguageSettings()
         // Auto-test hook: am start --es autotest chinese
-        val autotest = intent?.getStringExtra("autotest")
         if ("chinese" == autotest) {
             Handler(Looper.getMainLooper()).postDelayed({ testZhOracle() }, 3000)
         } else if ("german" == autotest) {

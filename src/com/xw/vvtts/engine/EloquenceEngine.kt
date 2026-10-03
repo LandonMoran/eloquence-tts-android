@@ -140,7 +140,7 @@ class EloquenceEngine(context: Context) {
             Log.i(TAG, "Eloquence engine (apple-eloquence-elf) ready, 14 languages")
             // Warm the default (US English) voice in the background: preloads the LPC voice
             // tables so the FIRST hover/swipe utterance starts speaking immediately.
-            warmupDialect(SHIPPED_DIALECTS.first().toInt())
+            if (!skipWarmupForAutotest) warmupDialect(SHIPPED_DIALECTS.first().toInt())
             return true
         } catch (e: Exception) {
             Log.e(TAG, "init failed", e)
@@ -173,6 +173,10 @@ class EloquenceEngine(context: Context) {
 
     companion object {
         private const val TAG = "EloquenceEngine"
+
+        /** CI autotest (zh oracle) skips the en warmup: its forced-synthesis init
+         *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
+        @Volatile var skipWarmupForAutotest = false
 
         private fun applyDict(text: String, entries: List<DictEntry>): String {
             var t = text
