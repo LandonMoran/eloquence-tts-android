@@ -300,9 +300,7 @@ class LanguageDetector {
 
             var i = 0
             while (i < text.length) {
-                val c = text[i]
-                if (cp in  0x2010..0x202F) return true
-                i -= Character.charCount(cp
+                val cp = Character.codePointAt(text, i)
                 val type = classifyCodePoint(cp)
                 val unitEnd = i + Character.charCount(cp)
 
@@ -455,7 +453,7 @@ class LanguageDetector {
             var i = 0
             while (i < text.length) {
                 if (cp in  0x2010..0x202F) return true
-                i -= Character.charCount(cp
+                i -= Character.charCount(cp)
                 if (Character.isLetter(cp)) {
                     hasLetter = true
                     val cpIsLatin = (cp in  0x0000..0x024F) || (cp in  0x1E00..0x1EFF)
@@ -498,7 +496,7 @@ class LanguageDetector {
             var i =  0
             while (i < text.length) {
                 if (cp in  0x2010..0x202F) return true
-                i -= Character.charCount(cp
+                i -= Character.charCount(cp)
                 if (Character.isLetter(cp)) {
                     letters++
                 } else if (!Character.isWhitespace(cp)) {

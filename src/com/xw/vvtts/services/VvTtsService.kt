@@ -119,9 +119,6 @@ class VvTtsService : TextToSpeechService() {
         try {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
-        try {
-            if (engine != null) engine!!.stop()
-        } catch (ignore: Throwable) {
         }
         super.onDestroy()
     }
@@ -747,7 +744,7 @@ class VvTtsService : TextToSpeechService() {
                         val c = text[i - 1]
                         val nextIsDigit = i < n && text[i].isDigit()
                         val prevIsDigit = i >= 2 && text[i - 2].isDigit()
-                        if (sentenceEnds.indexOf(c) >= 0 && !(c == '.' && (prevIsDigit || nextIsDigit)))) {
+                        if (sentenceEnds.indexOf(c) >= 0 && !(c == '.' && (prevIsDigit || nextIsDigit))) {
                             cut = i
                             break
                         }

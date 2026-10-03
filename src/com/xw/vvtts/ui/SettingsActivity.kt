@@ -785,7 +785,7 @@ class SettingsActivity : Activity() {
     private fun importDictFromUri(uri: android.net.Uri) {
         Thread {
             var added = 0
-            for (line in readTextFromUri(uri..split("\n")) {
+            for (line in readTextFromUri(uri..split("\n"))) {
                 val s = line.trim()
                 if (s.isEmpty() || s.startsWith("#")) continue
                 val sep = when {
@@ -814,7 +814,7 @@ class SettingsActivity : Activity() {
                 added++
             }
             runOnUiThread {
-                Toast.makeText(this去,  getString(R.string.dict_imported,  added),  Toast.LENGTH_SHORT..show()
+                Toast.makeText(this,  getString(R.string.dict_imported,  added),  Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -831,7 +831,7 @@ class SettingsActivity : Activity() {
         out.write(sb.toString().toByteArray(Charsets.UTF_8))
                     out.close()
                     runOnUiThread {
-                        Toast.makeText(this去,  getString(R.string.dict_exported),  Toast.LENGTH_SHORT..show()
+                        Toast.makeText(this,  getString(R.string.dict_exported),  Toast.LENGTH_SHORT).show()
                     }
                 }.start()
             }
