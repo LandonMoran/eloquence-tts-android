@@ -12,7 +12,7 @@ set -x
 cd "$GITHUB_WORKSPACE"
 # --- fetch APK from latest successful build-apk run ---
 for i in $(seq 1 60); do
-  R=$(gh run list --workflow 'Build APK' --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+  R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
   [ -n "$R" ] && break
   sleep 10
 done
@@ -25,7 +25,7 @@ for i in $(seq 1 180); do
   sleep 10
 done
 if [ -z "$R" ]; then
-  R=$(gh run list --workflow 'Build APK' --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
+  R=$(gh run list --workflow build-apk.yml --branch "${GITHUB_REF#refs/heads/}" --limit 50 --json databaseId,conclusion --jq '. | map(select(.conclusion=="success") | .databaseId) | .[0] // empty')
 fi
 [ -n "$R" ] || { echo "no successful build-apk run found"; exit 1; }
 echo "using build-apk run: $R"
@@ -40,7 +40,7 @@ echo "artifact id: $A"
 mkdir -p /tmp/apk && cd /tmp/apk
 gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/actions/artifacts/$A/zip" > art.zip
 unzip -q -o art.zip
-APK=$(find . -name "vvtts-test-x86_64.apk" | head -1)
+APK=$(find . -name "*.apk" | head -1)
 echo "APK=$APK" | tee /tmp/apk/path.env
 ls -la
 # --- install, launch, verify ---
