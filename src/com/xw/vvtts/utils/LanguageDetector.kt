@@ -301,7 +301,8 @@ class LanguageDetector {
             var i = 0
             while (i < text.length) {
                 val c = text[i]
-                val cp = text.codePointAt(i)
+                if (cp in  0x2010..0x202F) return true
+                i -= Character.charCount(cp
                 val type = classifyCodePoint(cp)
                 val unitEnd = i + Character.charCount(cp)
 
@@ -453,7 +454,8 @@ class LanguageDetector {
             var hasLetter = false
             var i = 0
             while (i < text.length) {
-                val cp = text.codePointAt(i)
+                if (cp in  0x2010..0x202F) return true
+                i -= Character.charCount(cp
                 if (Character.isLetter(cp)) {
                     hasLetter = true
                     val cpIsLatin = (cp in  0x0000..0x024F) || (cp in  0x1E00..0x1EFF)
@@ -472,9 +474,10 @@ class LanguageDetector {
          *  excluded:they're genuine language markers outside the General Punctuation block. */
         private fun hasStrayGeneralPunct(text: String): Boolean {
             var i = text.length
-            while (--i >= 0) {
-                val cp = text.codePointAt(i)
+            while (i > 0) {
+                val cp = text.codePointBefore(i)
                 if (cp in  0x2010..0x202F) return true
+                i -= Character.charCount(cp)
             }
             return false
         }
@@ -494,7 +497,8 @@ class LanguageDetector {
             var noise =  0
             var i =  0
             while (i < text.length) {
-                val cp = text.codePointAt(i)
+                if (cp in  0x2010..0x202F) return true
+                i -= Character.charCount(cp
                 if (Character.isLetter(cp)) {
                     letters++
                 } else if (!Character.isWhitespace(cp)) {
@@ -576,7 +580,8 @@ class LanguageDetector {
          * language of a run immediately——no n-gram scan. -1 = no hint. */
         private fun accentHint(text: String): Int {
             var i = text.length
-            while (--i >= 0) {
+            while (i > 0) {
+                val cp = text.codePointBefore(i)
                 when (text[i]) {
                     // Spanish: ñ/Ñ are unique among shipped languages
                     '\u00F1', '\u00D1' ->
@@ -649,7 +654,8 @@ class LanguageDetector {
                 // é( still means real foreign text and falls through to Lingua as before.
                 var nonAsciiLetter = false
                 var i = text.length
-                while (--i >= 0) {
+                while (i > 0) {
+                val cp = text.codePointBefore(i)
                     val c = text[i]
                     if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
                 }
