@@ -10,7 +10,19 @@ echo "pkg=$PKG apk=$APK"
 "$ADB" install -r "$APK"
 "$ADB" logcat -c
 "$ADB" shell am start -n "$PKG/.ui.SettingsActivity" --es autotest chinese
-sleep 120
+# Native stack snapshot while elq-synth is ( presumably) parked in nativeInitEngine.
+sleep 20
+APP_PID=$("$ADB" shell pidof -s "$PKG" | tr -d '\r' || true)
+if [ -n "${APP_PID:-}" ]; then
+	echo "=== NATIVE STACKS pid=$APP_PID ==="
+	"$ADB" root >/dev/null 2>&1 || true
+	sleep 2
+	"$ADB" shell debuggerd -b "$APP_PID" > native-stacks.txt 2>&1 || true
+	grep -aE 'elq-synth|#0[0-9] pc|backtrace|libvvttts|libeci|libevv' native-stacks.txt | head -100 || true
+else
+	echo "no app pid found for native dump"
+fi
+sleep 100
 "$ADB" shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" || true
 "$ADB" logcat -d -v threadtime > logcat-full.txt || true
 echo "=== CHS_ORACLE / CRASHHOOK DIAG LINES ===="
