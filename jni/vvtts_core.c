@@ -199,9 +199,12 @@ static void vv_wait_till_done(VvtsSession *s) {
  * signal (one session must never be driven from two threads concurrently).
  * The generous bound guards against an engine wedge: if quiet cannot be
  * proven within it, the session is permanently retired -- its ECI handle is
- * dropped so nothing can ever drive again it, and it is not freed until the
- * worker has actually gone quiet.  A timeout never becomes permission to
- * reuse the same session. */
+ * dropped so nothing can ever drive it again.  The handle is intentionally
+ * NOT eciDelete'd on retirement: the engine's own thread may still own it,
+ * so deleting would be use-after-free; a single leaked handle (bounded by
+ * the number of retired sessions) is cheaper than a crash.  The session
+ * memory itself is only freed by nativeShutdown once the worker has gone
+ * quiet.  A timeout never becomes permission to reuse the same session. */
 static int vv_settle(VvtsSession *s) {
     if (!s->hECI) return 1; /* nothing pending on a dead session */
     for (int i = 0; i < VV_SETTLE_MAX_ITERS && s->hECI && eciSpeaking(s->hECI); i++) {
