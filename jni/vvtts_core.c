@@ -174,16 +174,19 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
 
 static void vv_wait_till_done(VvtsSession *s) {
     /* openevv's engine cannot abandon an utterance: eciStop stops the
-     * samples but the synthesis thread still has to finish it.  Poll
-     * eciSpeaking (as the old bridge did for Apple's object.. */
+     * samples but the synthesis thread still has to finish it.  A fixed
+     * iteration bound is NOT proof of finish: a long utterance can keep
+     * eciSpeaking() true for well over 2 s, and returning while the engine
+     * is still speaking lets the caller read/resample s->pcm while the
+     * synthesis callback writes into it -- corruption.  Separate the stop
+     * request from the drain: poll eciSpeaking() until it actually goes
+     * quiet; only a missing/deleted handle can abort the wait. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
-        if ((i % 100) ==  0)
-            __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
+    while (s->hECI && eciSpeaking(s->hECI)) {
         /* Polling is what collects the engine's queued samples: the engine
          * posts chunks into the app queue and only a poll delivers them, so
-         * this loop's SLEEP is a hard ceiling on the drain rate.  Keep it
-         * short -- 500us -- or long utterances take seconds to come out. */
+         * a poll must keep coming until the engine reports quiet.  Keep the
+         * poll short -- 500us -- or long utterances take seconds to come out. */
         struct timespec ts = {0, 500000L}; /* 0.5 ms */
         nanosleep(&ts, NULL);
     }
@@ -455,7 +458,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return;
-    s->cancel = 1; /* let the wait loop abort on the next 2 ms tick */
+    s->cancel = 1; /* request a stop: the wait loop now keeps draining until the engine goes quiet */
     eciStop(s->hECI); /* stops handing samples; the thread still settles */
 }
 
