@@ -104,7 +104,7 @@ object ElqUpdateInstaller {
                                 session.fsync(output)
                             }
                         }
-                        session.commit(commitIntent(appContext, sessionId.intentSender))
+                        session.commit(commitIntent(appContext, sessionId).intentSender)
                         committed = true
                     } finally {
                         session.close()

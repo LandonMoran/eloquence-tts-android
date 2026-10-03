@@ -97,28 +97,30 @@ object UpdateActions {
                 return@Thread
             }
             val result = ElqUpdateInstaller.install(activity, apk)
-if (result is ElqUpdateInstaller.Result.UserActionRequired) {
-                val conf = result.confirmIntent
-                if (conf != null) activity.runOnUiThread {
-                    if (activity.alive()) runCatching { activity.startActivity(conf) }
+                if (result is ElqUpdateInstaller.Result.UserActionRequired) {
+                    val conf = result.confirmIntent
+                    if (conf != null) activity.runOnUiThread {
+                        if (activity.alive()) runCatching { activity.startActivity(conf) }
+                    }
                 }
+                activity.runOnUiThread {
+                    if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
+                    progress.dismiss()
+                    apk.delete()
+                    when (result) {
+                        is ElqUpdateInstaller.Result.Success -> {
+                            Toast.makeText(activity, activity.getString(R.string.update_install_ok), Toast.LENGTH_SHORT).show()
+                        }
+                        is ElqUpdateInstaller.Result.Failed -> {
+                            Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, result.message), Toast.LENGTH_LONG).show()
+                        }
+                        is ElqUpdateInstaller.Result.UserActionRequired -> {}
+                    }
+                }
+            } finally {
+                downloadBusy.set(false)
             }
-            activity.runOnUiThread {
-                if (!activity.alive()) { progress.dismiss(); apk.delete(); return@runOnUiThread }
-progress.dismiss()
-apk.delete()
-when (result) {
-is ElqUpdateInstaller.Result.Success -> {
-Toast.makeText(activity, activity.getString(R.string.update_install_ok), Toast.LENGTH_SHORT).show()
-}
-is ElqUpdateInstaller.Result.Failed -> {
-Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, result.message), Toast.LENGTH_LONG).show()
-}
-}
-}
-} finally {
-downloadBusy.set(false)
-}
-}.start()
+        }.start()
 
+    }
 }
