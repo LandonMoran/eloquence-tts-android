@@ -102,6 +102,7 @@ jobs:
           script: bash "${GITHUB_WORKSPACE}/.github/scripts/crash_test.sh"
 
       - name: Upload logcat
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: emulator-logcat

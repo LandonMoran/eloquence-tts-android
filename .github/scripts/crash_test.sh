@@ -15,6 +15,8 @@ sleep 120
 "$ADB" logcat -d -v threadtime > logcat-full.txt || true
 echo "=== CHS_ORACLE / CRASHHOOK DIAG LINES ===="
 grep -nE "CHS_ORACLE|CRASHHOOK" logcat-full.txt | head -60 || true
+echo "=== APP-ENGINE LINES (EloquenceEngine / VvTts / vvtts( ==="
+grep -nE " (EloquenceEngine|VvTts|VvttsCore|vvttts|AndroidRuntime):" logcat-full.txt | tail -60 || echo "no app-engine lines at all"
 echo "=== FATAL / CRASH LINES ===="
 if grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrace:|Process $PKG" logcat-full.txt;then
 	echo "CRASH_MARKERS_FOUND" && exit 1
