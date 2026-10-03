@@ -70,8 +70,11 @@ if [ -s /tmp/r_sources.txt ]; then
 fi
 KT_CLASSPATH="$ANDROID_JAR:out_classes:$LIBS_DIR/lingua-slim.jar:$LIBS_DIR/kotlin-stdlib-1.9.25.jar"
 if [ -n "$KOTLINC_CP" ]; then
+  # jar-based launch has no Kotlin distro home: stdlib/reflect are already on the
+  # classpath below, so tell the compiler to stop probing the nonexistent home
+  # (silences the "unable to find kotlin-*.jar in the Kotlin home" warnings)
   java -cp "$KOTLINC_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-    -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
+    -no-stdlib -no-reflect -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
 else
   "$KOTLINC" -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
 fi
