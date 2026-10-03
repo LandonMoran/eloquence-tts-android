@@ -337,7 +337,7 @@ class SettingsActivity : Activity() {
                     private fun testZhOracle() {
                         Thread {
                             if (engine == null || !engine!!.isInitialized()) {
-                                toastOnUi(R.string.engine_not_ready()
+                                toastOnUi(R.string.engine_not_ready)
                                 return@Thread
                             }
                             val text = "\u4f60\u597d\u3002"
