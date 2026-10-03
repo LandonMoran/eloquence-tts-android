@@ -473,13 +473,23 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
          * poll eciSpeaking() --the engine's own completion signal -- until it
          * reports quiet.  This loop is deliberately NOT gated on s->cancel
          * (which we just set: gating on it would exit immediately and delete
-         * the very handle the native thread is still using). */
-        while (s->hECI && eciSpeaking(s->hECI)) {
+         * the very handle the native thread is still using).  A generous
+         * bound guards the caller against a wedged engine: if quiet cannot
+         * be proven, the handle is retired (leaked by design -- deleting it
+         * while the engine thread owns it would be use-after-free). */
+        int iters = 0;
+        while (s->hECI && eciSpeaking(s->hECI) && iters < 40000) {
             struct timespec ts = {0, 500000L}; /* 0.5 ms */
             nanosleep(&ts, NULL);
+            iters++;
         }
-        eciDelete(s->hECI);
-        s->hECI = NULL; /* never touch the freed handle again */
+        if (s->hECI && eciSpeaking(s->hECI)) {
+            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown drain timeout: ECI handle retired (leak by design)");
+            s->hECI = NULL;
+        } else {
+            eciDelete(s->hECI);
+            s->hECI = NULL; /* never touch the freed handle again */
+        }
     }
     free(s->text);
     free(s->pcm);
