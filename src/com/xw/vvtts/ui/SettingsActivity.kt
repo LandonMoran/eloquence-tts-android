@@ -340,7 +340,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun toastOnUi(resId: Int) {
-        runOnUiThread { Toast.makeText(this,NULL getString(resId], Toast.LENGTH_SHORT].show() }
+        runOnUiThread { Toast.makeText(this, getString(resId), Toast.LENGTH_SHORT).show() }
     }
 
     /** Synthesizes [text] for crash diagnostics using English or shipped Simplified Chinese, and logs the outcome. */
