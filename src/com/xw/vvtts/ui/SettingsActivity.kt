@@ -287,7 +287,7 @@ class SettingsActivity : Activity() {
     /** Synthesizes and plays a sample using the current voice settings, falling back to English for unshipped dialects. */
     private fun testSpeechImpl() {
         if (engine == null || !engine!!.isInitialized()) {
-            Toast.makeText(this, getString(R.string.engine_not_ready), Toast.LENGTH_SHORT).show()
+            toastOnUi(R.string.engine_not_ready)
             return
         }
         val preset = voiceProfile?.preset ?: 1
@@ -309,15 +309,15 @@ class SettingsActivity : Activity() {
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
-            Toast.makeText(this, getString(R.string.preview_in_english), Toast.LENGTH_LONG).show()
+                    toastOnUi(R.string.preview_in_english)
             val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
                 voiceConfig!!.pitch, 100)
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, engine!!.getCoreSampleRate())
-                Toast.makeText(this, getString(R.string.spoken_en), Toast.LENGTH_SHORT).show()
+                toastOnUi(R.string.spoken_en)
             } else {
-                Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
+                toastOnUi(R.string.synth_failed)
             }
             return
         }
@@ -326,9 +326,9 @@ class SettingsActivity : Activity() {
             voiceConfig!!.pitch, 100)
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, engine!!.getCoreSampleRate())
-            Toast.makeText(this, getString(R.string.synth_ok), Toast.LENGTH_SHORT).show()
+            toastOnUi(R.string.synth_ok)
         } else {
-                    Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
+                    toastOnUi(R.string.synth_failed)
                 }
             }
 
@@ -337,6 +337,10 @@ class SettingsActivity : Activity() {
              *  real CHS oracle path (GB18030), everything else stays English. */
             private fun testCrash(text: String) {
         Thread { testCrashImpl(text) }.start()
+    }
+
+    private fun toastOnUi(resId: Int) {
+        runOnUiThread { Toast.makeText(this,NULL getString(resId], Toast.LENGTH_SHORT].show() }
     }
 
     /** Synthesizes [text] for crash diagnostics using English or shipped Simplified Chinese, and logs the outcome. */
