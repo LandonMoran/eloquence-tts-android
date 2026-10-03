@@ -191,17 +191,30 @@ static void vv_wait_till_done(VvtsSession *s) {
     s->synthBusy =  0;
 }
 
-/* vv_settle: bounded poll used when re-entering synthesis right after a
- * stop aborted the wait loop -- eciStop stops handing samples but the
- * engine's own thread still has to finish; one session must never be driven
- * from two threads concurrently, so wait for the engine to go quiet before
- * touching text/pcm again. */
-static void vv_settle(VvtsSession *s) {
-    for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
+#define VV_SETTLE_MAX_ITERS 40000  /* 0.5 ms each: ~20 s of drain before retirement */
+
+/* vv_settle: re-entering synthesis must never touch a session the engine's
+ * thread still owns.  The previous native operation counts as finished only
+ * when eciSpeaking() reports quiet --that is the DEFINITIVE completion
+ * signal (one session must never be driven from two threads concurrently).
+ * The generous bound guards against an engine wedge: if quiet cannot be
+ * proven within it, the session is permanently retired -- its ECI handle is
+ * dropped so nothing can ever drive again it, and it is not freed until the
+ * worker has actually gone quiet.  A timeout never becomes permission to
+ * reuse the same session. */
+static int vv_settle(VvtsSession *s) {
+    if (!s->hECI) return 1; /* nothing pending on a dead session */
+    for (int i = 0; i < VV_SETTLE_MAX_ITERS && s->hECI && eciSpeaking(s->hECI); i++) {
         struct timespec ts = {0, 500000L}; /* 0.5 ms: poll = collect, keep it short */
         nanosleep(&ts, NULL);
     }
+    if (!s->hECI) return 1;
+    if (!eciSpeaking(s->hECI)) return 1; /* previous op definitively finished */
+    /* Engine still speaking past the generous bound: permanently retire. */
+    s->hECI = NULL;
+    return 0;
 }
+
 
 /* The engine emits short lead-in/trailing silence around every utterance;
  * for short TalkBack labels those fixed pauses dominate the perceived swipe
@@ -320,14 +333,23 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
      * Western set for the shipped languages -- matching the 1252 path the
      * app already uses.  The engine copies what it needs of the text, but
      * we keep it alive for the length of the call to be safe. */
+    /* Re-entering synthesis (right after a stop, or back-to-back utterances):
+     * the previous engine thread may STILL own this session.  Prove it has
+     * DEFINITIVELY finished BEFORE mutating text/pcm (or resetting the cancel
+     * flag) -- one session must never be driven from two threads concurrently.
+     * If quiet cannot be proven within a generous bound the session is
+     * permanently retired and this call returns NULL so the caller gets a
+     * fresh session/error path. */
+    if (!vv_settle(s)) {
+        __android_log_print(ANDROID_LOG_ERROR, "SPD", "settle timeout: session retired, returning NULL");
+        return NULL;
+
+    }
     if (s->text) free(s->text);
     s->text = buf;
     s->pcmLen = 0;
-
-    /* A stop may have aborted the previous wait loop: re-sync with the
-     * engine's thread before we touch text/pcm for the new utterance. */
     s->cancel = 0;
-    vv_settle(s);
+
 
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
