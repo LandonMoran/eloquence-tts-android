@@ -96,8 +96,8 @@ object NgramScorer {
 
     private fun keyOf(s: String): Int {
         if (s.isEmpty()) return -1
-        val c0 = s[0].toInt()
-        return if (s.length ==1) c0 else ((c0 shl 16) or s[1].toInt())
+        val c0 = s[0].code
+        return if (s.length ==1) c0 else ((c0 shl 16) or s[1].code)
     }
 
     private fun scoreText(text: String, idx: Int): Float {
@@ -110,13 +110,13 @@ object NgramScorer {
         val n = text.length
         val chars = text.toCharArray()
         while (i < n) {
-            val c = chars[i].toInt()
+            val c = chars[i].code
             unis?.get(c)?.let { v ->
                 score += v
                 hits++
             }
             if (i + 1 < n) {
-                val bk =(c shl 16) or chars[i + 1].toInt()
+                val bk =(c shl 16) or chars[i + 1].code
                 bis?.get(bk)?.let { v ->
                     score += v
                     hits++

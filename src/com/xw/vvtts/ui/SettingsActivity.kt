@@ -5,8 +5,9 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
+import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
+
 import android.media.AudioTrack
 import android.os.Bundle
 import android.os.Handler
@@ -462,9 +463,19 @@ class SettingsActivity : Activity() {
     /** Play and block until done (duration = samples / rate) */
     private fun playPcmAndWait(pcm: ShortArray, sampleRate: Int) {
         val bytes = shortsToBytes(pcm)
-        val track = AudioTrack(AudioManager.STREAM_MUSIC, sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
-            bytes.size, AudioTrack.MODE_STATIC)
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build())
+            .setAudioFormat(AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .build())
+            .setBufferSizeInBytes(bytes.size)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
         track.write(bytes, 0, bytes.size)
         track.play()
         try {
