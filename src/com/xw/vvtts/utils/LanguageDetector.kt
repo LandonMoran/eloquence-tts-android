@@ -174,11 +174,13 @@ class LanguageDetector {
 
         /** Preload Lingua(called in the background at app startup) */
         fun preloadLingua() {
-            if (linguaPreloaded || linguaInitFailed) return
-            Thread {
-                getLingua()
-                linguaPreloaded = true
-            }.start()
+            synchronized(lock) {
+                if (linguaPreloaded || linguaInitFailed) return
+                Thread {
+                    getLingua()
+                    linguaPreloaded = true
+                }.start()
+            }
         }
 
         private fun getLingua(): com.github.pemistahl.lingua.api.LanguageDetector? {
@@ -296,13 +298,15 @@ class LanguageDetector {
             var lastDialect = resolveDefaultLanguage().takeIf { it >= 0 }
                 ?: localeLatinDialect().takeIf { it >= 0 } ?: englishDialect
 
-            for (i in text.indices) {
-                val c = text[i]
-                val type = classifyChar(c)
+            var i = 0
+            while (i < text.length) {
+                val cp = Character.codePointAt(text, i)
+                val type = classifyCodePoint(cp)
+                val unitEnd = i + Character.charCount(cp)
 
                 // separator(space/punct):always follows the previous segment's language
                 if (type == 4) {
-                    current.append(c)
+                    current.append(text, i, unitEnd)
                     continue
                 }
 
@@ -313,9 +317,8 @@ class LanguageDetector {
                             flushSegment(current, currentType, lastDialect, result)
                         }
                         currentType = 5
-                        current = StringBuilder()
                     }
-                    current.append(c)
+                    current.append(text, i, unitEnd)
                     continue
                 }
 
@@ -325,15 +328,15 @@ class LanguageDetector {
                         flushSegment(current, currentType, lastDialect, result)
                     }
                     currentType = type
-                    current = StringBuilder()
                 }
-                current.append(c)
+                current.append(text, i, unitEnd)
 
                 // remember the most recent non-separator language
                 if (type in 0..3) {
                     lastRealType = type
                     lastDialect = typeToDialect(type, lastDialect)
                 }
+                i = unitEnd
             }
             if (current.length > 0) {
                 flushSegment(current, currentType, lastDialect, result)
@@ -349,46 +352,50 @@ class LanguageDetector {
          * Character classification.
          * 0=Chinese(Han),1=Japanese kana, 2=Korean Hangul, 3=Latin, 4=separator
          */
-        private fun classifyChar(c: Char): Int {
+        private fun classifyCodePoint(cp: Int): Int {
             // kana
-            if (c.code in 0x3040..0x309F || c.code in 0x30A0..0x30FF) return 1
+            if (cp in 0x3040..0x309F || cp in 0x30A0..0x30FF) return 1
             // Hangul
-            if (c.code in 0xAC00..0xD7AF) return 2
+            if (cp in 0xAC00..0xD7AF) return 2
             // CJK Han(no Simplified-vs-Traditional split;all treated as Chinese)
-            if (c.code in 0x4E00..0x9FFF) return 0
-            if (c.code in 0x3400..0x4DBF) return 0
+            if (cp in 0x4E00..0x9FFF) return 0
+            if (cp in 0x3400..0x4DBF) return 0
+            // CJK Extension B-H and Compatibility Ideographs (surrogate pairs)
+            if (cp in 0x20000..0x2EBEF) return 0
+            if (cp in 0x30000..0x3134F) return 0
+            if (cp in 0xF900..0xFAFF) return 0
             // Latin letters
-            if (c in 'A'..'Z' || c in 'a'..'z') return 3
-            if (c.code in 0x00C0..0x024F) return 3
+            if (cp in 0x41..0x5A || cp in 0x61..0x7A) return 3
+            if (cp in 0x00C0..0x024F) return 3
             // space(full-width and half-width both count as separators)
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') return 4
-            if (c.code == 0x3000) return 4  // full-width space
+            if (cp == 0x20 || cp == 0x09 || cp == 0x0A || cp == 0x0D) return 4
+            if (cp == 0x3000) return 4  // full-width space
             // digit(half/full-width)-> standalone type 5(default language or follows previous segment)
-            if (c in '0'..'9') return 5
-            if (c.code in 0xFF10..0xFF19) return 5
+            if (cp in 0x30..0x39) return 5
+            if (cp in 0xFF10..0xFF19) return 5
             // punctuation separators(ASCII + CJK + full-width)
-            if (isSeparator(c)) return 4
+            if (isSeparator(cp)) return 4
             // other ASCII printable(operators etc)-> Latin
-            if (c.code in 0x20..0x7E) return 3
+            if (cp in 0x20..0x7E) return 3
             // full-width punctuation
-            if (c.code in 0xFF00..0xFFEF) return 4
+            if (cp in 0xFF00..0xFFEF) return 4
             // CJK punctuation
-            if (c.code in 0x3000..0x303F) return 4
+            if (cp in 0x3000..0x303F) return 4
             // default:Latin
             return 3
         }
 
-        /** Separator test:spaces,punct, symbols——these follow the previous segment's language */
-        private fun isSeparator(c: Char): Boolean {
+        /** Separator test:spaces,punct,symbols——these follow the previous segment's language */
+        private fun isSeparator(cp: Int): Boolean {
             // ASCII punctuation
-            if (c.code <= 0x7F) {
-                return c == ',' || c == '.' || c == '!' || c == '?' || c == ';' || c == ':'
-                    || c == '-' || c == '(' || c == ')' || c == '[' || c == ']'
-                    || c == '{' || c == '}' || c == '"' || c == '\''
-                    || c == '/' || c == '\\' || c == '|' || c == '~'
-                    || c == '`' || c == '@' || c == '#' || c == '$' || c == '%'
-                    || c == '^' || c == '&' || c == '*' || c == '+' || c == '='
-                    || c == '<' || c == '>' || c == '_'
+            if (cp <= 0x7F) {
+                return cp == 0x2C || cp == 0x2E || cp == 0x21 || cp == 0x3F || cp == 0x3B || cp == 0x3A
+                    || cp == 0x2D || cp == 0x28 || cp == 0x29 || cp == 0x5B || cp == 0x5D
+                    || cp == 0x7B || cp == 0x7D || cp == 0x22 || cp == 0x27
+                    || cp == 0x2F || cp == 0x5C || cp == 0x7C || cp == 0x7E
+                    || cp == 0x60 || cp == 0x40 || cp == 0x23 || cp == 0x24 || cp == 0x25
+                    || cp == 0x5E || cp == 0x26 || cp == 0x2A || cp == 0x2B || cp == 0x3D
+                    || cp == 0x3C || cp == 0x3E || cp == 0x5F
             }
             return false
         }
@@ -464,9 +471,10 @@ class LanguageDetector {
          *  excluded:they're genuine language markers outside the General Punctuation block. */
         private fun hasStrayGeneralPunct(text: String): Boolean {
             var i = text.length
-            while (--i >= 0) {
-                val cp = text.codePointAt(i)
+            while (i > 0) {
+                val cp = text.codePointBefore(i)
                 if (cp in  0x2010..0x202F) return true
+                i -= Character.charCount(cp)
             }
             return false
         }
@@ -568,7 +576,8 @@ class LanguageDetector {
          * language of a run immediately——no n-gram scan. -1 = no hint. */
         private fun accentHint(text: String): Int {
             var i = text.length
-            while (--i >= 0) {
+            while (i > 0) {
+                val cp = text.codePointBefore(i)
                 when (text[i]) {
                     // Spanish: ñ/Ñ are unique among shipped languages
                     '\u00F1', '\u00D1' ->
@@ -588,6 +597,12 @@ class LanguageDetector {
         /** Latin-text detection:always try Lingua first;only use the default language when detection returns null.
         * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
         * if the detected language isn't in the whitelist, fall back to the default language(or English). */
+        private fun latinFallback(dl: Int, fallbackDialect: Int): Int = when {
+            isLatinDialect(dl) -> dl
+            isLatinDialect(fallbackDialect) -> fallbackDialect
+            else -> englishDialect
+        }
+
         private fun detectLatin(text: String, fallbackDialect: Int): Int {
             // Short runs (names, loanwords, fragments( almost always belong to
                         // the user's base language. Don't let Lingua flip the voice mid-sentence:
@@ -598,13 +613,14 @@ class LanguageDetector {
             if (text.length <	10) {
                 val dl = resolveDefaultLanguage()
                 if (isLatinDialect(dl)) return dl
+                val accentHinted = accentHint(text)
+                if (accentHinted >=  0) return accentHinted
                 if (isLatinDialect(fallbackDialect)) return fallbackDialect
                 // Pure-ASCII short words are English (loanwords(: they must never
                 // follow a non-Latin context nor a pinned zh/ja/ko default: "release"
                 // was read as Chinese behind a Chinese run (and when the zh pin leaked(.
                 // Latin contexts (de/fr/... keep following the previous segment as before.
-                if (text.all { it ->it <= '\u007F' }) return englishDialect
-                return englishDialect
+                                return englishDialect
 
 
 
@@ -634,7 +650,8 @@ class LanguageDetector {
                 // é( still means real foreign text and falls through to Lingua as before.
                 var nonAsciiLetter = false
                 var i = text.length
-                while (--i >= 0) {
+                while (i > 0) {
+                val cp = text.codePointBefore(i)
                     val c = text[i]
                     if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
                 }
@@ -654,9 +671,11 @@ class LanguageDetector {
             // ambiguous runs back here -- only then does Lingua's heavier n-gram
             // scan run. Both paths share the same LRU cache:re-announcing a seen
             // UI string short-circuits before either scan runs.
-            synchronized(latinCache) {
-                val hit = latinCache[text]
-                if (hit != null) return hit
+            if (text.length <= 256) {
+                synchronized(latinCache) {
+                    val hit = latinCache[text]
+                    if (hit != null) return hit
+                }
             }
             val effEnabled = transientEnabled?.let { enabledLanguages + it } ?: enabledLanguages
             val ngramId = NgramScorer.detect(text, effEnabled)
@@ -675,8 +694,10 @@ class LanguageDetector {
                 }
                 if (dialect >=0) {
                     synchronized(latinCache) {
-                        if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
-                        latinCache[text] = dialect
+                        if (text.length <= 256) {
+                            if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
+                            latinCache[text] = dialect
+                        }
                     }
                     return dialect
                 }
@@ -685,7 +706,7 @@ class LanguageDetector {
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
                 val dl = resolveDefaultLanguage()
-                return if (isLatinDialect(dl)) dl else englishDialect
+                return latinFallback(dl, fallbackDialect)
             }
 
             // Lingua still handles ambiguous text;its decisions land in the same
@@ -696,24 +717,26 @@ class LanguageDetector {
                 if (lang == null) {
                     // detection returned null -> default language(Latin only),else English
                     val dl = resolveDefaultLanguage()
-                    return if (isLatinDialect(dl)) dl else englishDialect
+                    return latinFallback(dl, fallbackDialect)
                 }
                     // detected language goes through the whitelist:if absent -> fallback to default language
                 val code = languageToCode(lang)
                 if (!isLanguageEnabled(code)) {
                     val dl = resolveDefaultLanguage()
-                    return if (isLatinDialect(dl)) dl else englishDialect
+                    return latinFallback(dl, fallbackDialect)
                 }
                 val detectedDialect = languageToDialect(lang)
                 synchronized(latinCache) {
-                    if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
-                    latinCache[text] = detectedDialect
+                    if (text.length <= 256) {
+                        if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
+                        latinCache[text] = detectedDialect
+                    }
                 }
                 return detectedDialect
             } catch (e: Throwable) {
                 // detection exception -> default language(Latin only),else English
                 val dl = resolveDefaultLanguage()
-                return if (isLatinDialect(dl)) dl else englishDialect
+                return latinFallback(dl, fallbackDialect)
             }
         }
 

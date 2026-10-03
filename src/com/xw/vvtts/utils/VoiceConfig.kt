@@ -37,8 +37,14 @@ class VoiceConfig(private val context: Context) {
     // next unlocked service start, which is what made the voice revert at lock-screen).
     private val devicePrefs: SharedPreferences =
         context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private var cachedMap: Map<String, String>? = null
-    private var cachedMtime: Long = -1L
+    @Volatile private var cachedMap: Map<String, String>? = null
+    @Volatile private var cachedMtime: Long = -1L
+    /**
+     * Reads voice preferences from XML, reusing the cached map while the file timestamp is unchanged.
+     *
+     * Falls back to device-protected storage if the app preference file is absent.
+     * Closes the input stream after parsing and preserves an existing cache if reading fails.
+     */
     private fun readMap(): Map<String, String> {
         val appCtx = context.applicationContext ?: context
         val f = if (File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml").exists()) File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml")
@@ -49,28 +55,35 @@ class VoiceConfig(private val context: Context) {
         if (f.exists()) {
             try {
                 val parser = Xml.newPullParser()
-                parser.setInput(FileInputStream(f), null)
-                var t = parser.eventType
-                var curKey: String? = null
-                while (t != XmlPullParser.END_DOCUMENT) {
-                    if (t == XmlPullParser.START_TAG) {
-                        val n = parser.getAttributeValue(null, "name")
-                        val v = parser.getAttributeValue(null, "value")
-                        if (parser.name == "string") {
-                            curKey = n
-                        } else if (n != null && v != null) {
-                            map[n] = v
+                FileInputStream(f).use { fis ->
+                    parser.setInput(fis, null)
+                    var t = parser.eventType
+                    var curKey: String? = null
+                    while (t != XmlPullParser.END_DOCUMENT) {
+                        if (t == XmlPullParser.START_TAG) {
+                            val n = parser.getAttributeValue(null, "name")
+                            val v = parser.getAttributeValue(null, "value")
+                            if (parser.name == "string") {
+                                curKey = n
+                            } else if (n != null && v != null) {
+                                map[n] = v
+                            }
+                        } else if (t == XmlPullParser.TEXT) {
+                            val k = curKey
+                            if (k != null) {
+                                map[k] = parser.text
+                                curKey = null
+                            }
                         }
-                    } else if (t == XmlPullParser.TEXT) {
-                        val k = curKey
-                        if (k != null) {
-                            map[k] = parser.text
-                            curKey = null
-                        }
+                        t = parser.next()
                     }
-                    t = parser.next()
                 }
-            } catch (ignore: Throwable) {}
+            } catch (ignore: Throwable) {
+                // A transient read failure must not wipe a good cache; retry on the next access.
+
+                val prev = cachedMap
+                if (prev != null) return prev
+            }
         }
         cachedMap = map
         cachedMtime = mt
@@ -79,8 +92,12 @@ class VoiceConfig(private val context: Context) {
 
 
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
-        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.commit()
-        val b = devicePrefs.edit(); block(b); b.commit()
+        val a: SharedPreferences.Editor = prefs.edit(); block(a); a.apply()
+        val b = devicePrefs.edit(); block(b); b.apply()
+        cachedMap = null
+        cachedMtime = -1L
+        cachedMap = null
+        cachedMtime = -1L
     }
 
     val voice: String
@@ -143,8 +160,8 @@ class VoiceConfig(private val context: Context) {
         }
 
     fun addDictEntry(word: String,  spoken: String,  caseSensitive: Boolean = false) {
-            val w = word.trim()
-            val s = spoken.trim()
+            val w = word.trim().replace('\n', ' ').replace('|', ' ')
+            val s = spoken.trim().replace('\n', ' ').replace('|', ' ')
             if (w.isEmpty() || s.isEmpty()) return
             val cur = readMap()[KEY_DICT] ?: ""
             val kept = ArrayList<String>()

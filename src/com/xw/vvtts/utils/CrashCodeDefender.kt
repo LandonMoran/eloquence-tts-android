@@ -31,6 +31,7 @@ object CrashCodeDefender {
 
     @Volatile
     private var loaded: Boolean = false
+    private var initFailed: Boolean = false
     @Volatile
     private var corpus: Set<String> = emptySet()
     private val gate = Any()
@@ -79,9 +80,9 @@ object CrashCodeDefender {
     }
 
     private fun ensureLoaded(ctx: Context) {
-        if (loaded) return
+        if (loaded || initFailed) return
         synchronized(gate) {
-            if (loaded) return
+            if (loaded || initFailed) return
             try {
                 val set = HashSet<String>(65536)
                 ctx.assets.open("crashers.txt.gz").use { raw ->
@@ -94,10 +95,10 @@ object CrashCodeDefender {
                     }
                 }
                 corpus = set
-            } catch (t: Throwable) {
-                Log.e(TAG, "failed to load crashers corpus;running without defender", t)
-            } finally {
                 loaded = true
+            } catch (t: Throwable) {
+                initFailed = true
+                Log.e(TAG, "failed to load crashers corpus;defense off", t)
             }
         }
     }

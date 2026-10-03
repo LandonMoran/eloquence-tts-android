@@ -31,7 +31,7 @@ class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
     private val storageContext: Context = context.createDeviceProtectedStorageContext()
 
-    private var voiceProfile: VoiceProfile? = null
+    @Volatile private var voiceProfile: VoiceProfile? = null
     /** User dictionary (word|spoken lines, VoiceConfig.dictEntries(); applied after the
      *  builtin spoken-exception tables so user overrides win ( mirrors the factory
      *  native loadUserDictionary hook; our ECI build has no dict API, so the substitution
@@ -45,6 +45,8 @@ class EloquenceEngine(context: Context) {
         Thread(r, "elq-synth").apply { isDaemon = true }
     }
     @Volatile private var hangDetected = false
+    // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
+    @Volatile private var engineEpoch = 0
         @Volatile private var retireUntilMs = 0L
         private val HANG_TIMEOUT_S = 30L
         private val ZOMBIE_GRACE_MS = 12000L
@@ -138,7 +140,7 @@ class EloquenceEngine(context: Context) {
             Log.i(TAG, "Eloquence engine (apple-eloquence-elf) ready, 14 languages")
             // Warm the default (US English) voice in the background: preloads the LPC voice
             // tables so the FIRST hover/swipe utterance starts speaking immediately.
-            warmupDialect(SHIPPED_DIALECTS.first().toInt())
+            if (!skipWarmupForAutotest) warmupDialect(SHIPPED_DIALECTS.first().toInt())
             return true
         } catch (e: Exception) {
             Log.e(TAG, "init failed", e)
@@ -171,6 +173,10 @@ class EloquenceEngine(context: Context) {
 
     companion object {
         private const val TAG = "EloquenceEngine"
+
+        /** CI autotest (zh oracle) skips the en warmup: its forced-synthesis init
+         *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
+        @Volatile var skipWarmupForAutotest = false
 
         private fun applyDict(text: String, entries: List<DictEntry>): String {
             var t = text
@@ -403,11 +409,13 @@ class EloquenceEngine(context: Context) {
 
     fun stop() {
         stopped = true
+        engineEpoch++
         core?.let { for (h in coreHandles.values) VvttsCore.stop(h) }
     }
 
     @Synchronized
     fun shutdown() {
+        engineEpoch++
         core?.let {
             for (h in coreHandles.values) VvttsCore.shutdown(h)
             coreHandles.clear()
@@ -435,7 +443,9 @@ class EloquenceEngine(context: Context) {
         val cached = coreHandles[dialect] ?: 0L
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
-        val libDir = File(info.nativeLibraryDir)
+        val libDirRaw = info.nativeLibraryDir
+        if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); return 0L }
+        val libDir = File(libDirRaw)
         val cfgDir = File(storageContext.filesDir, "eloquence")
         try {
             FileWriter(File(cfgDir, "eci.ini")).use { fw ->
@@ -445,9 +455,16 @@ class EloquenceEngine(context: Context) {
             Log.e(TAG, "write eci.ini failed", e)
             return 0L
         }
+        val epoch = engineEpoch
         val handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
         Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
         if (handle ==  0L) return 0L
+        // A handle born across a rotate/shutdown/stop is retired, never cached —
+        // the zombie worker that opened it may still be driving it.
+        if (epoch != engineEpoch) {
+            VvttsCore.shutdown(handle)
+            return   0L
+        }
         coreHandles[dialect] = handle
         return handle
     }
@@ -538,7 +555,6 @@ class EloquenceEngine(context: Context) {
             val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
             val sig = sigBase + "|" + sigChar
             val sameAsLast = sig == lastParamSig
-            lastParamSig = sig
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
             val speedVal = Math.round(50.0f * uiRate /  100.0f)
                 .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
@@ -621,7 +637,10 @@ class EloquenceEngine(context: Context) {
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             runCatching { outFile.delete() }
-            if (pcm != null && pcm.size > 0) pcm = applyVolume(pcm, volume)
+            if (pcm != null && pcm.size > 0) {
+                pcm = applyVolume(pcm, volume)
+                lastParamSig = sig  // only admit success:failed param writes must retry
+            }
             pcm
         }
     }
@@ -779,6 +798,9 @@ class EloquenceEngine(context: Context) {
         } catch (e: ExecutionException) {
             Log.e(TAG, "synthesis threw", e)
             null
+        } catch (e: java.util.concurrent.CancellationException) {
+            Log.w(TAG, "synthesis cancelled by rotate/shutdownNow()", e)
+            null
         }
     }
 
@@ -800,8 +822,11 @@ class EloquenceEngine(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "rotate: stop handles failed", e)
         }
-        synthExecutor = Executors.newSingleThreadExecutor()
+        synthExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "elq-synth").apply { isDaemon = true }
+        }
         coreHandles.clear()
+        engineEpoch++
         lastParamSig = null
         pendingEciVoiceByDialect.clear() // fresh handles start at engine-default voices; drop stale cache
         hangDetected = true

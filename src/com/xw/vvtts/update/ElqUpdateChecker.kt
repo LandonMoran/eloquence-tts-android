@@ -42,6 +42,12 @@ object ElqUpdateChecker {
         val error: String? = null
     )
 
+    /**
+     * Checks GitHub releases synchronously and compares the latest stable release tag with the installed version.
+     *
+     * Returns release metadata with a nullable compatible APK URL, or an error result when the check fails.
+     * Call from a background thread because this performs network I/O.
+     */
     fun check(context: Context): UpdateResult {
         val localVersionCode = try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode
@@ -62,9 +68,11 @@ object ElqUpdateChecker {
             c.setRequestProperty("Accept-Encoding", "gzip, deflate")
             val code = c.responseCode
             if (code !in 200..299) {
+                c.disconnect()
                 return UpdateResult(currentVersionCode = localVersionCode, error = "HTTP $code")
             }
             val json = readBody(c)
+            c.disconnect()
             if (json.isEmpty()) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "Empty response")
             }
@@ -74,8 +82,8 @@ object ElqUpdateChecker {
             if (target == null) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
-            val latestCode = target.tagName?.removePrefix("v")?.toIntOrNull() ?: -1
-            val apkUrl = pickAsset(target.assets) ?: target.htmlUrl
+            val latestCode = parseVersionCode(target.tagName) ?: -1
+            val apkUrl = pickAsset(target.assets)
             return UpdateResult(
                 hasUpdate = latestCode > localVersionCode,
                 currentVersionCode = localVersionCode,
@@ -91,6 +99,11 @@ object ElqUpdateChecker {
         } finally {
             runCatching { conn?.disconnect() }
         }
+    }
+
+    private fun parseVersionCode(tag: String?): Int? {
+        val m = Regex("""(\d{4,})""").find(tag ?: "") ?: return null
+        return m.groupValues[1].toIntOrNull()
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {

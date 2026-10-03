@@ -147,6 +147,13 @@ class TextNormalizer {
             val sb = StringBuilder(input.length)
             for (i in input.indices) {
                 val c = input[i]
+                if (c == '-' && i > 0 && i + 1 < input.length &&
+                    (input[i - 1].isDigit() || input[i - 1] .code in setOf(0x96F6, 0x4E00, 0x4E8C, 0x4E09, 0x56DB,  0x4E94,  0x516D,  0x4E03,  0x516B,  0x4E5D,  0x5341,  0x767E,  0x5343)) &&
+                    (input[i + 1].isDigit() || input[i + 1] .code in setOf(0x96F6, 0x4E00, 0x4E8C, 0x4E09, 0x56DB,  0x4E94,  0x516D,  0x4E03,  0x516B,  0x4E5D,  0x5341,  0x767E,  0x5343))
+                ) {
+                    sb.append(c)
+                    continue
+                }
                 val name = SYMBOL_NAMES[c]
                 if (name != null) {
                     sb.append(name)
@@ -178,6 +185,8 @@ class TextNormalizer {
                             sb.append(convertNumber(digits))
                             sb.append('点')
                             i++  // skip the separator (it became 点"
+                        } else if (start > 0 && (input[start -  1] == ':' || input[start -  1] == '\uFF1A')) {
+                            sb.append(convertNumber(digits))
                         } else {
                             sb.append(digits)
                         }
@@ -195,7 +204,8 @@ class TextNormalizer {
         /** Convert by digit-count rules:≤4 digits read as a whole;≥5 digit-by-digit */
         fun convertNumber(digits: String): String {
             var t = digits
-            while (t.length > 1 && t[0] == '0') t = t.substring(1)
+            val firstNonZero = t.indexOfFirst { it != '0' }
+            t = if (firstNonZero == -1) t.substring(t.length - 1) else t.substring(firstNonZero)
             if (t.isEmpty()) return DIGIT_CHARS[0]
             if (t.length <= 4) return toChineseNumeric(t)
             return toChineseDigits(t)
@@ -214,7 +224,8 @@ class TextNormalizer {
         /** Whole reading:1234 -> one-thousand-two-hundred-thirty-four */
         fun toChineseNumeric(digits: String): String {
             var t = digits
-            while (t.length > 1 && t[0] == '0') t = t.substring(1)
+            val firstNonZero = t.indexOfFirst { it != '0' }
+            t = if (firstNonZero == -1) t.substring(t.length - 1) else t.substring(firstNonZero)
             if (t.isEmpty()) return DIGIT_CHARS[0]
 
             // group every 4 digits(right to left)

@@ -6,8 +6,8 @@
 #   ANDROID_SDK   Android SDK root (default /usr/lib/android-sdk)
 #   BUILD_TOOLS   build-tools version (default 35.0.0)
 #   KEYSTORE      signing keystore path (default vvtts.jks)
-#   KS_PASS       keystore password (default android123)
-#   KEY_PASS      key password (defaultandroid123)
+#   KS_PASS       keystore password (from env; no default(
+#   KEY_PASS      the key password (defaults to KS_PASS(
 
 set -u
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
@@ -17,9 +17,9 @@ D8="$SDK/build-tools/$BUILD_TOOLS/d8"
 ZIPALIGN="$SDK/build-tools/$BUILD_TOOLS/zipalign"
 APKSIGNER="$SDK/build-tools/$BUILD_TOOLS/apksigner"
 ANDROID_JAR="$SDK/platforms/android-34/android.jar"
-KEYSTORE="${KEYSTORE:-vvtts.jks}"
-KS_PASS="${KS_PASS:-android123}"
-KEY_PASS="${KEY_PASS:-android123}"
+KEYSTORE="${KEYSTORE:?KEYSTORE env required (path to .jks(}"
+KS_PASS="${KS_PASS:?KS_PASS env required — no default, never commit a signing key}"
+KEY_PASS="${KEY_PASS:-$KS_PASS}"
 
 # Working directory ＝ the script's directory
 cd "$(dirname "$0")"
@@ -70,8 +70,11 @@ if [ -s /tmp/r_sources.txt ]; then
 fi
 KT_CLASSPATH="$ANDROID_JAR:out_classes:$LIBS_DIR/lingua-slim.jar:$LIBS_DIR/kotlin-stdlib-1.9.25.jar"
 if [ -n "$KOTLINC_CP" ]; then
+  # jar-based launch has no Kotlin distro home: stdlib/reflect are already on the
+  # classpath below, so tell the compiler to stop probing the nonexistent home
+  # (silences the "unable to find kotlin-*.jar in the Kotlin home" warnings)
   java -cp "$KOTLINC_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-    -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
+    -no-stdlib -no-reflect -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
 else
   "$KOTLINC" -jvm-target 1.8 -classpath "$KT_CLASSPATH" -d out_classes @/tmp/kt_sources.txt 2>&1
 fi

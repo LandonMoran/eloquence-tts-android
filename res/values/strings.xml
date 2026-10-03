@@ -100,6 +100,9 @@ Preset tone - tap to change</string>
     <string name="sec_dictionary">Dictionary</string>
     <string name="sec_maintenance">Maintenance</string>
     <string name="sec_about">About</string>
+    <string name="sec_advanced">Advanced</string>
+    <string name="extra_logging_row">Extra logging</string>
+    <string name="extra_logging_note">Verbose TTS diagnostics to logcat (tag: VvTtsX)</string>
 
     <!-- Row labels -->
     <string name="voice_fmt">Spoken language: %1$s
@@ -184,4 +187,5 @@ What the voice speaks - tap to change</string>
     <string name="update_downloading_fmt">Downloading update: %1$d%%</string>
     <string name="update_failed_fmt">Update failed: %1$s</string>
     <string name="update_install_ok">Update installed</string>
+    <string name="update_open_release">Open release page</string>
 </resources>

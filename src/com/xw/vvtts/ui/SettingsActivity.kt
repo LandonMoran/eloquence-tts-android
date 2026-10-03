@@ -55,21 +55,30 @@ class SettingsActivity : Activity() {
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
     private val REQ_DICT_CREATE = 703
+    /** Initializes settings and the shared engine, builds the settings screen and schedules requested autotests. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
-        engine = EloquenceEngine(this)
-        engine!!.initialize()
+        // Parse autotest hook before engine init: zh oracle must skip the en warmup, whose
+        // forced-synthesis init phase recurses forever on x86_64 CI emulators only.
+        val autotest = intent?.getStringExtra("autotest")
+        EloquenceEngine.skipWarmupForAutotest = ("chinese" == autotest)
+        var e = processEngine
+        if (e == null) {
+            e = EloquenceEngine(applicationContext)
+            e.initialize()
+            processEngine = e
+        }
+        engine = e
         engine!!.setVoiceProfile(voiceProfile)
         // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
         restoreLanguageSettings()
         // Auto-test hook: am start --es autotest chinese
-        val autotest = intent?.getStringExtra("autotest")
         if ("chinese" == autotest) {
-            Handler(Looper.getMainLooper()).postDelayed({ testSpeech() }, 3000)
+            Handler(Looper.getMainLooper()).postDelayed({ testZhOracle() }, 3000)
         } else if ("german" == autotest) {
             // Legacy hook: compare three English voices (validates voice params)
             Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
@@ -188,6 +197,14 @@ class SettingsActivity : Activity() {
             UpdateActions.showCheckDialog(this)
         }
         
+        // ===== ADVANCED SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_advanced)
+        val extraLogSwitch = addSwitchRow(mainContainer, getString(R.string.extra_logging_row), getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) { on ->
+            getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).edit().putBoolean("extra_logging", on).apply()
+            Log.i("VvTtsSettings", "extra_logging -> " + on)
+        }
+        addNoteRow(mainContainer, R.string.extra_logging_note)
+
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)
         val resetBtnLocal = addRow(this, mainContainer)
@@ -265,9 +282,15 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Starts sample speech synthesis and playback on a new background thread. */
     private fun testSpeech() {
+        Thread { testSpeechImpl() }.start()
+    }
+
+    /** Synthesizes and plays a sample using the current voice settings, falling back to English for unshipped dialects. */
+    private fun testSpeechImpl() {
         if (engine == null || !engine!!.isInitialized()) {
-            Toast.makeText(this, getString(R.string.engine_not_ready), Toast.LENGTH_SHORT).show()
+            toastOnUi(R.string.engine_not_ready)
             return
         }
         val preset = voiceProfile?.preset ?: 1
@@ -289,15 +312,15 @@ class SettingsActivity : Activity() {
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
-            Toast.makeText(this, getString(R.string.preview_in_english), Toast.LENGTH_LONG).show()
+                    toastOnUi(R.string.preview_in_english)
             val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
                 EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
                 voiceConfig!!.pitch, 100)
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, engine!!.getCoreSampleRate())
-                Toast.makeText(this, getString(R.string.spoken_en), Toast.LENGTH_SHORT).show()
+                toastOnUi(R.string.spoken_en)
             } else {
-                Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
+                toastOnUi(R.string.synth_failed)
             }
             return
         }
@@ -306,16 +329,53 @@ class SettingsActivity : Activity() {
             voiceConfig!!.pitch, 100)
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, engine!!.getCoreSampleRate())
-            Toast.makeText(this, getString(R.string.synth_ok), Toast.LENGTH_SHORT).show()
+            toastOnUi(R.string.synth_ok)
         } else {
-                    Toast.makeText(this, getString(R.string.synth_failed), Toast.LENGTH_SHORT).show()
+                    toastOnUi(R.string.synth_failed)
                 }
             }
 
-            /** Crash-repro hook: synthesize one exact string through the real path.
+                    /** Zh-oracle hook: force real zh sample (你好。） through the GB18030 oracle path
+                     *  so CI can verify samples>0 via the CHS_ORACLE log. */
+                    private fun testZhOracle() {
+                        Thread {
+                            if (engine == null || !engine!!.isInitialized()) {
+                                toastOnUi(R.string.engine_not_ready)
+                                return@Thread
+                            }
+                            val text = "\u4f60\u597d\u3002"
+                            val dialect = EloquenceEngine.DIALECT_ZH_CN
+                            val preset = voiceProfile?.preset ?: 1
+                            val pcm = try {
+                                engine!!.synthesizeCore(text, dialect, voiceConfig!!.volume, preset,
+                                    voiceConfig!!.pitch, 100)
+                            } catch (t: Throwable) {
+                                Log.e("CRASHHOOK", "testZhOracle exception", t)
+                                null
+                            }
+                            Log.i("CRASHHOOK", "testZhOracle done samples=" + (pcm?.size ?: 0))
+                            if (pcm != null && pcm.size > 0) {
+                                playPcm(pcm, engine!!.getCoreSampleRate())
+                                toastOnUi(R.string.synth_ok)
+                            } else {
+                                toastOnUi(R.string.synth_failed)
+                            }
+                        }.start()
+                    }
+
+                    /** Crash-repro hook: synthesize one exact string through the real path.
              *  Dialect follows the text: any Chinese segment routes through the
              *  real CHS oracle path (GB18030), everything else stays English. */
             private fun testCrash(text: String) {
+        Thread { testCrashImpl(text) }.start()
+    }
+
+    private fun toastOnUi(resId: Int) {
+        runOnUiThread { Toast.makeText(this, getString(resId), Toast.LENGTH_SHORT).show() }
+    }
+
+    /** Synthesizes [text] for crash diagnostics using English or shipped Simplified Chinese, and logs the outcome. */
+    private fun testCrashImpl(text: String) {
                 if (engine == null || !engine!!.isInitialized()) return
                 Log.i("CRASHHOOK", "start:" + text)
                 var dialect = EloquenceEngine.DIALECT_EN_US
@@ -385,12 +445,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun playPcm(pcm: ShortArray, sampleRate: Int) {
-        val bytes = shortsToBytes(pcm)
-        val track = AudioTrack(AudioManager.STREAM_MUSIC, sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
-            bytes.size, AudioTrack.MODE_STATIC)
-        track.write(bytes, 0, bytes.size)
-        track.play()
+        Thread { playPcmAndWait(pcm, sampleRate) }.start()
     }
 
     /** Play several PCM chunks sequentially (background thread; sleeps for each chunk's duration) */
@@ -763,41 +818,45 @@ class SettingsActivity : Activity() {
     }
 
     private fun importDictFromUri(uri: android.net.Uri) {
-        var added = 0
-        for (line in readTextFromUri(uri).split("\n")) {
-            val s = line.trim()
-            if (s.isEmpty() || s.startsWith("#")) continue
-            val sep = when {
-                s.contains('|') -> '|'
-                s.contains('\t') -> '\t'
-                else -> ','
-            }
-            val idx = s.indexOf(sep)
-            if (idx <= 0 || idx >= s.length - 1) continue
-            val w = s.substring(0,  idx).trim()
-                        var sp = s.substring(idx + 1).trim()
-                        var cs = false
-                        if (sep == '|') {
-                            val idx2 = s.indexOf('|',  idx + 1)
-                            if (idx2 >  0) {
-                                val tail = s.substring(idx2 + 1).trim()
-                                if (tail.equals("cs",  ignoreCase = true)) {
-                                    cs = true
-                                    sp = s.substring(idx +  1,  idx2).trim()
-                                }
-                            }
+        Thread {
+            var added = 0
+            for (line in readTextFromUri(uri).split("\n")) {
+                val s = line.trim()
+                if (s.isEmpty() || s.startsWith("#")) continue
+                val sep = when {
+                    s.contains('|') -> '|'
+                    s.contains('\t') -> '\t'
+                    else -> ','
+                }
+                val idx = s.indexOf(sep)
+                if (idx <=  0 || idx >= s.length - 1) continue
+                val w = s.substring(0,  idx).trim()
+                var sp = s.substring(idx +  1).trim()
+                var cs = false
+                if (sep == '|') {
+                    val idx2 = s.indexOf('|',  idx +  1)
+                    if (idx2 >  0) {
+                        val tail = s.substring(idx2 +  1).trim()
+                        if (tail.equals("cs",  ignoreCase = true)) {
+                            cs = true
+                            sp = s.substring(idx +  1,  idx2).trim()
                         }
-                        if (w.isEmpty() || sp.isEmpty()) continue
-                        if (w.equals("word",  ignoreCase = true) && sp.equals("replacement",  ignoreCase = true)) continue
-                        voiceConfig!!.addDictEntry(w,  sp,  cs)
-                        added++
-        }
-            Toast.makeText(this, getString(R.string.dict_imported, added), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                if (w.isEmpty() || sp.isEmpty()) continue
+                if (w.equals("word",  ignoreCase = true) && sp.equals("replacement",  ignoreCase = true)) continue
+                voiceConfig!!.addDictEntry(w,  sp,  cs)
+                added++
+            }
+            runOnUiThread {
+                Toast.makeText(this,  getString(R.string.dict_imported,  added),  Toast.LENGTH_SHORT).show()
+            }
+        }.start()
     }
-
     private fun exportDictToUri(uri: android.net.Uri) {
-        val out = contentResolver.openOutputStream(uri) ?: return
-        val sb = StringBuilder()
+        Thread {
+            val out = contentResolver.openOutputStream(uri) ?: return@Thread
+            val sb = StringBuilder()
         sb.append('\uFEFF')
         for (e in voiceConfig!!.dictEntries()) {
                     sb.append(e.word).append('|').append(e.spoken)
@@ -805,9 +864,12 @@ class SettingsActivity : Activity() {
                     sb.append('\n')
                 }
         out.write(sb.toString().toByteArray(Charsets.UTF_8))
-        out.close()
-            Toast.makeText(this, getString(R.string.dict_exported), Toast.LENGTH_SHORT).show()
-    }
+                    out.close()
+                    runOnUiThread {
+                        Toast.makeText(this,  getString(R.string.dict_exported),  Toast.LENGTH_SHORT).show()
+                    }
+                }.start()
+            }
     private fun confirmResetDefaults() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.reset_title))
@@ -849,6 +911,11 @@ class SettingsActivity : Activity() {
             REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)
             REQ_DICT_CREATE -> if (data?.data != null) exportDictToUri(data.data!!)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        UpdateActions.dismissFor(this)
     }
 
     private fun showLanguageDialog() {
@@ -1088,6 +1155,7 @@ class SettingsActivity : Activity() {
         }
         e.commit()
         val devCtx = createDeviceProtectedStorageContext()
+        java.io.File(devCtx.getDataDir(), "shared_prefs").mkdirs()
         java.io.File(getDataDir(), "shared_prefs/$PREFS_NAME.xml").copyTo(java.io.File(devCtx.getDataDir(), "shared_prefs/$PREFS_NAME.xml"), overwrite=true)
     }
 
@@ -1103,7 +1171,7 @@ class SettingsActivity : Activity() {
         // Detection whitelist: default English + Japanese (fresh install or never set)
         val enabled: Set<String>
         if (prefs.contains("enabled_langs")) {
-            enabled = prefs.getStringSet("enabled_langs", null)!!
+            enabled = prefs.getStringSet("enabled_langs", null) ?: emptySet<String>()
         } else {
             enabled = LanguageDetector.ALL_LANG_CODES.toSet()
         }
@@ -1177,6 +1245,8 @@ class SettingsActivity : Activity() {
             .show()
     }
     companion object {
-        private const val PREFS_NAME = "vvtts_lang_settings"
+    private var processEngine: EloquenceEngine? = null
+        private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
+    private const val PREFS_NAME = "vvtts_lang_settings"
     }
 }
