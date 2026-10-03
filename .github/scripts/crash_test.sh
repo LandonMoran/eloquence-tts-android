@@ -17,8 +17,16 @@ if [ -n "${APP_PID:-}" ]; then
 	echo "=== NATIVE STACKS pid=$APP_PID ==="
 	"$ADB" root >/dev/null 2>&1 || true
 	sleep 2
-	"$ADB" shell "for t in /proc/${APP_PID}/task/*; do tid=\${t##*/}; debuggerd -b \$tid; done" > native-stacks.txt 2>&1 || true
-	grep -aE 'libvvttts|libevv|openevv|elq-synth|Tid|backtrace' native-stacks.txt | head -120 || true
+	"$ADB" shell "kill -3 ${APP_PID}" >/dev/null 2>&1 || true
+	sleep 6
+	ANR_FILE=$("$ADB" shell "ls -t /data/anr/ 2>/dev/null | head -1" | tr -d '\r' || true)
+	if [ -n "${ANR_FILE:-}" ]; then
+		"$ADB" shell "cat /data/anr/${ANR_FILE}" > native-stacks.txt 2>&1 || true
+	fi
+	if ! grep -aq 'native:' native-stacks.txt 2>/dev/null; then
+		"$ADB" shell "for t in /proc/${APP_PID}/task/*; do tid=\${t##*/}; debuggerd -b \$tid; done" > native-stacks.txt 2>&1 || true
+	fi
+	grep -aA45 '"elq-synth"' native-stacks.txt | grep -aE 'native:|at |"elq-synth"' | head -120 || true
 else
 	echo "no app pid found for native dump"
 fi
