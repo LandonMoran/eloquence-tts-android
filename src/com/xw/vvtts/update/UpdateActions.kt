@@ -47,7 +47,7 @@ object UpdateActions {
     }
 
     /** Clears the global reference iff it still refers to [ui], then dismisses its dialog. */
-    private fun clearCurrent(ui: ProgressUi() {
+    private fun clearCurrent(ui: ProgressUi) {
         if (currentDialog === ui) currentDialog = null
         runCatching { ui.dialog.dismiss() }
     }
@@ -117,7 +117,7 @@ object UpdateActions {
                 activity.runOnUiThread {
 
                     clearCurrent(progress)
-                    Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "download failed"), Toast.LENGTH_LONG. show())
+                    Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "download failed"), Toast.LENGTH_LONG).show()
                 }
                 return@Thread
             }
