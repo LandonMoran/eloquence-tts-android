@@ -1,0 +1,120 @@
+# CodeRabbit configuration — Eloquence TTS for Android
+# Schema: https://docs.coderabbit.ai/reference/configuration
+language: "en-US"
+early_access: false
+tone_instructions: "Be direct. Prioritize crashes, binder/parcel safety, accessibility (TalkBack( impact, and thread-safety. Verify claims against the Android TTS framework contract and cite file paths + line numbers. Ignore nitpicks that don't affect runtime behavior."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  path_filters:
+    - "!oracle/table/**"
+    - "!libs/**"
+    - "!language-models/**"
+    - "!native-libs/**"
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!*.apk"
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        This repository — `eloquence-tts-android` — is a Kotlin/Java Android app that exposes a
+        `TextToSpeechService` backed by a native Eloquence engine (14 languages, 8 voices с ECI
+        voice parameters(. It has NO Gradle build: artifact is built by `build.sh`
+        (aapt/d8/zipalign/apksigner( and verified by GitHub Actions workflows. There are no unit tests —
+        do not assume a test harness exists.
+
+        Review against these hard requirements:
+        1. BINDER/PARCEL SAFETY — an exception escaping ANY voice-family override
+           (`onGetVoices`, `onGetLanguage`, `onGetDefaultVoiceNameFor`, `onIsLanguageAvailable`,
+           `onLoadLanguage`( gets marshalled as an exception-status binder reply that crashes
+           `com.android.settings` AND SILENCES TALKBACK→ every override must never-throw
+           ( `voiceSafe<T>(fallback){...}` guard( with contract-valid fallbacks, and EVERY `Voice`
+           in `onGetVoices` must carry a NON-NULL feature set ( `Voice.writeToParcel` builds
+           `new ArrayList(mFeatures)` — a null list NPEs mid-reply, AFTER the method returned(.
+        2. TTS FRAMEWORK CONTRACT — per Android docs and AOSP `TextToSpeechService.java`:
+           `onSynthesizeText` must be SYNCHRONOUS — enqueue the work, return fast, NEVER hold
+           the callback nor call it after returning. `onGetLanguage()` returns the CURRENT language's
+           3-element `[language, country, variant]`, NOT the catalog. `onIsLanguageAvailable` /
+           `onGetDefaultVoiceNameFor` / `onLoadLanguage` receive ISO-639-2/T THREE-letter codes
+           (`eng`, `spa`, `jpn`( — prefix-matching them against 2-letter codes
+           (`startsWith(\"es\")`( SILENTLY breaks every non-English voice → default-voice resolution
+           falls back to en-US. Match/echo the 3-letter forms consistently across all those overrides.
+
+        3. The `:tts` PROCESS SPLIT must be KEPT (dedicated main thread; never revert it( — the
+           framework `android:process=\":tts\"` trade-off is that a cold child process can answer a
+           voice query with a poison reply → hence rule 1. Multi-process reality: SharedPreferences
+           are PER-PROCESS cached — the service must read the prefs' underlying XML from disk
+           (`lastModified()`-guarded( on every synthesis, and never rely on static in-memory state shared
+           with the UI process. Direct-boot: route engine file writes through
+           `createDeviceProtectedStorageContext()`, mirrors write-through..
+        4. SYNTHESIS LOOP — must not hold AOSP's serial synthesis thread for audio duration: offload
+           the whole synth+pacing+callback job to a dedicated singleThreadExecutor so `onStop()` arrives
+           promptly;`callback.start()`/`done()` must terminate EXACTLY ONCE even on throw
+           ( terminal `TextToSpeech.ERROR_SYNTHESIS`(; guard `callback.getMaxBufferSize() <= 0`;
+           `onStop()` must invalidate already-queued executor work via a monotonically-advancing
+           `generation` counter, dropping stale runnables BEFORE any flag reset. Request params:
+           `getSpeechRate()`/`getPitch()` return INT PERCENTS (100 = normal( — pass through, never treat
+           as floats or multiply.
+        5. ACCESSIBILITY–FIRST — TalkBack is the primary consumer; a broken default TTS engine
+           is a full lockout for the user. Engine logs are the observable: cite logcat evidence for
+           claims about case runtime behavior. Keep chat comments a11y-clean ( no ASCII art(.
+    - path: "**/*.kt"
+      instructions: |
+        Kotlin-specific: no `!!` where a nullable + default/`checkNotNull` fits; every coroutine/
+        executor owned by a scope something cancels; never swallow `CancellationException`;
+        a non-null type filled from Java/framework can still hold null at runtime — validate at the boundary;
+        `when` over sealed types as expressions; prefer immutable published state over mutated
+        collections re-emitted. Async handoff from `onSynthesizeText`: enqueue fast AND start audio
+        promptly — a worker stuck behind long prior work delays `start()`/`audioAvailable()`, which a
+        framework path waiting on audio can treat as a dead utterance → silent TalkBack.
+
+    - path: "AndroidManifest.xml"
+      instructions: |
+        TTS service must remain in its own process — `android:process=\":tts\"` is load-bearing
+        (swipe-kill fix(; NEVER remove it. Service must be `directBootAware`, exported, with
+        `android.permission.BIND_TEXT_TO_SPEECH_SERVICE` intent-filter. Keep the
+        BootCompleteReceiver permission gates intact — they are intentional UX.
+
+    - path: "jni/**"
+      instructions: |
+        Native bridge to the Eloquence C API. Changes must stay ABI-stable with the
+        prebuilt `native-libs/` and the Kotlin bindings; no new exported symbols without
+        updating the Kotlin `System.loadLibrary` expectations; keep numeric return-code
+        conventions ((0 = ok( documented at the call site(
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    ignore_title_keywords:
+      - "wip"
+      - "draft"
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+
+chat:
+  art: false
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: false
+  learnings:
+    scope: "local"
+    approval_delay: 0
+  issues:
+    scope: "local"
+
+code_generation:
+  docstrings:
+    language: "en"
