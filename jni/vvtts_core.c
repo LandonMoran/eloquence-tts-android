@@ -465,15 +465,21 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     VvtsSession *s = vv_find(env, handle);
     if (!s) return;
     if (s->hECI) {
-        s->cancel = 1; /* abort the wait loop fast */
+        s->cancel = 1; /* request cancellation:the synthesis thread still has to settle */
         eciStop(s->hECI);
-        /* let the synthesis thread finish its current utterance before we
-         * free the session it is still pointing at */
-        for (int i = 0; i < 4000 && eciSpeaking(s->hECI) && !s->cancel; i++) {
+        /* eciStop stops the samples but the engine's own thread still has to
+         * finish its current utterance.  Deleting the handle (or freeing the
+         * session) while that thread is still running is use-after-free, so
+         * poll eciSpeaking() --the engine's own completion signal -- until it
+         * reports quiet.  This loop is deliberately NOT gated on s->cancel
+         * (which we just set: gating on it would exit immediately and delete
+         * the very handle the native thread is still using). */
+        while (s->hECI && eciSpeaking(s->hECI)) {
             struct timespec ts = {0, 500000L}; /* 0.5 ms */
             nanosleep(&ts, NULL);
         }
         eciDelete(s->hECI);
+        s->hECI = NULL; /* never touch the freed handle again */
     }
     free(s->text);
     free(s->pcm);
