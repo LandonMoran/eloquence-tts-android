@@ -79,6 +79,8 @@ class VoiceProfile(context: Context) {
         val eb = devicePrefs.edit()
         block(eb)
         eb.apply()
+        cachedMap = null
+        cachedMtime = -1L
     }
 
     val preset: Int

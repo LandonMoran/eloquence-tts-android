@@ -174,11 +174,13 @@ class LanguageDetector {
 
         /** Preload Lingua(called in the background at app startup) */
         fun preloadLingua() {
-            if (linguaPreloaded || linguaInitFailed) return
-            Thread {
-                getLingua()
-                linguaPreloaded = true
-            }.start()
+            synchronized(lock) {
+                if (linguaPreloaded || linguaInitFailed) return
+                Thread {
+                    getLingua()
+                    linguaPreloaded = true
+                }.start()
+            }
         }
 
         private fun getLingua(): com.github.pemistahl.lingua.api.LanguageDetector? {
@@ -594,6 +596,12 @@ class LanguageDetector {
         /** Latin-text detection:always try Lingua first;only use the default language when detection returns null.
         * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
         * if the detected language isn't in the whitelist, fall back to the default language(or English). */
+        private fun latinFallback(dl: Int, fallbackDialect: Int): Int = when {
+            isLatinDialect(dl) -> dl
+            isLatinDialect(fallbackDialect) -> fallbackDialect
+            else -> englishDialect
+        }
+
         private fun detectLatin(text: String, fallbackDialect: Int): Int {
             // Short runs (names, loanwords, fragments( almost always belong to
                         // the user's base language. Don't let Lingua flip the voice mid-sentence:
@@ -696,7 +704,7 @@ class LanguageDetector {
             if (ld == null) {
                 // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
                 val dl = resolveDefaultLanguage()
-                return if (isLatinDialect(dl)) dl else englishDialect
+                return latinFallback(dl, fallbackDialect)
             }
 
             // Lingua still handles ambiguous text;its decisions land in the same
@@ -707,13 +715,13 @@ class LanguageDetector {
                 if (lang == null) {
                     // detection returned null -> default language(Latin only),else English
                     val dl = resolveDefaultLanguage()
-                    return if (isLatinDialect(dl)) dl else englishDialect
+                    return latinFallback(dl, fallbackDialect)
                 }
                     // detected language goes through the whitelist:if absent -> fallback to default language
                 val code = languageToCode(lang)
                 if (!isLanguageEnabled(code)) {
                     val dl = resolveDefaultLanguage()
-                    return if (isLatinDialect(dl)) dl else englishDialect
+                    return latinFallback(dl, fallbackDialect)
                 }
                 val detectedDialect = languageToDialect(lang)
                 synchronized(latinCache) {
@@ -726,7 +734,7 @@ class LanguageDetector {
             } catch (e: Throwable) {
                 // detection exception -> default language(Latin only),else English
                 val dl = resolveDefaultLanguage()
-                return if (isLatinDialect(dl)) dl else englishDialect
+                return latinFallback(dl, fallbackDialect)
             }
         }
 

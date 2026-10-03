@@ -439,7 +439,9 @@ class EloquenceEngine(context: Context) {
         val cached = coreHandles[dialect] ?: 0L
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
-        val libDir = File(info.nativeLibraryDir)
+        val libDirRaw = info.nativeLibraryDir
+        if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); return 0L }
+        val libDir = File(libDirRaw)
         val cfgDir = File(storageContext.filesDir, "eloquence")
         try {
             FileWriter(File(cfgDir, "eci.ini")).use { fw ->
@@ -791,6 +793,9 @@ class EloquenceEngine(context: Context) {
             null
         } catch (e: ExecutionException) {
             Log.e(TAG, "synthesis threw", e)
+            null
+        } catch (e: java.util.concurrent.CancellationException) {
+            Log.w(TAG, "synthesis cancelled by rotate/shutdownNow()", e)
             null
         }
     }

@@ -62,7 +62,7 @@ class SettingsActivity : Activity() {
         voiceProfile = VoiceProfile(this)
         var e = processEngine
         if (e == null) {
-            e = EloquenceEngine(this)
+            e = EloquenceEngine(applicationContext)
             e.initialize()
             processEngine = e
         }
@@ -410,17 +410,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun playPcm(pcm: ShortArray, sampleRate: Int) {
-        val bytes = shortsToBytes(pcm)
-        val track = AudioTrack(AudioManager.STREAM_MUSIC, sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
-            bytes.size, AudioTrack.MODE_STATIC)
-        try {
-                   track.write(bytes, 	0, 	bytes.size)
-                   track.play()
-               } finally {
-                   track.release()
-               }
-           }
+        Thread { playPcmAndWait(pcm, sampleRate) }.start()
+    }
 
     /** Play several PCM chunks sequentially (background thread; sleeps for each chunk's duration) */
     private fun playSequential(pcms: Array<ShortArray?>, idx: Int, sampleRate: Int) {
@@ -1129,6 +1120,7 @@ class SettingsActivity : Activity() {
         }
         e.commit()
         val devCtx = createDeviceProtectedStorageContext()
+        java.io.File(devCtx.getDataDir(), "shared_prefs").mkdirs()
         java.io.File(getDataDir(), "shared_prefs/$PREFS_NAME.xml").copyTo(java.io.File(devCtx.getDataDir(), "shared_prefs/$PREFS_NAME.xml"), overwrite=true)
     }
 
@@ -1144,7 +1136,7 @@ class SettingsActivity : Activity() {
         // Detection whitelist: default English + Japanese (fresh install or never set)
         val enabled: Set<String>
         if (prefs.contains("enabled_langs")) {
-            enabled = prefs.getStringSet("enabled_langs", null)!!
+            enabled = prefs.getStringSet("enabled_langs", null) ?: emptySet<String>()
         } else {
             enabled = LanguageDetector.ALL_LANG_CODES.toSet()
         }

@@ -33,8 +33,9 @@ import java.util.concurrent.RejectedExecutionException
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
-    private var voiceConfig: VoiceConfig? = null
-    private var voiceProfile: VoiceProfile? = null
+    private val engineCallLock = Any()          // serializes native engine calls: stop/synthesizeCore/warmupDialect
+    @Volatile private var voiceConfig: VoiceConfig? = null
+    @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
@@ -79,6 +80,7 @@ class VvTtsService : TextToSpeechService() {
         registerAllPrefsListeners(device)
         registerAllPrefsListeners(applicationContext!!)
         val eng = acquireProcessEngine(device)
+        engine = if (eng.isInitialized()) eng else null
         engine = eng
         eng.setVoiceProfile(voiceProfile)
         val ok = eng.isInitialized()
@@ -91,7 +93,7 @@ class VvTtsService : TextToSpeechService() {
         Thread { NgramScorer.load(this) }.start()
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
-        engine!!.warmupDialect(LanguageDetector.getFixedDialect())
+        if (eng.isInitialized()) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
@@ -108,7 +110,15 @@ class VvTtsService : TextToSpeechService() {
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
         stopping = true
-        deliveryExecutor.shutdownNow()
+        deliveryExecutor.shutdown()
+        try {
+            deliveryExecutor.awaitTermination(250, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (ignore: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        try {
+            synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
+        } catch (ignore: Throwable) {
         try {
             if (engine != null) engine!!.stop()
         } catch (ignore: Throwable) {
@@ -451,7 +461,10 @@ class VvTtsService : TextToSpeechService() {
                             }
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
-                Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
+                Log.d("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " len=" + segText.length)
+        if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+            Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
+        }
                 // CJK normalization (width + number + symbol readings) happens once,
                 // inside EloquenceEngine.preprocess for zh segments. Do not repeat it
                 // here: a second pass after symbols were expanded defeats the
@@ -475,7 +488,7 @@ class VvTtsService : TextToSpeechService() {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    val pcm = synchronized(engineCallLock) { engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate) }
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
@@ -572,7 +585,7 @@ class VvTtsService : TextToSpeechService() {
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            if (engine != null) engine!!.stop()
+            try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected

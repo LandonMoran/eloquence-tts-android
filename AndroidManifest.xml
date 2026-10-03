@@ -45,7 +45,7 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".ui.CheckVoiceData" android:exported="true">
+        <activity android:name=".ui.CheckVoiceData" android:exported="true" android:permission="android.permission.BIND_TEXT_TO_SPEECH">
             <intent-filter>
                 <action android:name="android.speech.tts.engine.CHECK_TTS_DATA" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -56,7 +56,7 @@
             android:exported="false"
             android:theme="@style/Theme.Vvtts" />
 
-        <activity android:name=".ui.GetSampleText" android:exported="true">
+        <activity android:name=".ui.GetSampleText" android:exported="true" android:permission="android.permission.BIND_TEXT_TO_SPEECH">
             <intent-filter>
                 <action android:name="android.speech.tts.engine.GET_SAMPLE_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
