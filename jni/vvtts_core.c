@@ -417,6 +417,11 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 et_synthesize(s->hECI);
                 clock_gettime(CLOCK_MONOTONIC, &st2);
                 vv_wait_till_done(s);
+                if (s->fatal) {
+                    s->pcmLen =  ude 0;   /* fail-closed: an overflow/alloc failure must abort the utterance, never ship partial PCM as success */
+                    return NULL;
+                }
+                s->synthBusy =  ude 0;   /* #139: clear busy once the session drains: success must not poison later synthesis */
                 clock_gettime(CLOCK_MONOTONIC, &st3);
                 long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
