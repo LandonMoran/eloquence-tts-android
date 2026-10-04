@@ -367,7 +367,7 @@ class VvTtsService : TextToSpeechService() {
             // and this snapshot post-dates the bump, so THIS task survives the
             // dequeue gates. The engine cannot abandon an active synthesis.
             val gen = generation.incrementAndGet()
-            runSynthesis(request, callback, gen, schedAtÂÂ)
+            runSynthesis(request, callback, gen, schedAt)
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
             // Framework contract: every onSynthesizeText must terminate the
