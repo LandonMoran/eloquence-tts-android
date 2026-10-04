@@ -16,15 +16,19 @@ import java.util.zip.GZIPInputStream
  *
  * Primary path on the delivery thread; Lingua is demoted to ambiguous-only
  * fallback. Scores are sum-of-frequencies over present n-grams, normalized
- * by hit count; a 10% margin gate sends uncertain runs back to Lingua.
+ * by hit count;a 10% margin gate sends uncertain runs back to Lingua.
  *
  * Tables are built completely off to the side in private builder maps and
  * published as one immutable read-only snapshot under a volatile reference,
  * so concurrent detect() calls can never observe a partially populated table
  * and no caller can mutate a published snapshot.
  *
+ * Unigram and bigram frequencies are normalized by their own independent
+ * per-language totals (#222(, so the two populations do not distort each
+ * other's normalization.
+ *
  * A load failure is retried in-call with bounded exponential backoff and the
- * failure is exposed for diagnostics; the gate never becomes permanent -- a
+ * failure is exposed for diagnostics;the gate never becomes permanent --a
  * later load() call (e.g. next service start) retries cleanly, so a transient
  * asset/I/O failure does not silently disable the primary detector for the
  * life of the process.
@@ -42,7 +46,8 @@ object NgramScorer {
     private class Snapshot(
         val unis: Array<Map<Int, Float>?>,
         val bis: Array<Map<Int, Float>?>,
-        val totals: FloatArray,
+        val uniTotals: FloatArray,
+        val biTotals: FloatArray,
     )
 
     @Volatile private var snapshot: Snapshot? = null
@@ -60,7 +65,7 @@ object NgramScorer {
     /**
      * Loads the n-gram tables, retrying in-call with bounded exponential backoff.
      * Safe to call from multiple threads (internally locked); no-ops once a
-     * snapshot is published. On success the attempt/failure state resets; on
+     * snapshot is published. On success the attempt/failure state resets;on
      * exhaustion the last failure stays visible for diagnostics and a later
      * call may retry (never permanently disabled). Interrupts abort the wait.
      */
@@ -100,11 +105,13 @@ object NgramScorer {
     private fun backoffDelayMs(): Long =
         Math.min(BACKOFF_BASE_MS shl (loadAttempts.coerceAtMost(6) - 1), BACKOFF_MAX_MS)
 
+
     /** Builds complete local tables (never touching a published snapshot), then freezes them. */
     private fun buildTables(context: Context): Snapshot {
         val unigrams = arrayOfNulls<HashMap<Int, Float>>(8)
         val bigrams = arrayOfNulls<HashMap<Int, Float>>(8)
-        val totals = FloatArray(8)
+        val uniTotals = FloatArray(8)
+        val biTotals = FloatArray(8)
 
         val raw = context.assets.open("ngram_uni_bi.tsv.gz")
         BufferedReader(InputStreamReader(GZIPInputStream(raw), "UTF-8")).use { reader ->
@@ -116,50 +123,57 @@ object NgramScorer {
                 if (idx < 0) continue
                 val freq = fields[2].toIntOrNull() ?: 0
                 if (freq <= 0) continue
-                totals[idx] += freq.toFloat()
+                val isUni = fields[1] == "unigrams"
+                if (isUni) uniTotals[idx] += freq.toFloat() else biTotals[idx] += freq.toFloat()
                 val key = keyOf(fields[3])
                 if (key < 0) continue
-                val maps = if (fields[1] == "unigrams") unigrams else bigrams
+                val maps = if (isUni) unigrams else bigrams
                 val map = maps[idx] ?: HashMap<Int, Float>(64).also { maps[idx] = it }
                 map.put(key, freq.toFloat())
             }
         }
-        normalizeInPlace(unigrams, bigrams, totals)
+        normalizeInPlace(unigrams, bigrams, uniTotals, biTotals)
 
         // Freeze the private builder maps into read-only views before publication so
         // no caller can ever mutate a published snapshot.
+
         val uniViews = arrayOfNulls<Map<Int, Float>>(8)
         val biViews = arrayOfNulls<Map<Int, Float>>(8)
         for (idx in 0..7) {
             uniViews[idx] = unigrams[idx]?.let { Collections.unmodifiableMap(it) }
             biViews[idx] = bigrams[idx]?.let { Collections.unmodifiableMap(it) }
         }
-        return Snapshot(uniViews, biViews, totals)
+        return Snapshot(uniViews, biViews, uniTotals, biTotals)
     }
 
     private fun normalizeInPlace(
         unigrams: Array<HashMap<Int, Float>?>,
         bigrams: Array<HashMap<Int, Float>?>,
-        totals: FloatArray,
+        uniTotals: FloatArray,
+        biTotals: FloatArray,
     ) {
         for (idx in 0..7) {
-            val t = totals[idx]
-            if (t <= 0f) continue
-            unigrams[idx]?.let { m ->
-                // Entry.setValue does NOT touch modCount, so in-place normalization
-                // is safe while iterating (HashMap forbids put/remove here -- that
-                // would throw ConcurrentModificationException on the next next()).
-                val it = m.entries.iterator()
-                while (it.hasNext()) {
-                    val e = it.next()
-                    e.setValue(e.value / t)
+            val ut = uniTotals[idx]
+            if (ut > 0f) {
+                unigrams[idx]?.let { m ->
+                    // Entry.setValue does NOT touch modCount, so in-place normalization
+                    // is safe while iterating (HashMap forbids put/remove here --that
+                    // would throw ConcurrentModificationException on the next next()).
+                    val it = m.entries.iterator()
+                    while (it.hasNext()) {
+                        val e = it.next()
+                        e.setValue(e.value / ut)
+                    }
                 }
             }
-            bigrams[idx]?.let { m ->
-                val it = m.entries.iterator()
-                while (it.hasNext()) {
-                    val e = it.next()
-                    e.setValue(e.value / t)
+            val bt = biTotals[idx]
+            if (bt > 0f) {
+                bigrams[idx]?.let { m ->
+                    val it = m.entries.iterator()
+                    while (it.hasNext()) {
+                        val e = it.next()
+                        e.setValue(e.value / bt)
+                    }
                 }
             }
         }

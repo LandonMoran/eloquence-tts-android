@@ -56,9 +56,21 @@ done
 if [ -f "oracle/table/zh-cn.consolidated.tsv" ] || ls oracle/table/*.consolidated.tsv >/dev/null 2>&1; then
   # merge_build takes the table DIR, globs every *.consolidated.tsv (parts),
   # reads the old committed C as legacy (and writes the merged bank back.
-  python3 oracle/merge_build.py oracle/table \
+  tmp="$(mktemp "${TMPDIR:-/tmp}/oracle_chs.XXXXXX")" || exit 1
+  if ! python3 oracle/merge_build.py oracle/table \
     native/openevv/lang/chs/oracle_chs.c \
-    native/openevv/lang/chs/oracle_chs.c
+    "$tmp"; then
+    rm -f "$tmp"
+    echo "ERROR: oracle_chs.c generation failed; tracked source was not changed" >&2
+    exit 1
+  fi
+  if cmp -s "$tmp" native/openevv/lang/chs/oracle_chs.c; then
+    echo "oracle_chs.c: regenerated content matches committed source (no tracked rewrite)"
+  else
+    echo >&2 "oracle_chs.c: regenerated content differs -- refreshing tracked source (audit the diff before committing)"
+    cp "$tmp" native/openevv/lang/chs/oracle_chs.c
+  fi
+  rm -f "$tmp"
 fi
 
 # 1. openevv: static archive, cross-compiled, PIC objects so they bind
