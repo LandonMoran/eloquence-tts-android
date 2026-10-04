@@ -587,6 +587,7 @@ class EloquenceEngine(context: Context) {
             val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
             val sig = sigBase + "|" + sigChar
             val sameAsLast = sig == worker.lastParamSig
+            var paramWriteFailed = false   // set by the 8-param injection loop on native failure
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
             val speedVal = Math.round(50.0f * uiRate /  100.0f)
                 .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
@@ -601,11 +602,13 @@ class EloquenceEngine(context: Context) {
             // Custom overrides first; otherwise KonaVoice defaults
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
                 val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+                if (ret < 0) paramWriteFailed = true
                 // Diagnostic-only logging (remove after root cause found): failures always;
                 // successes once per param, so a dead channel shows in logcat without spam.
 
                 if (ret < 0) {
                     Log.w("VvTts", "voice param #$p=$value -> ret $ret (FAILURE)")
+                    paramWriteFailed = true
                 } else if (p==2 && !pitchLogged) {
 
                     Log.i("VvTts", "voice param #2 pitch=$value -> ret $ret (OK)")
@@ -621,20 +624,20 @@ class EloquenceEngine(context: Context) {
 
             // User UI params
             // Pitch: UI 0-100 -> Apple pitchBase (±30 around the voice's own pitchBase
-            VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
+            if (VvttsCore.setVoiceParam(handle, 0, 2, pitchBase) < 0) paramWriteFailed = true   // eciPitchBaseline
 
             // Speed: eciSpeed voice param (voice param 6, range 0..250, 50=normal,
                         // matching the CSV speed in the 8-param injection above; previously eciSampleRate
                         // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
                         // Engine outputs native 11025;the JNI layer upsamplest it to 44.1k for playback.
-                        VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
+                        if (VvttsCore.setVoiceParam(handle, 0, 6, speedVal) < 0) paramWriteFailed = true
                         VvttsCore.setParam(handle,  5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
                                                 lastSynthRate = 44100  // post-resample playback rate
 
 
             // Volume: CSV preset volume; no second applyVolume; set the voice param first
-            VvttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
+            if (VvttsCore.setVoiceParam(handle, 0,   7, voice.vol) < 0) paramWriteFailed = true   // eciVolume
                         }
             // Encoding
             val cs = charsetForDialect(dialect)
@@ -660,6 +663,7 @@ class EloquenceEngine(context: Context) {
             for (p in 0..7) {
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
                 val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+                if (ret < 0) paramWriteFailed = true
             }
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
@@ -671,7 +675,7 @@ class EloquenceEngine(context: Context) {
             runCatching { outFile.delete() }
             if (pcm != null && pcm.size > 0) {
                 pcm = applyVolume(pcm, volume)
-                worker.lastParamSig = sig  // only admit success:failed param writes must retry
+                if (!paramWriteFailed) worker.lastParamSig = sig  // only admit success:failed param writes must retry (stale sig ⇒ next utterance re-injects them)
             }
             pcm
         }
