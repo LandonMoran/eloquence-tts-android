@@ -60,11 +60,10 @@ jobs:
 
       - name: Prepare signing keystore
         run: |
-          if [ -n "$RELEASE_KEYSTORE_B64" ]; then
-            echo "$RELEASE_KEYSTORE_B64" | base64 -d > vvttts.jks
+          if [ -n "$RELEASE_KEYSTORE_B64" ] && echo "$RELEASE_KEYSTORE_B64" | base64 -d > vvttts.jks 2>/dev/null && keytool -list -keystore vvttts.jks -storepass "${RELEASE_KS_PASS:-eloquence-ci}" >/dev/null 2>&1; then
             chmod 600 vvttts.jks
-            echo "KS_PASS=${RELEASE_KS_PASS}" >> "$GITHUB_ENV"
-            echo "KEY_PASS=${RELEASE_KEY_PASS}" >> "$GITHUB_ENV"
+            echo "KS_PASS=${RELEASE_KS_PASS:-eloquence-ci}" >> "$GITHUB_ENV"
+            echo "KEY_PASS=${RELEASE_KEY_PASS:-eloquence-ci}" >> "$GITHUB_ENV"
           else
             KS_PASS="$(openssl rand -hex 16)"
             keytool -genkeypair -v               -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS"               -alias vvttts -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=CI Build,O=Home,C=US"
