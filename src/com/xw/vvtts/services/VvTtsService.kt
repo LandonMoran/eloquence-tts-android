@@ -33,7 +33,12 @@ import java.util.concurrent.RejectedExecutionException
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
-    private val engineCallLock = Any()          // serializes native engine calls: stop/synthesizeCore/warmupDialect
+    private val engineCallLock = Any()          // guards lifecycle stop/warmup dispatch
+    // #12: engineRefLock guards only the engine *reference* — never the long native
+    // waits — so lifecycle teardown never blocks behind a synthesis parked in
+    // native code for up to HANG_TIMEOUT_S.
+    private val engineRefLock = Any()
+    private fun currentEngine(): EloquenceEngine? = synchronized(engineRefLock) { engine }
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
@@ -93,7 +98,26 @@ class VvTtsService : TextToSpeechService() {
         Thread { NgramScorer.load(this) }.start()
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
-        if (eng.isInitialized()) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
+        // Background thread: binder queries (getLanguage/getVoices/onInit reply)
+        // can arrive while onCreate is still running; a long synchronous warmup
+        // would delay the init state the framework builds from. Synthesis locks
+        // engineCallLock, so a concurrent warmup is safe.
+        if (eng.isInitialized()) {
+            val warmDialect = try {
+                LanguageDetector.getFixedDialect()
+            } catch (t: Throwable) {
+                Log.w(TAG, "fixed dialect query failed; warming default", t)
+                LanguageDetector.DIALECT_EN_US
+            }
+            val warmEngine = eng
+            Thread {
+                try {
+                    synchronized(engineCallLock) { warmEngine.warmupDialect(warmDialect) }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "background warmup failed", t)
+                }
+            }.apply { isDaemon = true }.start()
+        }
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
@@ -141,21 +165,42 @@ class VvTtsService : TextToSpeechService() {
     }
 
     /** Records preference directory timestamps and reports changes, including the first observation. */
-    private fun prefsDirsChanged(): Boolean {
+    private fun prefsDirsChanged(): Boolean = synchronized(prefsDirLock) {
 
         var changed = false
-        for (dir in prefsDirs()) {
-            val m = dir.lastModified()
-            val prev = prefsDirMtimes[dir]
-            if (prev == null) { prefsDirMtimes[dir] = m; changed = true; continue }
-            if (m != prev) { prefsDirMtimes[dir] = m; changed = true }
+        // Lock-state flips switch the active storage context;re-read even when
+        // the dir/file timestamps happen to match ( stale values after a config change(.
+        val unlocked = getSystemService(UserManager::class.java)?.isUserUnlocked == true
+        if (lastLockState == null || lastLockState != unlocked) {
+            changed = true
+            lastLockState = unlocked
         }
-        return changed
+        val prefsFiles = arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)
+        for (dir in prefsDirs()) {
+            val dirKey = dir.absolutePath
+            val m = dir.lastModified()
+            val prev = prefsDirMtimes[dirKey]
+            if (prev == null) { prefsDirMtimes[dirKey] = m; changed = true } else if (m != prev) { prefsDirMtimes[dirKey] = m; changed = true }
+            // Directory mtimes only move on entry create/delete/rename;,not in-place
+            // content writes;(track the XML files themselves so Settings UI edits still
+            // land as a change(.
+            for (name in prefsFiles) {
+                val pf = File(dir, "$name.xml")
+                val pm = pf.lastModified()
+                val key = "$dir|$name"
+                val pprev = prefsFileMtimes[key]
+                if (pprev == null) { prefsFileMtimes[key] = pm; changed = true } else if (pm != pprev) { prefsFileMtimes[key] = pm; changed = true }
+            }
+        }
+        changed
     }
 
-    private val prefsDirMtimes = HashMap<File, Long>()
+    private val prefsDirLock = Any()
+    private var lastLockState: Boolean? = null
+    private val prefsDirMtimes = HashMap<String, Long>()
+    private val prefsFileMtimes = HashMap<String, Long>()
 
-    private fun refreshSettings() {
+    private fun refreshSettings() { synchronized(prefsDirLock) {
         if (!settingsDirty && !prefsDirsChanged()) return
         // Clear BEFORE re-reading: a prefs write that lands during the read
         // sets dirty=true again via the listener, so it must not be wiped by a
@@ -172,12 +217,13 @@ class VvTtsService : TextToSpeechService() {
             voiceProfile = VoiceProfile(active)
             restoreLanguageSettings(active.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
             val profile = voiceProfile
-            if (profile != null) engine?.setVoiceProfile(profile)
+            if (profile != null) engine?.setVoiceProfile(profile) else {}
         } catch (t: Throwable) {
             // Re-arm the dirty flag: we cleared it before reading, but the
             // read failed, so the next utterance must retry.
             settingsDirty = true
             Log.e(TAG, "refreshSettings failed", t)
+        }
         }
     }
 
@@ -224,22 +270,18 @@ class VvTtsService : TextToSpeechService() {
     }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
-        return voiceSafe(arrayOf("eng", "", "")) {
-        // Framework contract: exactly 3 elements — [language, country, variant]
-        // of the language currently used by the engine (country/variant may be
-        // ""; variant must be "" when country is). NOT a catalog: the picker
-        // reads indices 0..2, so a 10-element list yields garbage locales.
-        // Truth = the active voice (BCP-47, defaults "en-US"), reported as
-        // three-letter ISO language and country codes for the framework.
-        val activeVoice = voiceConfig?.voice ?: "en-US"
-        val locale = Locale.forLanguageTag(activeVoice)
-        arrayOf(locale.isO3Language, locale.isO3Country, "")
+        return voiceSafe(arrayOf("en", "US", "")) {
+            // Framework contract: exactly 3 elements [language, country, variant].
+            // Static answer on purpose: binder language queries can arrive before
+            // or while onCreate initializes,and Android 15+ Settings/TalkBack
+            // decode ANY thrown exception-status from getLanguage/getVoices as a
+            // fatal parcel NPE. The spoken voice is set per-utterance in
+            // runSynthesis, so the init-time answer stays constant en-US.
+            arrayOf("en", "US", "")
         }
     }
 
-
-
-    /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
+    /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
         val lang = normalizeLanguage(language)
@@ -264,19 +306,22 @@ class VvTtsService : TextToSpeechService() {
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
         return voiceSafe(emptyList()) {
-        val voices = ArrayList<Voice>(CAPABLE_VOICES.size)
-        // #18: catalog derives from the single voice registry — every advertised voice
-        // is by constructiona shipped native dialect (no advertise-only entries —the
-        // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
-        for (v in CAPABLE_VOICES) {
-            voices.add(Voice(v.voiceName, v.locale,
-                Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-        }
-        return voices
+            // #18: catalog derives from the single voice registry — every advertised voice
+            // is by constructiona shipped native dialect (no advertise-only entries —the
+            // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
+            // Features are non-null (emptySet()* because Voice.parceling converts features
+            // to ArrayList,and null features have been observed corrupting the binder reply
+            // on Android 15+ (Settings/TalkBack die decodinga poisoned parcel:
+            // NPE Collection.toArray() in Parcel.createExceptionOrNull()).
+
+            val voices = ArrayList<Voice>(CAPABLE_VOICES.size)
+            for (v in CAPABLE_VOICES) {
+                voices.add(Voice(v.voiceName, v.locale,
+                    Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            }
+            voices
         }
     }
-
-    /** Reports the supported language detail level, or LANG_NOT_SUPPORTED for unknown languages or failures. */
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
@@ -384,6 +429,7 @@ class VvTtsService : TextToSpeechService() {
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
         refreshSettings()
+        synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
@@ -457,14 +503,16 @@ class VvTtsService : TextToSpeechService() {
             val rate = clamp(Math.round(sysRate.toFloat()).toInt(),1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
-            val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0, 100)
-            val volume = voiceConfig!!.volume
+            val cfgVolume = voiceConfig?.volume ?: 100
+                        val cfgPitch = voiceConfig?.pitch ?: 100  // #189: never `!!` a nullable service config on the synthesis path
+                        val pitch = clamp(cfgPitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0,100)
+                        val volume = cfgVolume
 
             val pace = Pace(engine!!.getCoreSampleRate())
                         val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
             // Start the framework's audio pipe BEFORE synthesis: first-audio
             // latency must not include the first segment's native synth time.
-            // The finally block still emits the start+done pair exactly once.
+            // The finally block terminates normal or canceled synthesis.
             if (!started) {
                 callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
                 started = true
@@ -507,7 +555,7 @@ class VvTtsService : TextToSpeechService() {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = synchronized(engineCallLock) { engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate) }
+                    val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
@@ -541,11 +589,11 @@ class VvTtsService : TextToSpeechService() {
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
-                    if (!started) {
+                    if (!started && !stopping && gen == generation.get()) {
                         // Playback contract: start() must precede done(), the framework
-                        // throws otherwise. One pair per utterance; every path funnels
-                        // here, so all silent/empty/early returns get the pair exactly
-                        // once. If start() itself fails, done() would also throw (it
+                        // throws otherwise. Silent/empty/early returns get the pair
+                        // unless canceled, which terminates with error() below.
+                        // If start() itself fails, done() would also throw (it
                         // requires a prior start), so error() is the contract's failure
                         // termination -- otherwise the callback is left unterminated.
                         try {
@@ -559,6 +607,13 @@ class VvTtsService : TextToSpeechService() {
                             return
                         }
                     }
+                    if (stopping || gen != generation.get()) {
+                        try {
+                            callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                        } catch (ignore: Throwable) {
+                        }
+                        return
+                    }
                     try {
                         callback.done()
                     } catch (e: Throwable) {
@@ -571,6 +626,7 @@ class VvTtsService : TextToSpeechService() {
                         }
                     }
                 }
+        }
     }
 
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
@@ -604,7 +660,9 @@ class VvTtsService : TextToSpeechService() {
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
+            // stop() queues native work on the engine worker. Generation invalidation
+            // stays synchronous, and this callback never waits for native synthesis.
+            try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected
@@ -645,22 +703,29 @@ class VvTtsService : TextToSpeechService() {
         }
 
         private fun mirrorSharedPreferences(from: SharedPreferences,to: SharedPreferences) {
-            val all =from.getAll() ?: return
-            val e = to.edit()
-            e.clear()
-            for ((k, v) in all) {
-                when (v) {
-                    is String -> e.putString(k, v)
-                    is Boolean -> e.putBoolean(k, v)
-                    is Int -> e.putInt(k, v)
-                    is Long -> e.putLong(k, v)
-                    is Float -> e.putFloat(k, v)
-                    is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
-                    else -> {}
+                val all = from.getAll() ?: return
+                // Never mirror an empty/absent store:that would wipe the last good
+                // device snapshot with a blank one;direct-boot access must not assume
+                // the modern prefs exist yet ( first unlock may not have happened(.
+                if (all.isEmpty()) return
+                val e = to.edit()
+                e.clear()
+                for ((k, v) in all) {
+                    when (v) {
+                        is String -> e.putString(k, v)
+                                                is Boolean -> e.putBoolean(k, v)
+                                                is Int -> e.putInt(k, v)
+                                                is Long -> e.putLong(k, v)
+                                                is Float -> e.putFloat(k, v)
+                                                is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
+                        else -> {}
+                    }
                 }
+                // Synchronous+atomic (temp-file write(;the async apply() kill window would
+                // leave a half-written device copy on a locked/zoned write.
+                val ok = e.commit()
+                if (!ok) Log.e(TAG, "mirror commit rejected")
             }
-            e.apply()
-        }
 
         // === Pacing ===
         /** Track how much audio (in ms( has been handed to the framework versus how

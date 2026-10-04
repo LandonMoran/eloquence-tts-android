@@ -4,6 +4,7 @@ import com.xw.vvtts.update.UpdateActions
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -63,7 +64,8 @@ class SettingsActivity : Activity() {
         voiceProfile = VoiceProfile(this)
         // Parse autotest hook before engine init: zh oracle must skip the en warmup, whose
         // forced-synthesis init phase recurses forever on x86_64 CI emulators only.
-        val autotest = intent?.getStringExtra("autotest")
+        val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val autotest = if (debuggable) intent?.getStringExtra("autotest") else null  // #198: never honor external autotest hooks in non-debuggable (release( builds
         EloquenceEngine.skipWarmupForAutotest = ("chinese" == autotest)
         var e = processEngine
         if (e == null) {

@@ -144,6 +144,7 @@ typedef struct {
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
     volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
+    int     retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
 
 /* The engine calls back on its own synthesis thread; the caller only reads
@@ -172,21 +173,45 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     return eciDataProcessed;
 }
 
+#define VV_DRAIN_MAX_ITERS 40000  /* 0.5 ms each: ~20 s of drain before retirement */
+
 static void vv_wait_till_done(VvtsSession *s) {
     /* openevv's engine cannot abandon an utterance: eciStop stops the
-     * samples but the synthesis thread still has to finish it.  Poll
-     * eciSpeaking (as the old bridge did for Apple's object.. */
+     * samples but the synthesis thread still has to finish it.  A fixed
+     * iteration bound is NOT proof of finish: a long utterance can keep
+     * eciSpeaking() true for well over 2 s, and returning while the engine
+     * is still speaking lets the caller read/resample s->pcm while the
+     * synthesis callback writes into it -- corruption.  Separate the stop
+     * request from the drain: poll eciSpeaking() until it actually goes
+     * quiet.  The generous bound exists only to guard against an engine
+     * wedge: if quiet cannot be proven within it, the session is retired
+     * rather than hanging the synthesis thread forever. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
-        if ((i % 100) ==  0)
-            __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
+    int iters = 0;
+    while (s->hECI && eciSpeaking(s->hECI) && iters < VV_DRAIN_MAX_ITERS) {
         /* Polling is what collects the engine's queued samples: the engine
          * posts chunks into the app queue and only a poll delivers them, so
-         * this loop's SLEEP is a hard ceiling on the drain rate.  Keep it
-         * short -- 500us -- or long utterances take seconds to come out. */
+         * a poll must keep coming until the engine reports quiet.  Keep the
+         * poll short -- 500us -- or long utterances take seconds to come out. */
         struct timespec ts = {0, 500000L}; /* 0.5 ms */
         nanosleep(&ts, NULL);
+        iters++;
     }
+    if (s->hECI && eciSpeaking(s->hECI)) {
+            if (s->cancel) {
+                /* Cancellation is an abort request, not a wedge: stop polling
+                 * now and leave the session alive so shutdown can prove the engine
+                 * quiet BEFORE freeing (or a later synth can settle into it). */
+                __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_till_done cancelled: session kept alive");
+            } else {
+                /* Engine wedged: never drive this session again (its thread may still
+                 * own text/pcm).  Keep the handle so shutdown can prove the engine
+                 * quiet BEFORE freeing -- NULLing it here makes shutdown skip its
+                 * drain and free live memory the worker still owns (use-after-free). */
+                __android_log_print(ANDROID_LOG_ERROR, "SPD", "wait_till_done timeout: session retired");
+                s->retired =   1;
+            }
+        }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
     s->synthBusy =  0;
 }
@@ -304,6 +329,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return NULL;
+    if (s->retired) return NULL; /* engine wedge: never re-drive this session */
     if (!text) return NULL;
 
     jsize len = (*env)->GetArrayLength(env, text);
@@ -381,10 +407,19 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 et_synthesize(s->hECI);
                 clock_gettime(CLOCK_MONOTONIC, &st2);
                 vv_wait_till_done(s);
+                if (s->cancel) return NULL;
                 clock_gettime(CLOCK_MONOTONIC, &st3);
                 long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
                 __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
+
+    if (s->retired) {
+        /* Timeout mid-flight: the engine thread may still be writing s->pcm.
+         * Return failure WITHOUT reading, trimming or resampling PCM; the
+         * session stays cached until shutdown reclaims it safely. */
+        __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: session retired; returning null");
+        return NULL;
+    }
 
     if (s->pcmLen == 0) return NULL;
         {
@@ -455,7 +490,9 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return;
-    s->cancel = 1; /* let the wait loop abort on the next 2 ms tick */
+    s->cancel = 1; /* request a stop:the wait loop aborts fast; the worker
+                             * drains later via settle/shutdown so the engine
+                             * goes quiet before any free. */
     eciStop(s->hECI); /* stops handing samples; the thread still settles */
 }
 
@@ -465,15 +502,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     VvtsSession *s = vv_find(env, handle);
     if (!s) return;
     if (s->hECI) {
-        s->cancel = 1; /* abort the wait loop fast */
+        s->cancel = 1; /* let a concurrent wait loop abort fast */
         eciStop(s->hECI);
-        /* let the synthesis thread finish its current utterance before we
-         * free the session it is still pointing at */
-        for (int i = 0; i < 4000 && eciSpeaking(s->hECI) && !s->cancel; i++) {
+        /* Let the synthesis thread finish its current utterance before we
+         * free the session it is still pointing at.  This drain ignores
+         * cancel: aborting it would eciDelete while the worker still owns
+         * the session (use-after-free). */
+        for (int i = 0; i < 4000 && eciSpeaking(s->hECI); i++) {
             struct timespec ts = {0, 500000L}; /* 0.5 ms */
             nanosleep(&ts, NULL);
         }
+        if (eciSpeaking(s->hECI)) {
+            /* Wedged for real: the worker thread still owns the session.
+             * Take one leak per hang instead of a use-after-free. */
+            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown: session still busy; retaining session (leak-once)");
+            return;
+        }
         eciDelete(s->hECI);
+        s->hECI = NULL;
     }
     free(s->text);
     free(s->pcm);
