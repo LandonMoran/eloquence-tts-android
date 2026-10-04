@@ -51,6 +51,10 @@ class EmojiExpander {
         }
 
         private val SORTED_KEYS: List<String> = NAMES.keys.sortedByDescending { it.length }
+        /** Per-start-codepoint buckets, longest-first, so expand() only scans the few
+         *  candidates that can actually match at a given position, O(1) instead of the ~3600-key scan. */
+        private val KEYS_BY_START_CP: Map<Int, List<String>> =
+            SORTED_KEYS.groupBy { it.codePointAt(0) }
 
         /** Strip bare emoji components (no-name codepoints used inside sequences). */
         /** First code point of every emoji key — lets expand() skip the ~3600-key scan
@@ -74,8 +78,9 @@ class EmojiExpander {
             while (i < input.length) {
                 val cp = input.codePointAt(i)
                 var matched = false
-                if (KEY_START_CPS.contains(cp)) {
-                    for (k in SORTED_KEYS) {
+                val candidates = KEYS_BY_START_CP[cp]
+                if (candidates != null) {
+                    for (k in candidates) {
                         if (input.startsWith(k, i)) {
                             val name = NAMES[k] ?: break
                             if (lastWasName) sb.append(' ')

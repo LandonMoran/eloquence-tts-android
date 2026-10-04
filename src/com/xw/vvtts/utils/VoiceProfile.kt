@@ -30,36 +30,50 @@ class VoiceProfile(context: Context) {
      * Closes the input stream after parsing and preserves an existing cache if reading fails.
      */
     private fun readMap(): Map<String, String> {
-        val f = if (File(appContext.getDataDir(), "shared_prefs/$PREFS.xml").exists()) File(appContext.getDataDir(), "shared_prefs/$PREFS.xml")
-                  else File(appContext.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
-        val mt = if (f.exists()) f.lastModified() else -1L
-        if (cachedMap != null && mt == cachedMtime) return cachedMap!!
-        val map = HashMap<String, String>()
-        if (f.exists()) {
+            // Direct-boot access must not assume credential-encrypted storage is
+            // reachable; any failure falls back to the device-protected copy.
+
+            val f = try {
+                if (File(appContext.getDataDir(), "shared_prefs/$PREFS.xml").exists())
+                    File(appContext.getDataDir(), "shared_prefs/$PREFS.xml")
+                else File(appContext.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
+            } catch (ignore: Throwable) {
+
+                File(appContext.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
+            }
+            val mt = if (f.exists()) f.lastModified() else -1L
+            if (cachedMap != null && mt == cachedMtime) return cachedMap!!
+            val map = HashMap<String, String>()
+            var parsedOk = false
+            if (f.exists()) {
             try {
                 val parser = Xml.newPullParser()
                 FileInputStream(f).use { fis ->
                     parser.setInput(fis, null)
                     var t = parser.eventType
                     var curKey: String? = null
+                    val curVal = StringBuilder()
                     while (t != XmlPullParser.END_DOCUMENT) {
-                        if (t == XmlPullParser.START_TAG) {
-                            val n = parser.getAttributeValue(null, "name")
-                            val v = parser.getAttributeValue(null, "value")
-                            if (parser.name == "string") {
-                                curKey = n
-                            } else if (n != null && v != null) {
-                                map[n] = v
+                        when (t) {
+                            XmlPullParser.START_TAG -> {
+                                val n = parser.getAttributeValue(null, "name")
+                                val v = parser.getAttributeValue(null, "value")
+                                if (parser.name == "string") {
+                                    curKey = n?.takeIf { it.isNotEmpty() }
+                                    curVal.setLength(0)
+                                } else if (n != null && v != null) {
+                                    map[n] = v
+                                }
                             }
-                        } else if (t == XmlPullParser.TEXT) {
-                            val k = curKey
-                            if (k != null) {
-                                map[k] = parser.text
+                            XmlPullParser.TEXT -> if (curKey != null) curVal.append(parser.text ?: "")
+                            XmlPullParser.END_TAG -> if (parser.name == "string" && curKey != null) {
+                                map[curKey!!] = curVal.toString()  // tolerate empty values (empty states)
                                 curKey = null
                             }
                         }
                         t = parser.next()
                     }
+                    parsedOk = true
                 }
             } catch (ignore: Throwable) {
                 // A transient read failure must not wipe a good cache; retry on the next access.
@@ -67,21 +81,68 @@ class VoiceProfile(context: Context) {
                 val prev = cachedMap
                 if (prev != null) return prev
             }
+        } else {
+            parsedOk = true  // No file yet: an empty state is authoritative
         }
-        cachedMap = map
-        cachedMtime = mt
+        // Only cache a clean, complete parse; an in-progress XML write that
+        // happened to parse must not pin a partial map, so a later read retries.
+
+
+        if (parsedOk && (!f.exists() || map.isNotEmpty())) {
+
+            cachedMap = map
+            cachedMtime = mt
+        }
         return map
     }
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
-        val ea = prefs.edit()
-        block(ea)
-        ea.apply()
-        val eb = devicePrefs.edit()
-        block(eb)
-        eb.apply()
-        cachedMap = null
-        cachedMtime = -1L
-    }
+            // Synchronous, failure-checked commits; apply() is fire-and-forget, so a
+            // rejected/killed write silently reported success end left the pair split.
+
+
+            val snapshot = prefs.getAll()
+            val okCred: Boolean
+            try {
+                val ea = prefs.edit()
+                block(ea)
+                okCred = ea.commit()
+            } catch (ignore: Throwable) { return }  // nothing written: keep cache
+            if (!okCred) { invalidateCache(); return }
+            val okDevice: Boolean
+            try {
+                val eb = devicePrefs.edit()
+                block(eb)
+                okDevice = eb.commit()
+            } catch (ignore: Throwable) {
+                restorePrefs(prefs, snapshot)  // rolled the first leg back: pair stays consistent
+                invalidateCache()
+                return
+            }
+            if (!okDevice) {
+                restorePrefs(prefs, snapshot)
+                invalidateCache()
+                return
+            }
+            invalidateCache()
+        }
+        /** Rewrite a store from a snapshot (( used to roll back a two-store write that only half-committed(. */
+        private fun restorePrefs(p: SharedPreferences, snapshot: Map<String, *>?) {
+            if (snapshot == null) return
+            val ed = p.edit(); ed.clear()
+            for ((k,v) in snapshot) when (v) {
+                is String -> ed.putString(k, v)
+                is Boolean -> ed.putBoolean(k, v)
+                is Int -> ed.putInt(k, v)
+                is Long -> ed.putLong(k, v)
+                is Float -> ed.putFloat(k, v)
+                is Set<*> -> ed.putStringSet(k, v.map { it.toString() }.toSet())
+            }
+            ed.commit()
+        }
+        private fun invalidateCache() {
+            cachedMap = null
+            cachedMtime = -1L
+        }
 
     val preset: Int
         get() = readMap()[KEY_PRESET]?.toIntOrNull() ?: 1
