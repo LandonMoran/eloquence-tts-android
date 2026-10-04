@@ -475,6 +475,14 @@ class EloquenceEngine(context: Context) {
      *  No synthesis happens here — just the native handle open. */
     fun warmupDialect(dialect: Int) {
         if (dialect <  0) return
+        // Fail closed while the engine is retired: no fresh handle may open
+        // beside a possibly-still-alive zombie worker..
+
+        if (SystemClock.elapsedRealtime() < retireUntilMs) {
+
+            Log.w(TAG, "TTS_HANG: skipped warmup while engine retired")
+            return
+        }
         synthExecutor.execute { ensureHandle(dialect) }
     }
     /** Currently selected voice preset (1-8( and custom-mode flag */
@@ -544,8 +552,13 @@ class EloquenceEngine(context: Context) {
 
             if (voice.eciVoiceNumber != pendingEciVoiceByDialect[dialect]) {
 
-                VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
-                pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
+                if (VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber) >=  0) {
+                    pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
+                } else {
+                    // Voice copy failed: drop the cached voice so a later utterance retries the copy.
+
+                    pendingEciVoiceByDialect.remove(dialect)
+                }
             }
 
             val vp = voiceProfile
@@ -597,8 +610,11 @@ class EloquenceEngine(context: Context) {
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
                         // Engine outputs native 11025;the JNI layer upsamplest it to 44.1k for playback.
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-                        VvttsCore.setParam(handle,  5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
-                                                lastSynthRate = 44100  // post-resample playback rate
+                        if (VvttsCore.setParam(handle,  5,  1) <  0) {
+                                                    Log.e(TAG, "eciSampleRate set failed; failing utterance")
+                                                    return@synthWithTimeout null
+                                                }
+                                                lastSynthRate = 44100   // post-resample playback rate
 
 
             // Volume: CSV preset volume; no second applyVolume; set the voice param first
@@ -773,7 +789,19 @@ class EloquenceEngine(context: Context) {
             return null
         }
         val future = try {
-            synthExecutor.submit<ShortArray?> { block() }
+            synthExecutor.submit<ShortArray?> {
+                // Fail closed even if queued before retire:the retired engine's native
+                // worker may still own the session; no queued output may escape while retired.
+
+
+ 
+                if (SystemClock.elapsedRealtime() < retireUntilMs) {
+
+
+                    Log.w(TAG, "TTS_HANG: retired engine; dropping queued synthesis")
+                    null
+                } else block()
+            }
         } catch (e: RejectedExecutionException) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
