@@ -10,6 +10,7 @@
 - **8 个发音角色**：Reed / Sandy / Glen / Rocko / Bobby / Shelly / Grandpa / Grandma，通过 ECI voice param 机制切换
 - **多语言自动检测**：Unicode 规则 → 内存 n-gram 统计 → Lingua 三层检测，混合语言文本自动分片，各用各的引擎朗读
 - **自动更新**：基于 GitHub Releases 的检查/下载/安装通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）
+- **能力清单**：支持的语言 /  发音角色 /  能力唯一事实源见 `docs/languages-voices-capabilities.md`
 - **零延迟**：本地引擎，按下就出声，无云端往返
 - **自定义捏声**：长按发音角色可调节性别、头部大小、情感起伏、粗糙度、气息感等音色参数
 - **语速 / 音调 / 音量**：可独立调节，试听实时生效
