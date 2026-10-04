@@ -145,8 +145,11 @@ typedef struct {
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
     volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
+int     failed;      /* engine-state-invalidation flag (see vv_fail_session( */
     int     retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
+
+static void vv_fail_session(VvtsSession *s);
 
 /* The engine calls back on its own synthesis thread; the caller only reads
  * s->pcm after waiting for eciSpeaking to go quiet, so no locking is needed
@@ -154,7 +157,7 @@ typedef struct {
  * Kotlin side already serialises with its synthesis lock). */
 static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     VvtsSession *s = (VvtsSession *)data;
-    if (message != eciWaveformBuffer)
+    if (s->failed || message != eciWaveformBuffer)
         return eciDataProcessed;
     if (param < 0) return eciDataProcessed;
     {
@@ -164,7 +167,10 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
             size_t cap = s->pcmCap ? s->pcmCap : 16384;
             while (cap < s->pcmLen + n) cap *= 2;
             short *p = (short *)realloc(s->pcm, cap * sizeof(short));
-            if (!p) return eciDataProcessed; /* drop rather than lose the session */
+            if (!p) {
+                vv_fail_session(s);
+                return eciDataProcessed;
+            }
             s->pcm = p;
             s->pcmCap = cap;
         }
@@ -325,13 +331,37 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
     return (jlong)(intptr_t)s;
 }
 
+/* ------------------------------------------------------------------ */
+/* A failed / JNI-exception synthesis path can leave the engine input/PCM
+ * state undefined: mark the session failed so no later call trusts it,, and
+ * answer the empty-array sentinel ( a 0-length PCM array( so THE
+ * Kotlin wrapper can distinguish "engine state invalidated" from the ordinary
+ * "no audio" null,and drop/rebuild its cached handle.  (Contract: null
+ * = no audio,, non-empty = PCM,, empty array = engine state poisoned(. */
+static void vv_fail_session(VvtsSession *s) {
+    /* Poisoned sessions keep hECI alive: shutdown must still be able to
+     * eciStop/eciDelete it; only the reusable state is torn down here, so
+     * a later call on the same handle answers the sentinel instead. */
+    s->failed = 1;
+    s->pcmLen = 0;
+    s->synthBusy = 0;
+}
+
+static jshortArray vv_empty_result(JNIEnv *env) {
+    /* Leave allocation exceptions pending so the Kotlin wrapper can signal failure. */
+    return (*env)->NewShortArray(env, 0);
+}
+/* ------------------------------------------------------------------ */
+
 JNIEXPORT jshortArray JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         JNIEnv *env, jclass cls, jlong handle, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return NULL;
+if (!s) return NULL;
+    if (s->failed) return vv_empty_result(env);
     if (s->retired) return NULL; /* engine wedge: never re-drive this session */
+    if (!s->hECI) return NULL;
     if (s->synthBusy) return NULL; /* #139: native single-active-synthesis guard: never drive a busy session, even when a stop/shutdown race bypasses the Kotlin lock */
     if (!text) return NULL;
     /* #113: a handle is initialized for one dialect; synthesizing text marked
@@ -344,12 +374,20 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         return NULL;
     }
 
+    const char *operation = "GetArrayLength";
     jsize len = (*env)->GetArrayLength(env, text);
+    if ((*env)->ExceptionCheck(env)) goto failed;
     if (len <= 0) return NULL;
 
+    operation = "malloc text buffer";
     void *buf = malloc((size_t)len + 1);
-    if (!buf) return NULL;
+    if (!buf) goto failed;
+    operation = "GetByteArrayRegion";
     (*env)->GetByteArrayRegion(env, text, 0, len, (jbyte *)buf);
+    if ((*env)->ExceptionCheck(env)) {
+        free(buf);
+        goto failed;
+    }
     ((char *)buf)[len] = '\0';
 
     /* charsetId describes how the byte array was encoded by the Kotlin
@@ -365,7 +403,9 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     /* A stop may have aborted the previous wait loop: re-sync with the
      * engine's thread before we touch text/pcm for the new utterance. */
     s->cancel = 0;
+    operation = "vv_settle";
     vv_settle(s);
+    if (s->failed) goto failed;
 
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
@@ -390,6 +430,14 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *rs = NULL;
         size_t outLen = 0;
         vv_trim_silence(pcm, &samples);
+        operation = "vv_resample_4x (oracle)";
+        if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0) {
+            free(pcm);
+            goto failed;
+        }
+        free(pcm);
+        pcm = rs;
+        samples = outLen;
         if (vv_resample_4x(pcm, samples, &rs, &outLen) !=
                         0 || !rs || outLen == 0) {
                     /* #137: never fall back to the engine's native 11,025 Hz -- Kotlin
@@ -404,12 +452,17 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         s->pcm = pcm;
         s->pcmLen = samples;
         s->pcmCap = samples;
+        operation = "NewShortArray (oracle)";
         jshortArray out = (*env)->NewShortArray(env, (jsize)samples);
-        if (!out) return NULL;
+        if (!out || (*env)->ExceptionCheck(env)) goto failed;
+        operation = "SetShortArrayRegion (oracle)";
         (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
+        if ((*env)->ExceptionCheck(env)) goto failed;
         return out;
     }
 
+    operation = "eciClearInput";
+    if (!eciClearInput(s->hECI)) goto failed;
     if (eciClearInput(s->hECI) != 0) {
         /* #134: a rejected clear means the previous input state is undefined;
          * never synthesize on top of it. */
@@ -420,6 +473,15 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
      * the current voice/environment params into the engine and is REQUIRED for
      * synthesis itself -- removing it (commit 380ddce( broke all speech(
      * and for the params eciSetVoiceParam just wrote to reach the engine. */
+    operation = "et_insertIndex";
+    if (!et_insertIndex(s->hECI, 4242)) goto failed;
+    operation = "et_addText";
+    if (!et_addText(s->hECI, buf)) goto failed;
+                s->synthBusy =  1;
+                struct timespec st1, st2, st3;
+                clock_gettime(CLOCK_MONOTONIC, &st1);
+                operation = "et_synthesize";
+                if (!et_synthesize(s->hECI)) goto failed;
     et_insertIndex(s->hECI,  4242);
                 if (et_addText(s->hECI, buf) != 0) {
                     /* #135: a rejected text insertion must never be followed by
@@ -439,6 +501,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                     return NULL;
                 }
                 clock_gettime(CLOCK_MONOTONIC, &st2);
+                operation = "vv_wait_till_done";
                 vv_wait_till_done(s);
                 s->synthBusy = 0;   /* #139: clear busy once the session has drained: success must not poison later synthesis */
                 if (s->cancel) return NULL;
@@ -447,6 +510,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
                 __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
 
+if (s->failed) goto failed;
     if (s->retired) {
         /* Timeout mid-flight: the engine thread may still be writing s->pcm.
          * Return failure WITHOUT reading, trimming or resampling PCM; the
@@ -454,8 +518,31 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: session retired; returning null");
         return NULL;
     }
-
     if (s->pcmLen == 0) return NULL;
+    short *rs = NULL;
+    size_t outLen = 0;
+    vv_trim_silence(s->pcm, &s->pcmLen);
+    operation = "vv_resample_4x";
+    if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0) goto failed;
+    operation = "NewShortArray";
+    jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);
+    if (!out || (*env)->ExceptionCheck(env)) {
+        free(rs);
+        goto failed;
+    }
+    operation = "SetShortArrayRegion";
+    (*env)->SetShortArrayRegion(env, out, 0, (jsize)outLen, rs);
+    free(rs);
+    if ((*env)->ExceptionCheck(env)) goto failed;
+    return out;
+
+failed:
+    __android_log_print(ANDROID_LOG_ERROR, "VvttsCore",
+                        "nativeSynthesize failed during %s (dialect=0x%x, JNI exception=%d)",
+                        operation, (unsigned int)dialect, (int)(*env)->ExceptionCheck(env));
+    vv_fail_session(s);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    return vv_empty_result(env);
         {
             short *rs = NULL;
                         size_t outLen = 0;

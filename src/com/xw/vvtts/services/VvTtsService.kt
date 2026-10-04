@@ -92,7 +92,6 @@ class VvTtsService : TextToSpeechService() {
         registerAllPrefsListeners(applicationContext!!)
         val eng = acquireProcessEngine(device)
         engine = if (eng.isInitialized()) eng else null
-        engine = eng
         eng.setVoiceProfile(voiceProfile)
         val ok = eng.isInitialized()
         // Restore the language-detection settings from device-protected storage
@@ -701,6 +700,22 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    /** Terminate a superseded utterance silently:the framework converts
+     *  start+done into silent playback, avoiding error() which a screen
+     *  reader treats as a failed focus ( re-announce/stall(.
+     */
+    private fun silentComplete(callback: SynthesisCallback) {
+        try {
+            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+            callback.done()
+        } catch (t: Throwable) {
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {
+            }
+        }
+    }
+
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
         return if (v < lo) lo else Math.min(v, hi)
     }
@@ -715,7 +730,7 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
-    
+
     @Volatile private var stopping = false
     /** Serializes stop-gate checks/flag-reset in runSynthesis against onStop()/bumpGeneration() generation bumps. */
     private val cancellationLock = Any()
@@ -810,6 +825,7 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                 val ok = e.commit()
                 if (!ok) Log.e(TAG, "mirror commit rejected")
             }
+
 
         // === Pacing ===
         /** Track how much audio (in ms( has been handed to the framework versus how
@@ -971,7 +987,7 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                     // minimum progress size so a lone sliver is never handed out.
                     if (cut < 0) {
                         cut = end
-                        val minCut = start + MIN_CHUNK_SENTENCE
+val minCut = start + MIN_CHUNK_SENTENCE
                         while (cut > minCut && isNumericRunChar(text[cut - 1])) {
                             cut--
                         }

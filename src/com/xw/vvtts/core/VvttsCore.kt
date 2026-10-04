@@ -40,14 +40,14 @@ class VvttsCore {
             }
         }
 
-       /** Synthesize.textBytes is pre-encoded.Returns a PCM short array. */
+       /** Pre-encoded text. Returns PCM, null for no audio, or an empty array for a failed session. */
         @JvmStatic
         fun synth(handle: Long, dialect: Int, text: ByteArray, charsetId: Int, outPath: String?): ShortArray? {
             return try {
                 nativeSynthesize(handle, dialect, text, charsetId, outPath)
             } catch (e: Throwable) {
                 Log.e("VvttsCore", "synth native crash", e)
-                null
+                shortArrayOf()
             }
         }
 

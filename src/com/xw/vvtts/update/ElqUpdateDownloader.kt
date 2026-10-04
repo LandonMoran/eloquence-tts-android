@@ -108,7 +108,7 @@ object ElqUpdateDownloader {
                     if (done <= 0) throw IOException("empty APK download")
                 }
             }
-            // Never let a torn or non-APK payload reach the final path: structurally validate
+// Never let a torn or non-APK payload reach the final path: structurally validate
             // the temporary file before it is moved into place (catches truncation even when
             // the server sent no Content-Length, so PackageInstaller never sees a broken file).
             if (!isLikelyApk(tmpFile)) throw IOException("downloaded file is not a valid APK")
@@ -135,8 +135,7 @@ object ElqUpdateDownloader {
         }
     }
 
-
-    /** Rejects any hop that is not HTTPS on an allowlisted release host. */
+/** Rejects any hop that is not HTTPS on an allowlisted release host. */
     private fun validateUrl(url: URL) {
         if (url.protocol != "https") {throw IOException("refusing non-https download URL: ${url.protocol}://${url.host}")
         }
@@ -154,13 +153,11 @@ object ElqUpdateDownloader {
 
         return try {
             if (file.length() < 8) return false
-
             val magic = DataInputStream(file.inputStream()).use { ins ->
                 ByteArray(4).also { b -> ins.readFully(b) }
             }
             if (magic[0] != 'P'.code.toByte() || magic[1] != 'K'.code.toByte() || magic[2] != 3.toByte() || magic[3] != 4.toByte()) return false
-
-            ZipFile(file).use { zf -> zf.getEntry("AndroidManifest.xml") != null }
+ZipFile(file).use { zf -> zf.getEntry("AndroidManifest.xml") != null }
         } catch (e: Exception) {
             Log.w(TAG, "APK validation failed", e)
             false

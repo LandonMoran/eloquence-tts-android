@@ -67,6 +67,7 @@ object ElqUpdateInstaller {
                     if (sender == null || sender != appContext.packageName) return
                 }
                 if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != sessionId) return
+
                 val status = intent.getIntExtra(
                     PackageInstaller.EXTRA_STATUS,
                     PackageInstaller.STATUS_FAILURE
@@ -74,6 +75,7 @@ object ElqUpdateInstaller {
                 when (status) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+
                             intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                         } else {
                             @Suppress("DEPRECATION")
@@ -101,7 +103,7 @@ object ElqUpdateInstaller {
         }
         // Register BEFORE commit:the system broadcast can arrive the instant
         // commit fires, and a late registration would miss it and sit out the
-        // entire install timeout (reported \"install hangs/never completes\").
+        // entire install timeout (reported "install hangs/never completes").
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -118,32 +120,32 @@ object ElqUpdateInstaller {
             return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
         var committed = false
-                try {
-                    val session = pm.packageInstaller.openSession(sessionId)
-                    try {
-                        apkFile.inputStream().use { input ->
-                            session.openWrite("base.apk", 0, apkFile.length()).use { output ->
-                                input.copyTo(output, 64 * 1024)
-                                session.fsync(output)
-                            }
-                        }
-                        session.commit(commitIntent(appContext, sessionId).intentSender)
-                        committed = true
-                    } finally {
-                        session.close()
+        try {
+            val session = pm.packageInstaller.openSession(sessionId)
+            try {
+                apkFile.inputStream().use { input ->
+                    session.openWrite("base.apk", 0, apkFile.length()).use { output ->
+                        input.copyTo(output, 64 * 1024)
+                        session.fsync(output)
                     }
-                } catch (e: Exception) {
-                    runCatching { appContext.unregisterReceiver(receiver) }
-                    if (!committed) {
-                        runCatching { pm.packageInstaller.abandonSession(sessionId) }
-                    }
-                    return Result.Failed(null, e.message ?: e.javaClass.simpleName)
                 }
+                session.commit(commitIntent(appContext, sessionId).intentSender)
+                committed = true
+            } finally {
+                session.close()
+            }
+        } catch (e: Exception) {
+            runCatching { appContext.unregisterReceiver(receiver) }
+            if (!committed) {
+                runCatching { pm.packageInstaller.abandonSession(sessionId) }
+            }
+            return Result.Failed(null, e.message ?: e.javaClass.simpleName)
+        }
         try {
             val ok = latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             if (!ok) {
                 runCatching { appContext.unregisterReceiver(receiver) }
-                // The commit already fired but no status arrived: resolve the dangling
+// The commit already fired but no status arrived: resolve the dangling
                 // PackageInstaller session instead of leaving a zombie behind (#92).
                 // A committed-but-unconfirmed session would otherwise linger; abandon it to
                 // return install state promptly (issue #202).
@@ -172,7 +174,9 @@ object ElqUpdateInstaller {
      * registration, and the sender + session validation in onReceive().
      */
     private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
+
         val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
+
         return PendingIntent.getBroadcast(
             context,
             sessionId,
@@ -180,8 +184,7 @@ object ElqUpdateInstaller {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
     }
-
-    /**
+/**
      * Accepts only confirmation intents scoped to this package, issued by the platform
      * installer, or implicit (resolved by the system). Anything else is an untrusted
      * intent that could redirect the user to a malicious confirmation flow.
