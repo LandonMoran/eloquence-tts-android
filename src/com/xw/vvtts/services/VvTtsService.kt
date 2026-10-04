@@ -37,6 +37,11 @@ class VvTtsService : TextToSpeechService() {
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
+    // BCP-47 tags advertised by onGetVoices; onLoadVoice accepts exactly these.
+    private val shippedVoiceTags: List<String> = listOf(
+        "en-US", "en-GB", "de-DE", "fr-FR", "fr-CA", "es-ES", "es-US", "es-MX",
+        "it-IT", "ja-JP", "pl-PL", "pt-BR", "fi-FI", "zh-CN",
+    )
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
@@ -233,39 +238,22 @@ class VvTtsService : TextToSpeechService() {
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
         return voiceSafe(emptyList()) {
-        val voices = ArrayList<Voice>()
+        val voices = ArrayList<Voice>(shippedVoiceTags.size)
         // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
-        voices.add(Voice("en-US", Locale.US,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("en-GB", Locale.UK,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("de-DE", Locale.GERMANY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fr-FR", Locale.FRANCE,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fr-CA", Locale.CANADA_FRENCH,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-ES", Locale("es", "ES"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-US", Locale("es", "US"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-MX", Locale("es", "MX"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("it-IT", Locale.ITALY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("ja-JP", Locale.JAPAN,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("pl-PL", Locale("pl", "PL"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("pt-BR", Locale("pt", "BR"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fi-FI", Locale("fi", "FI"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("zh-CN", Locale("zh", "CN"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+        for (tag in shippedVoiceTags) {
+            val p = tag.split('-')
+            voices.add(Voice(tag, Locale(p[0], p.getOrNull(1) ?: ""),
+                Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+        }
         // Only advertise dialects actually linked in this build (build_native.sh LANGS)
         return voices
         }
+    }
+
+    /** onLoadVoice contract: a voice can only be "loaded" if this build ships it. */
+    override fun onLoadVoice(voiceName: String?, features: Array<out String>?): Int {
+        if (voiceName == null || voiceName !in shippedVoiceTags) return TextToSpeech.ERROR
+        return TextToSpeech.SUCCESS
     }
 
     /** Reports the supported language detail level, or LANG_NOT_SUPPORTED for unknown languages or failures. */
