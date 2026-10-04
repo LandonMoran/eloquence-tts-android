@@ -52,6 +52,8 @@ object ElqUpdateDownloader {
         } finally {
             runCatching { conn?.disconnect() }
         }
+    }
+
     /** Verifies the download looks like a structurally valid APK (ZIP(: PK magic + readable
      * central directory + a top-level AndroidManifest.xml entry. Catches truncated downloads
      * even when the server sent no Content-Length (so PackageInstaller never sees a torn file(. */

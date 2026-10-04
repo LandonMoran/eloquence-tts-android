@@ -97,7 +97,7 @@ object ElqUpdateInstaller {
             // Never leak the staged session: no matter how receiver registration failed,
             // delete the pending install so future self-updates aren't blocked (#143).
             runCatching { pm.packageInstaller.abandonSession(sessionId) }
-            return Result.Failed(null, t.message ?: t.javaClass.simpleName]
+            return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
         var committed = false
         try {
@@ -119,7 +119,7 @@ object ElqUpdateInstaller {
             if (!committed) {
                 runCatching { pm.packageInstaller.abandonSession(sessionId) }
             }
-            return Result.Failed(null, e.message ?: e.javaClass.simpleName]
+            return Result.Failed(null, e.message ?: e.javaClass.simpleName)
         }
         try {
             val ok = latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
@@ -134,7 +134,7 @@ object ElqUpdateInstaller {
             runCatching { appContext.unregisterReceiver(receiver) }
             // Same unresolved-post-commit case as the timeout: don't leak the session (#92).
             runCatching { pm.packageInstaller.abandonSession(sessionId) }
-            return Result.Failed(null, t.message ?: t.javaClass.simpleName]
+            return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
         runCatching { appContext.unregisterReceiver(receiver) }
         return result ?: Result.Failed(null, "install timed out")
