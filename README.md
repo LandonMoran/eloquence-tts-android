@@ -68,7 +68,6 @@ bash build.sh
 
 - `oracle/table/*.consolidated.tsv`：一行一个汉字 + 真人 PCM，采集自参考 Eloquence 引擎
 - `oracle/merge_build.py`：把 consolidated TSV + legacy 行确定性合并成 `oracle_chs.c`（16,913 字）
-产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
 - 数字 0-9 由 `TextNormalizer` 归一为汉字（零一二…（，经同一语音库朗读
 
 ###角色切换
@@ -77,7 +76,7 @@ bash build.sh
 
 ###多语言检测
 
-三层架构：Unicode 规则层（O(n) 判定假名/谚文/汉字/拉丁）+ 内存 n-gram 层 + Lingua 统计层（拉丁 10 语言互分
+三层架构：Unicode 规则层（O(1( 判定假名/谚文/汉字/拉丁）+ 内存 n-gram 层 + Lingua 统计层（拉丁 10 语言互分
 
 
 
@@ -91,6 +90,7 @@ bash build.sh
 
 ## Roadmap
 
-- [ ] 重采 百 / 零 / 八 PCM（`oracle-dump` + `oracle-assemble`），合上最后一个数字静音口
-- [x] 首个发布：v1.0 · versionCode 1（版本策略见 `RELEASES.md`）
+- [ ] 补采 百 / /零 / /八 的 PCM 静音口（采集工具现状与计划见 `oracle/lpta-remake.md`）
+- [x] 首个发布：v1.0 · versionCode 2000000001（版本策略见 `RELEASES.md`）
+- [ ] 自动更新 ABI 匹配回退验证（部分资产缺失时回退为打开 Releases 页）
 - 发布变更说明见 `RELEASES.md`（随每次发布更新）
