@@ -160,6 +160,8 @@ int     failed;      /* engine-state-invalidation flag (see vv_fail_session( */
     int     retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
 
+static void vv_fail_session(VvtsSession *s);  /* poison late-alloc-failure path (realloc fail below( */
+
 /* Fatal callback error: flag the session so the wait loop stops fast (cancel)
  * and nativeSynthesize fails instead of returning partial or rate-mismatched audio. */
 static int vv_fail(VvtsSession *s) {
