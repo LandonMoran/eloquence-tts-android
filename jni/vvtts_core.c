@@ -138,6 +138,7 @@ static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *out
 
 typedef struct {
     ECIHand hECI;
+    int32_t dialect;            /* dialect the handle was initialized for (#113) */
     short   chunk[APP_SAMPLES]; /* callback scratch */
     short  *pcm;                /* accumulated waveform */
     size_t  pcmLen, pcmCap;
@@ -286,6 +287,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         return 0;
     }
     s->hECI = eciNewEx((int)dialect);
+    s->dialect = (int32_t)dialect;
     if (!s->hECI) {
         free(s);
         return 0;
@@ -305,6 +307,15 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return NULL;
     if (!text) return NULL;
+    /* #113: a handle is initialized for one dialect; synthesizing text marked
+     * for another would silently mix language modules and param sets. Refuse
+     * loudly instead (the Kotlin side treats a NULL result as a failed job). */
+    if ((int32_t)dialect != s->dialect) {
+        __android_log_print(ANDROID_LOG_WARN, "VvttsCore",
+                            "dialect mismatch: handle=%d, request=%d",
+                            (int)s->dialect, (int)dialect);
+        return NULL;
+    }
 
     jsize len = (*env)->GetArrayLength(env, text);
     if (len <= 0) return NULL;
