@@ -115,7 +115,11 @@ class VvTtsService : TextToSpeechService() {
                 val staleWarmup = stopping || warmGen != generation.get()
                 if (!staleWarmup) {
                     try {
-                        synchronized(engineCallLock) { warmEngine.warmupDialect(warmDialect) }
+                        synchronized(engineCallLock) {
+                            if (!stopping && warmGen == generation.get()) {
+                                warmEngine.warmupDialect(warmDialect)
+                            }
+                        }
                     } catch (t: Throwable) {
                         Log.w(TAG, "background warmup failed", t)
                     }
