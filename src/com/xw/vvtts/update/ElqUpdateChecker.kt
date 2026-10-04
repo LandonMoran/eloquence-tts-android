@@ -56,11 +56,19 @@ object ElqUpdateChecker {
      * Call from a background thread because this performs network I/O.
      */
     fun check(context: Context): UpdateResult {
-        val localVersionCode = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
+        val pkg = try {
+            context.packageManager.getPackageInfo(context.packageName, 0)
         } catch (e: Exception) {
-            0
+            null
         }
+        val localVersionCode = pkg?.longVersionCode?.toInt() ?: 0
+        // Compare the release tag against the app's semantic versionName (e.g. "1.0.1")
+        // so both sides go through the same parser on one comparable scale; fall back to the
+        // raw Android versionCode int when the versionName doesn't parse.
+
+
+
+        val localReleaseCode = parseVersionCode(pkg?.versionName) ?: localVersionCode
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
         var conn: HttpURLConnection? = null
         try {
@@ -99,13 +107,23 @@ object ElqUpdateChecker {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
             val latestCode = parseVersionCode(target.tagName) ?: -1
+            val localTag = try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: null
+            } catch (e: Exception) {
+                null
+            }
+            val latestSemVer = parseSemver(target.tagName)
+            val localSemVer = parseSemver(localTag)
+            val hasUpdate =
+                if (latestSemVer != null && localSemVer != null) latestSemVer > localSemVer
+                else latestCode > localVersionCode
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
                 // An update is only reported when the newer release actually ships a
                 // compatible APK asset the updater can download.
-                hasUpdate = apkUrl != null && latestCode > localVersionCode,
+                hasUpdate = apkUrl != null && latestCode > localReleaseCode,
                 currentVersionCode = localVersionCode,
-                latestVersionCode = latestCode.takeIf { it >= 0 },
+                latestVersionCode = (latestSemVer?.packed() ?: latestCode).takeIf { it >= 0 },
                 latestTag = target.tagName,
                 releaseNotes = target.body,
                 downloadUrl = apkUrl,
@@ -120,19 +138,41 @@ object ElqUpdateChecker {
     }
 
     /**
-     * Parses a x.y[.z] version from a release tag such as "v1.0" into a comparable
-     * versionCode, rejecting tags that don't match the repo's actual tag format (#150).
-     * Monotonic mapping (major*100000 + minor*1000 + patch( keeps ordering sane.
+* Parses a release tag (or installed versionName( into a comparable numeric code.
+     *
+     * Supports the repo's documented semantic-version tag format (`v1.0`, `v1.1.0`,
+     * `v2.10.3`) and plain numeric versionCode tags (`2000000002`). Rejects ambiguous
+     * values instead of extracting arbitrary digit runs: the previous regex could not read
+     * `v1.0` at all and mis-parsed names like `r37` as version 37.
      */
     private fun parseVersionCode(tag: String?): Int? {
-        val m = Regex("""^[vV]?(\d+)\.(\d+)(?:\.(\d+))?$""").find(tag?.trim() ?: "") ?: return null
-        val major = m.groupValues[1].toIntOrNull() ?: return null
-        val minor = m.groupValues[2].toIntOrNull() ?: return null
-        val patch = m.groupValues[3].ifBlank { "0" }.toIntOrNull() ?: return null
-        if (minor !in 0..99 || patch !in 0..999) return null
-        val code = major.toLong() * 100000L + minor.toLong() * 1000L + patch
+        val s = tag?.trim() ?: return null
+        s.toIntOrNull()?.let { return it }
+        // Semantic version tag: optional 'v' prefix + MAJOR.MINOR[.PATCH]; at least one dot
+        // required so bare values like `v1` stay rejected as ambiguous..
+        val m = Regex("""^[vV]?(\d+)\.(\d+)(?:\.(\d+))?$""").matchEntire(s) ?: return null
+        val major = m.groupValues[1].toLongOrNull() ?: return null
+        val minor = m.groupValues[2].toLongOrNull() ?: return null
+        val patch = m.groupValues[3].ifEmpty { "0" }.toLongOrNull() ?: return null
+        // Base-1000 encodes each component so numeric ordering matches semantic ordering; any
+        // component at or above 1000 would carry into the next slot, so reject those..
+        if (major >= 1000 || minor >= 1000 || patch >= 1000) return null
+        val code = major * 1000 * 1000 + minor * 1000 + patch
         if (code > Int.MAX_VALUE) return null
         return code.toInt()
+    }
+
+    /** Structurally-parsed dotted numeric version tag (v1.2.3). Rejects ambiguous tags (null): non-numeric segments, extra segments, trailing suffixes. */
+    private data class SemVer(val major: Int, val minor: Int, val patch: Int): Comparable<SemVer> {
+        override fun compareTo(other: SemVer): Int =
+            compareValuesBy(major, other.major, minor, other.minor, patch, other.patch)
+        fun packed(): Int = major * 1_000_000 + minor * 1_000 + patch
+    }
+
+    private fun parseSemver(tag: String?): SemVer? {
+        val m = Regex("""^v?(\d+)\.(\d+)\.(\d+)$""").find(tag ?: "") ?: return null
+        val parts = m.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
+        return SemVer(parts[0], parts[1], parts[2])
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {
