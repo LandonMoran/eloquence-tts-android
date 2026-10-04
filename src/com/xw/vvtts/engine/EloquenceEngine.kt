@@ -568,6 +568,7 @@ class EloquenceEngine(context: Context) {
             val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
             val sig = sigBase + "|" + sigChar
             val sameAsLast = sig == lastParamSig
+            var paramWritesOk = true   // setter-result gate: any failed write forces a retry next utterance
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
             val speedVal = Math.round(50.0f * uiRate /  100.0f)
                 .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
@@ -587,6 +588,7 @@ class EloquenceEngine(context: Context) {
 
                 if (ret < 0) {
                     Log.w("VvTts", "voice param #$p=$value -> ret $ret (FAILURE)")
+                    paramWritesOk = false
                 } else if (p==2 && !pitchLogged) {
 
                     Log.i("VvTts", "voice param #2 pitch=$value -> ret $ret (OK)")
@@ -644,6 +646,7 @@ class EloquenceEngine(context: Context) {
             for (p in 0..7) {
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
                 val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+                if (ret < 0) paramWritesOk = false
             }
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
@@ -655,7 +658,7 @@ class EloquenceEngine(context: Context) {
             runCatching { outFile.delete() }
             if (pcm != null && pcm.size > 0) {
                 pcm = applyVolume(pcm, volume)
-                lastParamSig = sig  // only admit success:failed param writes must retry
+                lastParamSig = if (paramWritesOk) sig else lastParamSig  // only admit success:failed param writes must retry
             }
             pcm
         }
