@@ -4,7 +4,6 @@ on:
   push:
     branches: ['**']
     paths-ignore:
-      - 'oracle/**'
       - '.github/workflows/oracle-dump.yml'
   pull_request:
     branches: [main]
@@ -63,17 +62,17 @@ jobs:
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
+# CI-only dev keystore: generated per build with a random password;
+# never committed (gitignored). Sideloads fine; never a release identity.
       - name: Generate keystore
         run: |
+          KS_PASS="$(openssl rand -hex 16)"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
           keytool -genkeypair -v \
-            -keystore vvtts.jks -storepass android123 -keypass android123 \
-            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS" \
+            -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
-
-      - name: Use committed CI keystore
-        run: |
-          cp vvttts-ci.jks vvttts.jks
-          ls -la vvttts.jks
 
 
       - name: Build native bridge (arm64-v8a + armeabi-v7a + x86_64; openevv + JNI core)
@@ -85,11 +84,6 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
 
-      - name: Stamp version from tag
-        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-        run: |
-          VERCODE="$(echo "${{ github.ref_name }}" | cut -c2-)"
-          sed -i "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$VERCODE\"/" AndroidManifest.xml
       - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
         run: |
           rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk
@@ -97,8 +91,18 @@ jobs:
           ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvtts-arm64-v8a.apk
           echo "=== Build armeabi-v7a (32-bit devices/emulators) ==="
           # TEST_MIN_API is a test-only override (default 28); MIN_API=25 lets an
-          # API-25 arm32 emulator install this APK.
-          ABI=armeabi-v7a MIN_API="${TEST_MIN_API:-28}" bash build.sh && cp vvtts_signed.apk vvtts-armeabi-v7a.apk
+          # API-25 arm32 emulator install this APK. When the override differs from
+          # 28, patch minSdkVersion in the manifest so aapt packages it (the
+          # documented API-25 emulator lane otherwise fails with
+          # INSTALL_FAILED_OLDER_SDK); restore the tracked manifest afterwards.
+          MIN_API="${TEST_MIN_API:-28}"
+          if [ "$MIN_API" != "28" ]; then
+            sed -i "s/android:minSdkVersion=\"28\"/android:minSdkVersion=\"$MIN_API\"/" AndroidManifest.xml
+          fi
+          ABI=armeabi-v7a MIN_API="$MIN_API" bash build.sh && cp vvtts_signed.apk vvtts-armeabi-v7a.apk
+          if [ "$MIN_API" != "28" ]; then
+            git checkout -- AndroidManifest.xml
+          fi
           echo "=== Build universal (both ABIs) ==="
           ABI=universal bash build.sh && cp vvtts_signed.apk vvtts-universal.apk
           echo "=== Build x86_64 (TEST-ONLY: emulator lab smoke; not a shipping artifact) ==="
@@ -107,8 +111,8 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
           KEYSTORE: vvtts.jks
-          KS_PASS: android123
-          KEY_PASS: android123
+          KS_PASS: ${{ env.KS_PASS }}
+          KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
 
       - name: Upload APKs

@@ -68,8 +68,11 @@ jobs:
 
       - name: Generate keystore
         run: |
+          KS_PASS="$(openssl rand -hex 16)"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
           keytool -genkeypair -v \
-            -keystore vvttts.jks -storepass android123 -keypass android123 \
+            -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS" \
             -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=CI Build,O=Home,C=US"
 
@@ -84,8 +87,8 @@ jobs:
           bash build.sh
         env:
           KEYSTORE: vvttts.jks
-          KS_PASS: android123
-          KEY_PASS: android123
+          KS_PASS: ${{ env.KS_PASS }}
+          KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
           ABI: x86_64
 

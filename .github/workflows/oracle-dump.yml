@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: LandonMoran/eloquence-tts-android
+          repository: ${{ github.repository }}
           ref: ${{ github.ref }}
           fetch-depth: 1
 
