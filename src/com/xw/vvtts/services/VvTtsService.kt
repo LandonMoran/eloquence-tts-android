@@ -364,7 +364,7 @@ class VvTtsService : TextToSpeechService() {
             return
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
-                if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+                if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                     Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
                 }
 
@@ -471,7 +471,7 @@ class VvTtsService : TextToSpeechService() {
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.d("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " len=" + segText.length)
-        if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+        if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
             Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
         }
                 // CJK normalization (width + number + symbol readings) happens once,
@@ -499,7 +499,7 @@ class VvTtsService : TextToSpeechService() {
                     val t3 = SystemClock.elapsedRealtime()
                     val pcm = synchronized(engineCallLock) { engine!!.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate) }
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
-                    if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+                    if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
                     }
                     if (pcm != null && pcm.size > 0) {
