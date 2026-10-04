@@ -32,8 +32,8 @@ import java.util.concurrent.RejectedExecutionException
  * es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL. (zh/pt/fi/ko are not linked here.)
  */
 class VvTtsService : TextToSpeechService() {
-    private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
-    private val engineCallLock = Any()          // serializes native engine calls: stop/synthesizeCore/warmupDialect
+    @Volatile private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
+    private val engineCallLock = Any()          // serializes synthesis/warmup; flag-based stop must bypass this lock
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
@@ -79,7 +79,9 @@ class VvTtsService : TextToSpeechService() {
         refreshSettings()
         registerAllPrefsListeners(device)
         registerAllPrefsListeners(applicationContext!!)
-        val eng = acquireProcessEngine(device)
+        val eng = synchronized(engineLock) {
+            acquireProcessEngine(device).also { processEngineOwner = this }
+        }
         engine = if (eng.isInitialized()) eng else null
         engine = eng
         eng.setVoiceProfile(voiceProfile)
@@ -98,27 +100,41 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         bumpGeneration()
-        stopping = true
-        // #25: cancel the ACTIVE utterance BEFORE draining. The delivery thread may
-        // be parked inside a native call (up to HANG_TIMEOUT_S(; only the flag-based
-        // engine.stop() makes that call return early, so the executor can actually
-        // drain instead of timing out at 250 ms. The reference read is #12's
-        // engine.stop() under engineCallLock unwedges the parked native call,and
-        //the bounded drain can finish instead of timing out. the synth path no
-        //longer holds the lock, so waiting here is safe of deadlock ho
-
-
-        try { synchronized(engineCallLock) { engine?.stop() } } catch (ignore: Throwable) {}
+        // Reject new work now; accepted tasks still run their terminal callbacks.
         deliveryExecutor.shutdown()
-        try {
-            // Bounded drain:a healthy teardown finishes well under a second (native
-            // wind-down after stop() is flag-based(; a pathological native call gets
-            // cut off at this timeout instead of stalling process teardown forever.
-            deliveryExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)
-        } catch (ignore: InterruptedException) {
-            Thread.currentThread().interrupt()
+        cleanupExecutor.execute {
+            try {
+                // Never wait for engineCallLock: synthesis may hold it while
+                // waiting for the native call that stop() needs to cancel.
+                synchronized(engineLock) {
+                    // A rebind may already own the process engine by the time
+                    // cleanup runs. Do not cancel the new service's speech.
+                    if (processEngineOwner === this) {
+                        try { engine?.stop() } catch (t: Throwable) {
+                            Log.w(TAG, "engine stop during cleanup failed", t)
+                        }
+                        processEngineOwner = null
+                    }
+                }
+                var interrupted = false
+                while (true) {
+                    try {
+                        if (deliveryExecutor.awaitTermination(Long.MAX_VALUE, java.util.concurrent.TimeUnit.NANOSECONDS)) break
+                    } catch (e: InterruptedException) {
+                        interrupted = true
+                    }
+                }
+                // A watchdog timeout can leave a native worker running after
+                // its delivery task returns. Keep cleanup alive until it exits.
+                engine?.awaitActiveSynthesis()
+                if (interrupted) Thread.currentThread().interrupt()
+            } finally {
+                engine = null
+            }
         }
+        cleanupExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -129,7 +145,7 @@ class VvTtsService : TextToSpeechService() {
         // HANG_TIMEOUT_S in native synthesis while the user has already moved on (and,
         // sincethe engine is process-shared, that saturated worker blocks other
         // binds' first speech too(.
-        try { synchronized(engineCallLock) { engine?.stop() } } catch (ignore: Throwable) {}
+        try { engine?.stop() } catch (ignore: Throwable) {}
         return super.onUnbind(intent)
     }
 
@@ -300,6 +316,7 @@ class VvTtsService : TextToSpeechService() {
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
         try {
+            if (destroyed) throw RejectedExecutionException("service destroyed")
             val gen = generation.get()  // snapshot: a stop() while queued must drop this task
             deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
         } catch (e: RejectedExecutionException) {
@@ -325,7 +342,7 @@ class VvTtsService : TextToSpeechService() {
         // stop, the framework already canceled it, so it must not speak (ghost
         // speech after cancellation) and must not clear the stopping flag.
         // error() is the designated failure termination (never started).
-        if (gen != generation.get()) {
+        if (destroyed || gen != generation.get()) {
             Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
             try {
                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
@@ -343,7 +360,7 @@ class VvTtsService : TextToSpeechService() {
         // sets stopping = true. Re-check so a just-issued cancellation isn't
         // cleared, which would let a stale utterance drain in full (ghost speech(.
         // Restore the stop flag and drop the utterance via error() instead.
-        if (gen != generation.get()) {
+        if (destroyed || gen != generation.get()) {
             stopping = true
             Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
             try {
@@ -566,6 +583,10 @@ class VvTtsService : TextToSpeechService() {
     }
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val cleanupExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "tts-cleanup")
+    }
+    @Volatile private var destroyed = false
     @Volatile private var stopping = false
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
@@ -582,7 +603,7 @@ class VvTtsService : TextToSpeechService() {
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
+            try { engine?.stop() } catch (ignore: Throwable) {}
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected
@@ -699,6 +720,7 @@ class VvTtsService : TextToSpeechService() {
 
             private val engineLock = Any()
             @Volatile private var processEngine: EloquenceEngine? = null
+            private var processEngineOwner: VvTtsService? = null // guarded by engineLock
 
 
             private fun acquireProcessEngine(ctx: Context): EloquenceEngine {

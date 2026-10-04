@@ -16,11 +16,14 @@ import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
+import java.util.concurrent.FutureTask
+import java.util.concurrent.Callable
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -44,6 +47,8 @@ class EloquenceEngine(context: Context) {
     @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "elq-synth").apply { isDaemon = true }
     }
+    // Track actual worker completion, including workers retired by the watchdog.
+    private val activeSynthesis = ConcurrentHashMap.newKeySet<CountDownLatch>()
     @Volatile private var hangDetected = false
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
     @Volatile private var engineEpoch = 0
@@ -413,6 +418,22 @@ class EloquenceEngine(context: Context) {
         core?.let { for (h in coreHandles.values) VvttsCore.stop(h) }
     }
 
+    /** Call after delivery has drained, so no more synthesis from that service can start. */
+    fun awaitActiveSynthesis() {
+        var interrupted = false
+        for (completion in activeSynthesis.toList()) {
+            while (true) {
+                try {
+                    completion.await()
+                    break
+                } catch (e: InterruptedException) {
+                    interrupted = true
+                }
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
+    }
+
     @Synchronized
     fun shutdown() {
         engineEpoch++
@@ -772,9 +793,18 @@ class EloquenceEngine(context: Context) {
             Log.w(TAG, "TTS_HANG: zombie grace until " + retireUntilMs + " (" + (retireUntilMs - nowMin) + " ms left); skipping to avoid doubling the retired native worker")
             return null
         }
-        val future = try {
-            synthExecutor.submit<ShortArray?> { block() }
+        val completion = CountDownLatch(1)
+        val future = object : FutureTask<ShortArray?>(Callable { block() }) {
+            override fun done() {
+                completion.countDown()
+                activeSynthesis.remove(completion)
+            }
+        }
+        activeSynthesis.add(completion)
+        try {
+            synthExecutor.execute(future)
         } catch (e: RejectedExecutionException) {
+            future.cancel(false) // Never started; release its completion marker.
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
@@ -808,7 +838,11 @@ class EloquenceEngine(context: Context) {
     // executor + fresh native handles so subsequent requests work again immediatel
     private fun rotateEngine() {
         try {
-            synthExecutor.shutdownNow()
+            // Only queued tasks are cancelled. Interrupting a running native
+            // call does not complete its marker; cleanup must wait for done().
+            for (queued in synthExecutor.shutdownNow()) {
+                (queued as? Future<*>)?.cancel(false)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "rotate: shutdown failed", e)
         }
