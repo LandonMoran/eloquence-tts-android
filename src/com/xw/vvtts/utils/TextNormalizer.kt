@@ -29,6 +29,16 @@ class TextNormalizer {
             "正", "载", "极", "恒河沙", "阿僧祇", "那由他", "不可思议", "无量数",
         )
 
+        /** Chinese calendar/time units that may directly follow a digit run (2024年, 3月, 15日, 2点( */
+        private val DATETIME_UNITS = setOf('年', '月', '日', '点', '分', '秒')
+
+        /** Strict date grammar: ISO-style 4-digit year, 1-2 digit month, and 1-2 digit day(
+                 * separators homogeneous('- or '/'. Ranges/phone numbers don't match(require they don't(. */
+        private val DATE_RE = Regex("^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}$")
+
+        /** Strict clock grammar:H,MM(,SS(: 2-3 colon-separated fields(. */
+        private val TIME_RE = Regex("^\\d{1,2}:\\d{1,2}(:\\d{1,2})?$")
+
         /** Symbol -> Chinese-reading mapping table(Guangrong's DefaultPunctuationNormalizer;139 entries) */
         private val SYMBOL_NAMES: Map<Char, String> = buildSymbolTable()
 
@@ -291,28 +301,30 @@ class TextNormalizer {
             return sb.toString()
         }
 
-        /** Detect whether a digit run is part of a date/time(avoid wrongly converting 2024/03/15, 14:30) */
-        private fun hasDateTimeBoundaries(input: String, start: Int, end: Int): Boolean {
-            // followed by year/month/day, '-' or '/', dot/min/sec, or ':'
-            if (end < input.length) {
-                val c = input[end]
-                if (c == '年' || c == '月' || c == '日' || c == '点' || c == '分' || c == '秒'
-                    || c == ':' || c == '：' || c == '/' || c == '-'
-                ) {
-                    return true
+        /** Detect whether a digit run is part of a true date/time pattern. Bounded:
+                 * preserves ISO dates (4-digit-year-, month-, day-, slash-dates, colon times
+                 * H:MM(:SS(, and Chinese-unit-attached forms (2024年, 3月, 15日(; phone numbers
+                 * (555-123-4567(, ranges (1-2(, and separated numeric identifiers fall through
+                 * to convertNumber() so the oracle never receives raw ASCII digits. */
+                private fun hasDateTimeBoundaries(input: String, start: Int, end: Int): Boolean {
+                    // 1) Chinese calendar/time unit directly attached to this run
+                    if (end < input.length && input[end] in DATETIME_UNITS) return true
+
+                    // 2) part of a full date or clock time: the maximal digit+separator segment
+                    // containing this run must match the strict grammar(no partial adjacency(.
+                    val seg = dateTimeSegment(input, start, end, input.length)
+                    val s = input.substring(seg.first, seg.second)
+                    return s.matches(DATE_RE) || s.matches(TIME_RE)
                 }
-            }
-            // preceded by a digit(multi-part date like 2024-03-15)
-            if (start > 0) {
-                val c = input[start - 1]
-                                if (c == '年' || c == '月' || c == '日' || c == '点' || c == '分' || c == '秒'
-                                    || c == ':' || c == '：' || c == '/' || c == '-'
-                                ) {
-                                    return true
-                                }
-                            }
-            return false
-        }
+
+                /** Maximal run of digits joined only by '-', '/', or ':'(the date/time alphabet(. */
+                private fun dateTimeSegment(input: String, start: Int, end: Int, n: Int): Pair<Int,Int> {
+                    var s = start
+                                        while (s > 0 && (isAsciiDigit(input[s - 1]) || input[s - 1] == '-' || input[s - 1] == '/' || input[s - 1] == ':')) s--
+                    var e = end
+                    while (e < n && (isAsciiDigit(input[e]) || input[e] == '-' || input[e] == '/' || input[e] == ':')) e++
+                    return s to e
+                }
 
         private fun isAsciiDigit(c: Char): Boolean {
             return c in '0'..'9'
