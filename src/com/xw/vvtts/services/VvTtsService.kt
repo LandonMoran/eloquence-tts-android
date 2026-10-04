@@ -24,7 +24,6 @@ import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
 import java.util.HashMap
 import java.util.Locale
-import java.util.concurrent.RejectedExecutionException
 
 /**
  * Eloquence TTS service (openevv port, single engine).
@@ -98,24 +97,21 @@ class VvTtsService : TextToSpeechService() {
     }
 
     override fun onDestroy() {
-        // Drop every queued utterance on teardown. The delivery executor's
-        // thread keeps draining queued jobs even after the service dies ( hot-swap
-        // tears the service down via unbind/destroy without any stop(,( so the
-        // generation gate is the only thing that keeps them from flushing seconds
-        // later: the reported "two voices at once" / "1-10s dead time" /
-        // lock-screen speech arriving late on unlock. Reboot clears them naturally
-        // ( process death kills the queue(; unbind/destroy must too.
+        // Drop every queued utterance on teardown. Synthesis runs inline (the
+        // delivery executor is gone), so there is no queued work left to drain on
+        // teardown and nothing can flush seconds after the service dies.
+        //
+        // The generation gate still drops any in-flight utterance superseded by an
+        // unbind/destroy (hot-swap tears the service down without any stop(). The
+        // "two voices at once" / "1-10s dead time" / late lock-screen speech reports
+        // were queued delivery jobs draining after destroy.
         bumpGeneration()
-        // No aggressive shutdown: TextToSpeechService gets created/destroyed,
-        // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
-        // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
+        // No aggressive shutdown: TextToSpeechService gets created/destroyed
+        // frequently: aggressive shutdown would force the native engine to reload
+        // repeatedly (process restarts are expensive). Let GC reclaim; a leaked
+        // engine handle is acceptable (the handle lives as long as the service
+        // process).
         stopping = true
-        deliveryExecutor.shutdown()
-        try {
-            deliveryExecutor.awaitTermination(250, java.util.concurrent.TimeUnit.MILLISECONDS)
-        } catch (ignore: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
         try {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
@@ -296,26 +292,22 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    /** Queues synthesis with the current cancellation generation; reports an error if shutdown rejects it. */
+    /** Runs synthesis inline with the current cancellation generation: no delivery
+     *  executor, so the callback is never retained past this call and hot-swap
+     *  teardown (unbind/destroy(
+     *  cannot flush stale queued speech later.
+     */
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
-        try {
-            val gen = generation.get()  // snapshot: a stop() while queued must drop this task
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
-        } catch (e: RejectedExecutionException) {
-            Log.w(TAG, "service shutting down;dropping utterance", e)
-            // Framework contract: every onSynthesizeText must terminate the
-            // callback. runSynthesis never runs on this path, so no start()/done()
-            // pair can fire — error() is the designated failure termination.
-            callback.error(TextToSpeech.ERROR_SYNTHESIS)
-        }
+        val gen = generation.get()  // snapshot: a concurrent stop() must drop this task
+        runSynthesis(request, callback, gen, schedAt)
     }
 
-    /**
-     * Synthesizes and delivers paced audio for a queued request, rejecting stale cancellation generations.
+    /** Synthesizes and delivers paced audio for a request, running inline on the
+     *  calling thread and rejecting stale cancellation generations.
      *
-     * @param gen Cancellation generation captured when the request was queued.
-     * @param schedAt Elapsed realtime in milliseconds when the request was scheduled, used for timing logs.
+     *  @param gen Cancellation generation captured at request start.
+     *  @param schedAt Elapsed realtime in milliseconds at request entry, used for timing logs.
      */
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
         val t0 = SystemClock.elapsedRealtime()
@@ -402,9 +394,11 @@ class VvTtsService : TextToSpeechService() {
         }
 
         var started = false
+        var pipeEnded = false
+        var synthFailedOrTruncated = false
         try {
             if (text == null || text.isEmpty()) {
-                return  // finally emits the start+done pair for an empty utterance
+                return  // finally emits the start+error pair for an empty utterance
             }
 
             // emoji expansion now happens per-segment, pitched to the segment's detected dialect
@@ -418,7 +412,8 @@ class VvTtsService : TextToSpeechService() {
 
 
             if (engine == null || !engine!!.isInitialized()) {
-                return  // finally emits the start+done pair for an uninitialized engine
+                synthFailedOrTruncated = true   // null-engine: the pipeline must see error(), not a false-success done()
+                return  // finally emits the start+error pair for an uninitialized engine
             }
 
             val preset = if (voiceProfile != null) voiceProfile!!.preset else 1
@@ -444,8 +439,13 @@ class VvTtsService : TextToSpeechService() {
             // latency must not include the first segment's native synth time.
             // The finally block still emits the start+done pair exactly once.
             if (!started) {
-                callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
+                val verdict = callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
                 started = true
+                if (verdict != TextToSpeech.SUCCESS) {
+                    Log.w(TAG, "callback.start rejected the audio pipe (verdict=$verdict); dropping utterance")
+                    pipeEnded = true
+                    return
+                }
             }
                         for (seg in segments) {
                             // Bail on either signal: stop() (framework( or a generation bump
@@ -454,6 +454,7 @@ class VvTtsService : TextToSpeechService() {
                             if (SystemClock.elapsedRealtime() > uttDeadline) {
 
                                 Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
+                                synthFailedOrTruncated = true   // truncated: error(), not done()
                                 break
                             }
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
@@ -474,7 +475,10 @@ class VvTtsService : TextToSpeechService() {
                 // between swipes" / "fast swipes get clogged" regression).
                 for (chunkText in splitSynthChunks(segText)) {
                     if (stopping || gen != generation.get()) break
-                    if (SystemClock.elapsedRealtime() > uttDeadline) break
+                    if (SystemClock.elapsedRealtime() > uttDeadline) {
+                        synthFailedOrTruncated = true   // truncated: error(), not done()
+                        break
+                    }
                     var textToSynth: String = chunkText
                     val expanded = when (seg.dialect) {
                         LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(chunkText)
@@ -491,43 +495,66 @@ class VvTtsService : TextToSpeechService() {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
                     }
                     if (pcm != null && pcm.size > 0) {
-                    val bytes = shortsToBytes(pcm)
-                    val max = callback.maxBufferSize
-                    // Pace the handoff: never run more than PACE_LEAD_MS of audio ahead of
-                    // playback  otherwise swipes/stops drown in the framework's queue
-                    // Guard: a 0/negative buffer-size report from the framework would
-                    // make `offset += len` never advance -> infinite loop. Skip
-                    // delivery (finally still terminates the pair cleanly).
-                    if (max > 0) {
-                        var offset = 0
-                        while (offset < bytes.size) {
-                            if (stopping) break
-                            val len = Math.min(max, bytes.size - offset)
-                            callback.audioAvailable(bytes, offset, len)
-                            offset += len
-                            pace.handed(len)
-                            hold(pace)
+                        val bytes = shortsToBytes(pcm)
+                        val max = callback.maxBufferSize
+                        // Pace the handoff: never run more than PACE_LEAD_MS of audio ahead of
+                        // playback, otherwise swipes/stops drown in the framework's queue.
+                        // Guard: a 0/negative buffer-size report from the framework would
+                        // make `offset += len` never advance -> infinite loop. Skip
+                        // delivery (finally still terminates the pair cleanly).
+                        if (max > 0) {
+                            var offset = 0
+                            while (offset < bytes.size) {
+                                if (stopping || pipeEnded) break
+                                val len = Math.min(max, bytes.size - offset)
+                                val verdict = callback.audioAvailable(bytes, offset, len)
+                                if (verdict != TextToSpeech.SUCCESS) {
+                                    Log.w(TAG, "callback.audioAvailable killed the pipe (verdict=$verdict); stopping delivery")
+                                    pipeEnded = true
+                                    break
+                                }
+                                offset += len
+                                pace.handed(len)
+                                // hold() also stops sleeping immediately once the pipe is dead, so we
+                                // don't pace-waste seconds on a dead delivery.
+                                hold(pace)
+                            }
                         }
+                    } else {
+                        // Null/empty PCM from the native synth (a failure, not a silence: the
+                        // pipeline must hear error(), not a false-success done().
+                        synthFailedOrTruncated = true
                     }
-                }
                 }
             }
         } catch (e: Throwable) {
             Log.e(TAG, "onSynthesizeText failed", e)
+            // Any audio-path throw is not a success: report error() instead of done().
+            synthFailedOrTruncated = true
         } finally {
                     // Revert the per-utterance override (preserve app-pref state)
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
+
+                    // Once the framework itself killed the pipe (a start()/audioAvailable()
+                    // verdict of STOPPED/ERROR), no further calls on the callback are
+                    // legal: it already knows the pipe died, and a done()/error() would
+                    // be invalid speech on a dead pipe.
+                    if (pipeEnded) return
                     if (!started) {
                         // Playback contract: start() must precede done(), the framework
                         // throws otherwise. One pair per utterance; every path funnels
                         // here, so all silent/empty/early returns get the pair exactly
                         // once. If start() itself fails, done() would also throw (it
                         // requires a prior start), so error() is the contract's failure
-                        // termination -- otherwise the callback is left unterminated.
+                        // termination — otherwise the callback is left unterminated.
                         try {
-                            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+                            val verdict = callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+                            if (verdict != TextToSpeech.SUCCESS) {
+                                Log.w(TAG, "callback.start rejected the pipe (verdict=$verdict); no further calls")
+                                return
+                            }
                         } catch (e: Throwable) {
                             Log.e(TAG, "callback.start failed; terminating with error()", e)
                             try {
@@ -537,15 +564,26 @@ class VvTtsService : TextToSpeechService() {
                             return
                         }
                     }
-                    try {
-                        callback.done()
-                    } catch (e: Throwable) {
-                        // done() after a successful start must not leave a dangling
-                        // utterance: error() is the fallback termination.
-                        Log.e(TAG, "callback.done failed; terminating with error()", e)
+                    if (synthFailedOrTruncated) {
+                        // A truncated/failed synthesis must not be reported as a success: the
+                        // framework listener needs error() so it can retry/announce failure.
+                        Log.w(TAG, "synthesis failed or truncated; reporting error()")
                         try {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
-                        } catch (ignore: Throwable) {
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "callback.error failed", e)
+                        }
+                    } else {
+                        try {
+                            callback.done()
+                        } catch (e: Throwable) {
+                            // done() after a successful start must not leave a dangling
+                            // utterance: error() is the fallback termination.
+                            Log.e(TAG, "callback.done failed; terminating with error()", e)
+                            try {
+                                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                            } catch (ignore: Throwable) {
+                            }
                         }
                     }
                 }
@@ -565,7 +603,6 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
-    private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var stopping = false
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
