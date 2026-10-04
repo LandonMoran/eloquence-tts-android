@@ -2,6 +2,13 @@
 
 > 首个正式发布。版本策略：1.0 → versionCode 2000000001（沿用 r37 占位版（versionCode 2000000000）之后的编号，首个正式版起每次发布 versionCode +1），tag 采用语义化版本（`v1.0`、`v1.1` …）。APK 从 GitHub Releases 直接分发（非 Play 商店）。
 
+## 📦 发布 / 版本契约
+
+- **Tag 语义**：语义化版本（`v1.0`、`v1.1` …），每次发布打对应 tag 并在本文件补发布说明。
+- **versionCode 单调递增**：r37 占位版 `2000000000` 之后，首个正式版 `2000000001`，此后每次发布 `+1`，严禁回退（设备以 versionCode 判定降级,更低版本号不被接受为升级）。
+- **分发通道**：GitHub Releases 直接分发 APK，非 Play 商店；自动更新按设备 ABI 匹配资产,某 ABI 资产缺失时回退为打开 Releases 页。
+- **资产命名契约**：`pickAsset` 精确匹配文件名（`vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`）,发布物文件名不得改动（详见"已知限制"）。
+
 ## ✨ 新特性
 
 - **n-gram 统计分析器（核心）**：拉丁语系检测改为「Unicode 规则 → 内存 n-gram 表 → Lingua 统计」三层架构。n-gram 表常驻内存、零分配 Int-key 打分、加载时按语言做词频归一化，短句与混合文本的拉丁语识别更快更准（德语/法语/西语等 10 种拉丁语言互分改善）。
