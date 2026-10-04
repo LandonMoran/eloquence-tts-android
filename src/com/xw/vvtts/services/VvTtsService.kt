@@ -165,21 +165,42 @@ class VvTtsService : TextToSpeechService() {
     }
 
     /** Records preference directory timestamps and reports changes, including the first observation. */
-    private fun prefsDirsChanged(): Boolean {
+    private fun prefsDirsChanged(): Boolean = synchronized(prefsDirLock) {
 
         var changed = false
-        for (dir in prefsDirs()) {
-            val m = dir.lastModified()
-            val prev = prefsDirMtimes[dir]
-            if (prev == null) { prefsDirMtimes[dir] = m; changed = true; continue }
-            if (m != prev) { prefsDirMtimes[dir] = m; changed = true }
+        // Lock-state flips switch the active storage context;re-read even when
+        // the dir/file timestamps happen to match ( stale values after a config change(.
+        val unlocked = getSystemService(UserManager::class.java)?.isUserUnlocked == true
+        if (lastLockState == null || lastLockState != unlocked) {
+            changed = true
+            lastLockState = unlocked
         }
-        return changed
+        val prefsFiles = arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)
+        for (dir in prefsDirs()) {
+            val dirKey = dir.absolutePath
+            val m = dir.lastModified()
+            val prev = prefsDirMtimes[dirKey]
+            if (prev == null) { prefsDirMtimes[dirKey] = m; changed = true } else if (m != prev) { prefsDirMtimes[dirKey] = m; changed = true }
+            // Directory mtimes only move on entry create/delete/rename;,not in-place
+            // content writes;(track the XML files themselves so Settings UI edits still
+            // land as a change(.
+            for (name in prefsFiles) {
+                val pf = File(dir, "$name.xml")
+                val pm = pf.lastModified()
+                val key = "$dir|$name"
+                val pprev = prefsFileMtimes[key]
+                if (pprev == null) { prefsFileMtimes[key] = pm; changed = true } else if (pm != pprev) { prefsFileMtimes[key] = pm; changed = true }
+            }
+        }
+        changed
     }
 
-    private val prefsDirMtimes = HashMap<File, Long>()
+    private val prefsDirLock = Any()
+    private var lastLockState: Boolean? = null
+    private val prefsDirMtimes = HashMap<String, Long>()
+    private val prefsFileMtimes = HashMap<String, Long>()
 
-    private fun refreshSettings() {
+    private fun refreshSettings() { synchronized(prefsDirLock) {
         if (!settingsDirty && !prefsDirsChanged()) return
         // Clear BEFORE re-reading: a prefs write that lands during the read
         // sets dirty=true again via the listener, so it must not be wiped by a
@@ -196,12 +217,13 @@ class VvTtsService : TextToSpeechService() {
             voiceProfile = VoiceProfile(active)
             restoreLanguageSettings(active.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
             val profile = voiceProfile
-            if (profile != null) engine?.setVoiceProfile(profile)
+            if (profile != null) engine?.setVoiceProfile(profile) else {}
         } catch (t: Throwable) {
             // Re-arm the dirty flag: we cleared it before reading, but the
             // read failed, so the next utterance must retry.
             settingsDirty = true
             Log.e(TAG, "refreshSettings failed", t)
+        }
         }
     }
 
@@ -645,22 +667,29 @@ class VvTtsService : TextToSpeechService() {
         }
 
         private fun mirrorSharedPreferences(from: SharedPreferences,to: SharedPreferences) {
-            val all =from.getAll() ?: return
-            val e = to.edit()
-            e.clear()
-            for ((k, v) in all) {
-                when (v) {
-                    is String -> e.putString(k, v)
-                    is Boolean -> e.putBoolean(k, v)
-                    is Int -> e.putInt(k, v)
-                    is Long -> e.putLong(k, v)
-                    is Float -> e.putFloat(k, v)
-                    is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
-                    else -> {}
+                val all = from.getAll() ?: return
+                // Never mirror an empty/absent store:that would wipe the last good
+                // device snapshot with a blank one;direct-boot access must not assume
+                // the modern prefs exist yet ( first unlock may not have happened(.
+                if (all.isEmpty()) return
+                val e = to.edit()
+                e.clear()
+                for ((k, v) in all) {
+                    when (v) {
+                        is String -> e.putString(k, v)
+                                                is Boolean -> e.putBoolean(k, v)
+                                                is Int -> e.putInt(k, v)
+                                                is Long -> e.putLong(k, v)
+                                                is Float -> e.putFloat(k, v)
+                                                is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
+                        else -> {}
+                    }
                 }
+                // Synchronous+atomic (temp-file write(;the async apply() kill window would
+                // leave a half-written device copy on a locked/zoned write.
+                val ok = e.commit()
+                if (!ok) Log.e(TAG, "mirror commit rejected")
             }
-            e.apply()
-        }
 
         // === Pacing ===
         /** Track how much audio (in ms( has been handed to the framework versus how
