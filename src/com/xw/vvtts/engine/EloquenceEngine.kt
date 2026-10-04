@@ -905,7 +905,6 @@ class EloquenceEngine(context: Context) {
                         worker.handles.clear()
                     }
                 }
-                r
                 }
             }
             }
