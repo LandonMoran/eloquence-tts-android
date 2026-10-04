@@ -4,7 +4,6 @@ on:
   push:
     branches: ['**']
     paths-ignore:
-      - 'oracle/**'
       - '.github/workflows/oracle-dump.yml'
   pull_request:
     branches: [main]
@@ -60,22 +59,30 @@ jobs:
           # Needed by the embeddable compiler when emitting nullability annotations (external funs)
           curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar /tmp/annotations-24.1.0.jar
+          (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
-      - name: Generate keystore
+# CI-only dev keystore: generated per build with a random password;
+# never committed (gitignored). Sideloads fine; never a release identity.
+      - name: Prepare signing keystore
         run: |
-          keytool -genkeypair -v \
-            -keystore vvtts.jks -storepass android123 -keypass android123 \
-            -alias vvtts -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=CI Build,O=Home,C=US"
-
-      - name: Use committed CI keystore
-        run: |
-          cp vvttts-ci.jks vvttts.jks
-          ls -la vvttts.jks
-
-
+          if [ -n "$RELEASE_KEYSTORE_B64" ]; then
+            echo "$RELEASE_KEYSTORE_B64" | base64 -d > vvttts.jks
+            chmod 600 vvttts.jks
+            echo "KS_PASS=${RELEASE_KS_PASS}" >> "$GITHUB_ENV"
+            echo "KEY_PASS=${RELEASE_KEY_PASS}" >> "$GITHUB_ENV"
+          else
+            KS_PASS="$(openssl rand -hex 16)"
+            keytool -genkeypair -v               -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS"               -alias vvttts -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=CI Build,O=Home,C=US"
+            echo "KS_PASS=${KS_PASS}" >> "$GITHUB_ENV"
+            echo "KEY_PASS=${KS_PASS}" >> "$GITHUB_ENV"
+          fi
+          echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          RELEASE_KS_PASS: ${{ secrets.KS_PASS }}
+          RELEASE_KEY_PASS: ${{ secrets.KEY_PASS }}
       - name: Build native bridge (arm64-v8a + armeabi-v7a + x86_64; openevv + JNI core)
         run: |
           ABI=arm64-v8a bash build_native.sh
@@ -85,11 +92,6 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
 
-      - name: Stamp version from tag
-        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-        run: |
-          VERCODE="$(echo "${{ github.ref_name }}" | cut -c2-)"
-          sed -i "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$VERCODE\"/" AndroidManifest.xml
       - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
         run: |
           rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk
@@ -97,8 +99,18 @@ jobs:
           ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvtts-arm64-v8a.apk
           echo "=== Build armeabi-v7a (32-bit devices/emulators) ==="
           # TEST_MIN_API is a test-only override (default 28); MIN_API=25 lets an
-          # API-25 arm32 emulator install this APK.
-          ABI=armeabi-v7a MIN_API="${TEST_MIN_API:-28}" bash build.sh && cp vvtts_signed.apk vvtts-armeabi-v7a.apk
+          # API-25 arm32 emulator install this APK. When the override differs from
+          # 28, patch minSdkVersion in the manifest so aapt packages it (the
+          # documented API-25 emulator lane otherwise fails with
+          # INSTALL_FAILED_OLDER_SDK); restore the tracked manifest afterwards.
+          MIN_API="${TEST_MIN_API:-28}"
+          if [ "$MIN_API" != "28" ]; then
+            sed -i "s/android:minSdkVersion=\"28\"/android:minSdkVersion=\"$MIN_API\"/" AndroidManifest.xml
+          fi
+          ABI=armeabi-v7a MIN_API="$MIN_API" bash build.sh && cp vvtts_signed.apk vvtts-armeabi-v7a.apk
+          if [ "$MIN_API" != "28" ]; then
+            git checkout -- AndroidManifest.xml
+          fi
           echo "=== Build universal (both ABIs) ==="
           ABI=universal bash build.sh && cp vvtts_signed.apk vvtts-universal.apk
           echo "=== Build x86_64 (TEST-ONLY: emulator lab smoke; not a shipping artifact) ==="
@@ -107,8 +119,8 @@ jobs:
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
           KEYSTORE: vvtts.jks
-          KS_PASS: android123
-          KEY_PASS: android123
+          KS_PASS: ${{ env.KS_PASS }}
+          KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
 
       - name: Upload APKs
@@ -139,7 +151,12 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           python3 oracle/merge_build.py oracle/table native/openevv/lang/chs/oracle_chs.c /tmp/oracle_chs_merged.c
           python3 oracle/check_gbk_gate.py /tmp/oracle_chs_merged.c
-          cp /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c
+          if cmp -s /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c; then
+            echo "oracle_chs.c: regenerated content matches committed source (no tracked rewrite)"
+          else
+            echo "oracle_chs.c: regenerated content differs -- updating tracked source (review diff before committing)" >&2
+            cp /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c
+          fi
 
       - name: Build host openevv (enus + chs)
         run: make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv CC=cc LANGS="lang/enus lang/chs" RULES=c CFLAGS=-fPIC build/libevv-enus-chs.a
