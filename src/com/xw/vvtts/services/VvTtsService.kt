@@ -79,10 +79,9 @@ class VvTtsService : TextToSpeechService() {
         registerAllPrefsListeners(device)
         registerAllPrefsListeners(applicationContext!!)
         val eng = acquireProcessEngine(device)
-        engine = if (eng.isInitialized()) eng else null
         engine = eng
-        eng.setVoiceProfile(voiceProfile)
-        val ok = eng.isInitialized()
+        eng?.setVoiceProfile(voiceProfile)
+        val ok = eng != null && eng.isInitialized()
         // Restore the language-detection settings from device-protected storage
         restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
         // Preload Lingua (background thread(
@@ -92,7 +91,7 @@ class VvTtsService : TextToSpeechService() {
         Thread { NgramScorer.load(this) }.start()
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
-        if (eng.isInitialized()) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
+        if (eng != null) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
@@ -285,10 +284,32 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    /** Returns the availability of the requested language without loading a native voice. */
+    /** Loads (warms) the native handle for the requested language when this build ships it. */
     override fun onLoadLanguage(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
-        return onIsLanguageAvailable(language, country, variant)
+        val avail = onIsLanguageAvailable(language, country, variant)
+        if (avail != TextToSpeech.LANG_NOT_SUPPORTED && language != null) {
+            // Warm the engine for the dialect family that owns this language, so the
+            // first utterance doesn't pay the native LPC table load on the hot path.
+            val lang = language.lowercase()
+            val dialect: Int? = when {
+                lang.startsWith("en") -> LanguageDetector.getEnglishDialect()
+                lang.startsWith("es") -> LanguageDetector.getSpanishDialect()
+                lang.startsWith("fr") -> LanguageDetector.getFrenchDialect()
+                lang.startsWith("zh") -> LanguageDetector.getChineseDialect()
+                lang.startsWith("de") -> LanguageDetector.DIALECT_DE_DE
+                lang.startsWith("it") -> LanguageDetector.DIALECT_IT_IT
+                lang.startsWith("ja") -> LanguageDetector.DIALECT_JA_JP
+                lang.startsWith("pl") -> LanguageDetector.DIALECT_PL_PL
+                lang.startsWith("pt") -> LanguageDetector.DIALECT_PT_BR
+                lang.startsWith("fi") -> LanguageDetector.DIALECT_FI_FI
+                else -> null
+            }
+            if (dialect != null) synchronized(engineCallLock) {
+                engine?.warmupDialect(dialect)
+            }
+        }
+        avail
         }
     }
 
@@ -738,14 +759,21 @@ class VvTtsService : TextToSpeechService() {
             @Volatile private var processEngine: EloquenceEngine? = null
 
 
-            private fun acquireProcessEngine(ctx: Context): EloquenceEngine {
-                processEngine?.let { return it }
+            private fun acquireProcessEngine(ctx: Context): EloquenceEngine? {
+                processEngine?.let { if (it.isInitialized()) return it }
                 synchronized(engineLock) {
                     val cur = processEngine
-                    if (cur != null) return cur
+                    if (cur != null && cur.isInitialized()) return cur
+                    // The cached engine is dead or never initialized (e.g. a native
+                    // crash left it unusable): drop the reference BEFORE rebuilding so
+                    // a concurrent reader never hands out the stale engine.
+                    processEngine = null
                     val fresh = EloquenceEngine(ctx)
-                    if (fresh.initialize()) processEngine = fresh
-                    return fresh
+                    if (fresh.initialize()) {
+                        processEngine = fresh
+                        return fresh
+                    }
+                    return null
                 }
             }
 
