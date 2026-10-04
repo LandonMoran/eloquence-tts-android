@@ -44,6 +44,10 @@ class EloquenceEngine(context: Context) {
     @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "elq-synth").apply { isDaemon = true }
     }
+    // Long native retires ( ~2s settlement waits( run here so they never stall the single synth thread
+    @Volatile private var retireExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "elq-retire").apply { isDaemon = true }
+    }
     @Volatile private var hangDetected = false
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
     @Volatile private var engineEpoch = 0
@@ -641,9 +645,9 @@ class EloquenceEngine(context: Context) {
                 // Native retirement is permanent. The next utterance opens a
                 // fresh session and must reapply its voice and parameters.
                 if (coreHandles.remove(dialect, handle)) {
-                    pendingEciVoiceByDialect.remove(dialect)
-                    lastParamSig = null
-                    VvttsCore.shutdown(handle)
+                pendingEciVoiceByDialect.remove(dialect)
+                lastParamSig = null
+                retireExecutor.execute { VvtttsCore.shutdown(handle) }
                 }
                 return@synthWithTimeout null
             }
