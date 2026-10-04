@@ -40,7 +40,8 @@ class VvttsCore {
             }
         }
 
-       /** Synthesize.textBytes is pre-encoded.Returns a PCM short array. */
+       /** Pre-encoded text to PCM; null means no audio/cancelled, empty means
+        * the session is retired and must be evicted and shut down. */
         @JvmStatic
         fun synth(handle: Long, dialect: Int, text: ByteArray, charsetId: Int, outPath: String?): ShortArray? {
             return try {

@@ -637,6 +637,16 @@ class EloquenceEngine(context: Context) {
             // DSP mode read live from prefs so both the Settings test path and the
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             runCatching { outFile.delete() }
+            if (pcm != null && pcm.isEmpty()) {
+                // Native retirement is permanent. The next utterance opens a
+                // fresh session and must reapply its voice and parameters.
+                if (coreHandles.remove(dialect, handle)) {
+                    pendingEciVoiceByDialect.remove(dialect)
+                    lastParamSig = null
+                    VvttsCore.shutdown(handle)
+                }
+                return@synthWithTimeout null
+            }
             if (pcm != null && pcm.size > 0) {
                 pcm = applyVolume(pcm, volume)
                 lastParamSig = sig  // only admit success:failed param writes must retry

@@ -143,6 +143,7 @@ typedef struct {
     size_t  pcmLen, pcmCap;
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
+    int     retired;            /* never drive this engine again */
     volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
 } VvtsSession;
 
@@ -172,12 +173,14 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     return eciDataProcessed;
 }
 
-static void vv_wait_till_done(VvtsSession *s) {
+#define VV_SETTLE_MAX_ITERS 4000  /* 0.5 ms each: ~2 s before retirement */
+
+static int vv_wait_till_done(VvtsSession *s) {
     /* openevv's engine cannot abandon an utterance: eciStop stops the
      * samples but the synthesis thread still has to finish it.  Poll
      * eciSpeaking (as the old bridge did for Apple's object.. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
+    for (int i = 0; i < VV_SETTLE_MAX_ITERS && !s->cancel && s->hECI && eciSpeaking(s->hECI); i++) {
         if ((i % 100) ==  0)
             __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
         /* Polling is what collects the engine's queued samples: the engine
@@ -189,22 +192,21 @@ static void vv_wait_till_done(VvtsSession *s) {
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
     s->synthBusy =  0;
+    if (s->cancel) return 0; /* stopped, but may settle and be reused later */
+    if (!s->hECI || !eciSpeaking(s->hECI)) return 1;
+    s->retired = 1;
+    return 0;
 }
-
-#define VV_SETTLE_MAX_ITERS 40000  /* 0.5 ms each: ~20 s of drain before retirement */
 
 /* vv_settle: re-entering synthesis must never touch a session the engine's
  * thread still owns.  The previous native operation counts as finished only
  * when eciSpeaking() reports quiet --that is the DEFINITIVE completion
  * signal (one session must never be driven from two threads concurrently).
- * The generous bound guards against an engine wedge: if quiet cannot be
- * proven within it, the session is permanently retired -- its ECI handle is
- * dropped so nothing can ever drive it again.  The handle is intentionally
- * NOT eciDelete'd on retirement: the engine's own thread may still own it,
- * so deleting would be use-after-free; a single leaked handle (bounded by
- * the number of retired sessions) is cheaper than a crash.  The session
- * memory itself is only freed by nativeShutdown once the worker has gone
- * quiet.  A timeout never becomes permission to reuse the same session. */
+ * The bound guards against an engine wedge: if quiet cannot be proven,
+ * retain the handle and retire the session. nativeShutdown may reclaim it
+ * only after quiet is proven. Ignore cancel here: a previous stop must
+ * still drain before reuse, and shutdown must wait even after setting cancel.
+ * A timeout never becomes permission to reuse the same session. */
 static int vv_settle(VvtsSession *s) {
     if (!s->hECI) return 1; /* nothing pending on a dead session */
     for (int i = 0; i < VV_SETTLE_MAX_ITERS && s->hECI && eciSpeaking(s->hECI); i++) {
@@ -213,8 +215,8 @@ static int vv_settle(VvtsSession *s) {
     }
     if (!s->hECI) return 1;
     if (!eciSpeaking(s->hECI)) return 1; /* previous op definitively finished */
-    /* Engine still speaking past the generous bound: permanently retire. */
-    s->hECI = NULL;
+    /* Keep the handle so shutdown can still prove the engine is quiet. */
+    s->retired = 1;
     return 0;
 }
 
@@ -320,6 +322,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return NULL;
+    /* Empty PCM is the retirement status; NULL is cancellation/no audio. */
+    if (s->retired) return (*env)->NewShortArray(env, 0);
     if (!text) return NULL;
 
     jsize len = (*env)->GetArrayLength(env, text);
@@ -340,13 +344,12 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
      * the previous engine thread may STILL own this session.  Prove it has
      * DEFINITIVELY finished BEFORE mutating text/pcm (or resetting the cancel
      * flag) -- one session must never be driven from two threads concurrently.
-     * If quiet cannot be proven within a generous bound the session is
-     * permanently retired and this call returns NULL so the caller gets a
-     * fresh session/error path. */
+     * If quiet cannot be proven within the bound, return the retirement
+     * status so the caller evicts this session before the next utterance. */
     if (!vv_settle(s)) {
-        __android_log_print(ANDROID_LOG_ERROR, "SPD", "settle timeout: session retired, returning NULL");
-        return NULL;
-
+        free(buf);
+        __android_log_print(ANDROID_LOG_ERROR, "SPD", "settle timeout: session retired");
+        return (*env)->NewShortArray(env, 0);
     }
     if (s->text) free(s->text);
     s->text = buf;
@@ -405,7 +408,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 clock_gettime(CLOCK_MONOTONIC, &st1);
                 et_synthesize(s->hECI);
                 clock_gettime(CLOCK_MONOTONIC, &st2);
-                vv_wait_till_done(s);
+                if (!vv_wait_till_done(s))
+                    return s->retired ? (*env)->NewShortArray(env, 0) : NULL;
                 clock_gettime(CLOCK_MONOTONIC, &st3);
                 long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
@@ -437,7 +441,7 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param, jint value) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
+    if (!s || !s->hECI || s->retired) return -1;
     return eciSetVoiceParam(s->hECI, voice, param,
                             vv_clamp_voice_param(param, value));
 }
@@ -446,7 +450,7 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeGetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
+    if (!s || !s->hECI || s->retired) return -1;
     return eciGetVoiceParam(s->hECI, voice, param);
 }
 
@@ -454,7 +458,7 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
         JNIEnv *env, jclass cls, jlong handle, jint param, jint value) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
+    if (!s || !s->hECI || s->retired) return -1;
     return eciSetParam(s->hECI, param, value);
 }
 
@@ -466,7 +470,7 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetStandardVoice(
         JNIEnv *env, jclass cls, jlong handle, jint voiceNumber) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
+    if (!s || !s->hECI || s->retired) return -1;
     {
         int from = voiceNumber;
         if (from < 1) from = 1;
@@ -480,7 +484,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return;
-    s->cancel = 1; /* let the wait loop abort on the next 2 ms tick */
+    s->cancel = 1; /* let the wait loop abort on the next 0.5 ms tick */
     eciStop(s->hECI); /* stops handing samples; the thread still settles */
 }
 
@@ -494,9 +498,11 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
         eciStop(s->hECI);
         /* let the synthesis thread finish its current utterance before we
          * free the session it is still pointing at */
-        for (int i = 0; i < 4000 && eciSpeaking(s->hECI) && !s->cancel; i++) {
-            struct timespec ts = {0, 500000L}; /* 0.5 ms */
-            nanosleep(&ts, NULL);
+        if (!vv_settle(s)) {
+            /* The engine can still reference callback data, chunk, text and
+             * PCM. Retain the entire session rather than freeing live memory. */
+            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown timeout: retaining retired session");
+            return;
         }
         eciDelete(s->hECI);
     }
