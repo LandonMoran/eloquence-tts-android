@@ -647,7 +647,7 @@ class EloquenceEngine(context: Context) {
                 if (coreHandles.remove(dialect, handle)) {
                 pendingEciVoiceByDialect.remove(dialect)
                 lastParamSig = null
-                retireExecutor.execute { VvtttsCore.shutdown(handle) }
+                retireExecutor.execute { VvttsCore.shutdown(handle) }
                 }
                 return@synthWithTimeout null
             }
