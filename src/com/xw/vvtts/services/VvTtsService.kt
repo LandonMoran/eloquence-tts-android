@@ -104,11 +104,12 @@ class VvTtsService : TextToSpeechService() {
         // be parked inside a native call (up to HANG_TIMEOUT_S(; only the flag-based
         // engine.stop() makes that call return early, so the executor can actually
         // drain instead of timing out at 250 ms. The reference read is #12's
-        // currentEngine() — never wait on engineCallLock here:he synth path no
-        // longer holds it, and waiting would stall teardown behind native audio.
+        // engine.stop() under engineCallLock unwedges the parked native call,and
+        //the bounded drain can finish instead of timing out. the synth path no
+        //longer holds the lock, so waiting here is safe of deadlock ho
 
 
-        try { currentEngine()?.stop() } catch (ignore: Throwable) {}
+        try { synchronized(engineCallLock) { engine?.stop() } } catch (ignore: Throwable) {}
         deliveryExecutor.shutdown()
         try {
             // Bounded drain:a healthy teardown finishes well under a second (native
@@ -128,7 +129,7 @@ class VvTtsService : TextToSpeechService() {
         // HANG_TIMEOUT_S in native synthesis while the user has already moved on (and,
         // sincethe engine is process-shared, that saturated worker blocks other
         // binds' first speech too(.
-        try { currentEngine()?.stop() } catch (ignore: Throwable) {}
+        try { synchronized(engineCallLock) { engine?.stop() } } catch (ignore: Throwable) {}
         return super.onUnbind(intent)
     }
 
