@@ -300,7 +300,7 @@ class VvTtsService : TextToSpeechService() {
             // when the shipped Spanish voices cover only ES/US/MX.
             val countryShipped = CAPABLE_VOICES.any {
                 it.locale.language.equals(lang, ignoreCase = true) &&
-                    (it.locale.country.equals(country, ignoreCase = true) || it.locale.isO3Country.equals(country, ignoreCase = true)))
+                    (it.locale.country.equals(country, ignoreCase = true) || it.locale.isO3Country.equals(country, ignoreCase = true))
             }
             if (countryShipped) {
                 return if (hasVariant) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE else TextToSpeech.LANG_COUNTRY_AVAILABLE
