@@ -192,6 +192,20 @@ class VvTtsService : TextToSpeechService() {
             fallback
         }
     }
+    /** Normalizes ISO-3 (or legacy 2-letter) language codes to the catalog's 2-letter form. */
+    private fun normalizeLang2(s: String): String = when (s) {
+        "eng" -> "en"; "deu" -> "de"; "ger" -> "de"; "fra" -> "fr"; "fre" -> "fr"
+        "spa" -> "es"; "ita" -> "it"; "jpn" -> "ja"; "pol" -> "pl"; "por" -> "pt"
+        "fin" -> "fi"; "zho" -> "zh"; "chi" -> "zh"
+        else -> s
+    }
+    /** Normalizes ISO-3 (or legacy 2-letter) country codes to the catalog's 2-letter form. */
+    private fun normalizeCty2(s: String): String = when (s) {
+        "usa" -> "us"; "gbr" -> "gb"; "uk" -> "gb"; "deu" -> "de"; "fra" -> "fr"
+        "can" -> "ca"; "esp" -> "es"; "mex" -> "mx"; "ita" -> "it"; "jpn" -> "jp"
+        "pol" -> "pl"; "bra" -> "br"; "fin" -> "fi"; "chn" -> "cn"; "twn" -> "tw"
+        else -> s
+    }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
         return voiceSafe(arrayOf("eng", "USA", "")) {
@@ -222,8 +236,8 @@ class VvTtsService : TextToSpeechService() {
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
-        val lang = (language ?: "").lowercase()
-        val c = (country ?: "").uppercase()
+        val lang = (language ?: "").lowercase().let(::normalizeLang2)
+        val c = (country ?: "").lowercase().let(::normalizeCty2).uppercase()
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
@@ -280,21 +294,20 @@ class VvTtsService : TextToSpeechService() {
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
-        val lang = language.lowercase()
-        val supported = lang.startsWith("en") || lang.startsWith("de")
-                || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("spa") || lang.startsWith("it")
-                || lang.startsWith("ja") || lang.startsWith("jpn") || lang.startsWith("pl") || lang.startsWith("pol")
-                || lang.startsWith("pt") || lang.startsWith("por") || lang.startsWith("fi")
-                || lang.startsWith("zh")
-        if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
-        if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
-
-        // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
-        val hasCountry = country != null && country.isNotEmpty()
-        val hasVariant = variant != null && variant.isNotEmpty()
-        if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
-        if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
-        return TextToSpeech.LANG_AVAILABLE
+        val lang = normalizeLang2(language.lowercase())
+        val cty = country?.lowercase()?.let(::normalizeCty2)?.takeIf { it.isNotEmpty() }?.uppercase()
+        // No advertised voice carries a variant: anything non-empty is unsupported.
+        if (variant != null && variant.isNotEmpty()) return TextToSpeech.LANG_NOT_SUPPORTED
+        // Availability = catalog-only: the same tuples as onGetVoices (build_native.sh LANGS.
+        val combos = setOf(
+            "en|US", "en|GB", "de|DE", "fr|FR", "fr|CA", "es|ES", "es|US", "es|MX",
+            "it|IT", "ja|JP", "pl|PL", "pt|BR", "fi|FI", "zh|CN")
+        if (cty != null) {
+            return if (combos.contains("$lang|$cty")) TextToSpeech.LANG_COUNTRY_AVAILABLE
+            else TextToSpeech.LANG_NOT_SUPPORTED
+        }
+        return if (combos.any { it.startsWith("$lang|") }) TextToSpeech.LANG_AVAILABLE
+        else TextToSpeech.LANG_NOT_SUPPORTED
         }
     }
 
