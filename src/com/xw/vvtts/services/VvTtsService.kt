@@ -567,6 +567,9 @@ class VvTtsService : TextToSpeechService() {
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var stopping = false
+    /** Signals the pacing wait in hold(): onStop()/bumpGeneration() notifyAll()
+     *  so a cancellation interrupts the artificial audio-duration sleep at once. */
+    private val pacingMonitor = Any()
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
     private val generation = AtomicLong(0)
@@ -576,12 +579,14 @@ class VvTtsService : TextToSpeechService() {
     private fun bumpGeneration() {
         stopping = true
         generation.incrementAndGet()
+        synchronized(pacingMonitor) { pacingMonitor.notifyAll() }  // wake the pacing wait now
         Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
         /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
+            synchronized(pacingMonitor) { pacingMonitor.notifyAll() }  // wake the pacing wait so cancellation is immediate
             try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
         }
 
@@ -655,10 +660,17 @@ class VvTtsService : TextToSpeechService() {
         private fun hold(pace: Pace) {
             var over = pace.aheadMs() - PACE_LEAD_MS
             while (over > 0L && !stopping) {
-                try {
-                    Thread.sleep(minOf(over, 20L))
-                } catch (interrupted: InterruptedException) {
-                    break
+                // Monitor-wait instead of a raw sleep: onStop()/bumpGeneration()
+                // notifyAll() so a stop interrupts the artificial pacing period
+                // immediately instead of only after the sleep interval ends.
+                synchronized(pacingMonitor) {
+                    if (!stopping) {
+                        try {
+                            pacingMonitor.wait(minOf(over, 20L))
+                        } catch (interrupted: InterruptedException) {
+                            break
+                        }
+                    }
                 }
                 over = pace.aheadMs() - PACE_LEAD_MS
             }
