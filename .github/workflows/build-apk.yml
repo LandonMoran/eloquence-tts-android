@@ -57,6 +57,7 @@ jobs:
           fetch_jar /tmp/trove4j-1.0.20200330.jar /maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
           fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
           fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
+          (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
       - name: Generate keystore
         run: |
