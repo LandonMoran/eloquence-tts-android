@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
  * The index order (0..7) MUST match LanguageDetector.getEnabledLanguageEnums():
  * EN, DE, FR, ES, IT, PT, FI, PL.
  *
- * Primary path on the delivery thread;Lingua is demoted to ambiguous-only
+ * Primary path on the delivery thread; Lingua is demoted to ambiguous-only
  * fallback. Scores are sum-of-frequencies over present n-grams, normalized
  * by hit count;a 10% margin gate sends uncertain runs back to Lingua.
  */
@@ -24,7 +24,8 @@ object NgramScorer {
 
     private val unigramMaps = arrayOfNulls<HashMap<Int, Float>>(8)
     private val bigramMaps = arrayOfNulls<HashMap<Int, Float>>(8)
-    private val totals = FloatArray(8)
+    private val unigramTotals = FloatArray(8)
+    private val bigramTotals = FloatArray(8)
     @Volatile private var ready = false
 
     @Synchronized
@@ -32,34 +33,41 @@ object NgramScorer {
         if (ready) return
         // Clear any partial state left by a failed earlier load, so a retry
         // doesn't double-count entries for languages that already got data.
+
         unigramMaps.fill(null)
         bigramMaps.fill(null)
-        totals.fill(0f)
+        unigramTotals.fill(0f)
+        bigramTotals.fill(0f)
         try {
             val raw = context.assets.open("ngram_uni_bi.tsv.gz")
             BufferedReader(InputStreamReader(GZIPInputStream(raw), "UTF-8")).use { reader ->
-            while (true) {
-                val line = reader.readLine()?: break
-                val fields = line.split('\t')
-                if (fields.size != 4) continue
-                val idx = LANG_CODES.indexOf(fields[0])
-                if (idx < 0) continue
-                val freq = fields[2].toIntOrNull() ?: 0
-                if (freq <=0) continue
-                totals[idx] += freq.toFloat()
-                val ngram = fields[3]
-                val key = keyOf(ngram)
-                if (key < 0) continue
-                val maps = if (fields[1] == "unigrams") unigramMaps else bigramMaps
-                val map = maps[idx]
-                if (map == null) {
-                    val fresh = HashMap<Int, Float>(64)
-                    fresh.put(key, freq.toFloat())
-                    maps[idx] = fresh
-                } else {
-                    map.put(key, freq.toFloat())
+                while (true) {
+                    val line = reader.readLine()?: break
+                    val fields = line.split('\t')
+                    if (fields.size != 4) continue
+                    val idx = LANG_CODES.indexOf(fields[0])
+                    if (idx < 0) continue
+                    val freq = fields[2].toIntOrNull() ?: 0
+                    if (freq <=0) continue
+                    val isUni = fields[1] == "unigrams"
+                    if (isUni) unigramTotals[idx] += freq.toFloat() else bigramTotals[idx] += freq.toFloat()
+                    val ngram = fields[3]
+                    val key = keyOf(ngram)
+                    if (key < 0) continue
+                    val maps = if (isUni) unigramMaps else bigramMaps
+
+
+
+
+                    val map = maps[idx]
+                    if (map == null) {
+                        val fresh = HashMap<Int, Float>(64)
+                        fresh.put(key, freq.toFloat())
+                        maps[idx] = fresh
+                    } else {
+                        map.put(key, freq.toFloat())
+                    }
                 }
-            }
             }
             normalizeAll()
             ready = true
@@ -71,24 +79,28 @@ object NgramScorer {
     }
 
     private fun normalizeAll() {
-        for (idx in 0..7) {
-            val t = totals[idx]
-            if (t <=0f) continue
-            unigramMaps[idx]?.let { m ->
-                // Entry.setValue does NOT touch modCount, so in-place normalization
-                // is safe while iterating (HashMap forbids put/remove here — that
-                // would throw ConcurrentModificationException on the next next()).
-                val it = m.entries.iterator()
-                while (it.hasNext()) {
-                    val e = it.next()
-                    e.setValue(e.value / t)
+        for (idx in   0..7) {
+            val ut = unigramTotals[idx]
+            if (ut >   0f) {
+                unigramMaps[idx]?.let { m ->
+                    // Entry.setValue does NOT touch modCount, so in-place normalization
+                    // is safe while iterating (HashMap forbids put/remove here  that
+                    // would throw ConcurrentModificationException on the next next()).
+                    val it = m.entries.iterator()
+                    while (it.hasNext()) {
+                        val e = it.next()
+                        e.setValue(e.value / ut)
+                    }
                 }
             }
-            bigramMaps[idx]?.let { m ->
-                val it = m.entries.iterator()
-                while (it.hasNext()) {
-                    val e = it.next()
-                    e.setValue(e.value / t)
+            val bt = bigramTotals[idx]
+            if (bt >   0f) {
+                bigramMaps[idx]?.let { m ->
+                    val it = m.entries.iterator()
+                    while (it.hasNext()) {
+                        val e = it.next()
+                        e.setValue(e.value / bt)
+                    }
                 }
             }
         }
@@ -104,9 +116,9 @@ object NgramScorer {
         val unis = unigramMaps[idx]
         val bis = bigramMaps[idx]
         if (unis == null && bis == null) return -1f
-        var score = 0.0f
-        var hits = 0
-        var i = 0
+        var score =   0.0f
+        var hits =   0
+        var i =   0
         val n = text.length
         val chars = text.toCharArray()
         while (i < n) {
@@ -115,7 +127,7 @@ object NgramScorer {
                 score += v
                 hits++
             }
-            if (i + 1 < n) {
+            if (i +   1 < n) {
                 val bk =(c shl 16) or chars[i + 1].code
                 bis?.get(bk)?.let { v ->
                     score += v
@@ -124,7 +136,7 @@ object NgramScorer {
             }
             i++
         }
-        return if (hits == 0) -1f else score / hits
+        return if (hits ==0) -1f else score / hits
     }
 
     /** Returns language index 0..7 (LANG_CODES order) or -1 when unsure/tables unloaded. */
@@ -133,11 +145,11 @@ object NgramScorer {
         var best = -1
         var bestScore =0.0f
         var second =0.0f
-        var i = 0
+        var i =0
         while (i < 8) {
             if (enabled.contains(LANG_CODES[i])) {
                 val s = scoreText(text, i)
-                if (s >= 0) {
+                if (s >=0) {
                     if (s > bestScore) {
                         second = bestScore
                         bestScore = s
@@ -150,7 +162,7 @@ object NgramScorer {
             i++
         }
         if (best < 0) return -1
-        if (bestScore > 0 && bestScore - second < bestScore * 0.10f) return -1
+        if (bestScore >0 && bestScore - second < bestScore *   0.10f) return -1
         return best
     }
 }

@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: LandonMoran/eloquence-tts-android
+          repository: ${{ github.repository }}
           ref: oracle-dev
           fetch-depth: 1
       - name: Fetch pieces
@@ -26,28 +26,38 @@ jobs:
           set -o pipefail
           cd pieces
           : > "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
-          for d in 1 2 3 4; do cat "oracle-piece-zh-cn-p$d/output.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
+          for d in 1 2 3 4; do
+            f="oracle-piece-zh-cn-p$d/output.tsv"
+            [ -f "$f" ] || { echo "FATAL: missing $f"; exit 1; }
+            cat "$f"
+          done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
           : > "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
-          for d in 1 2 3 4; do cat "oracle-piece-zh-tw-p$d/output.tsv"; done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          for d in 1 2 3 4; do
+            f="oracle-piece-zh-tw-p$d/output.tsv"
+            [ -f "$f" ] || { echo "FATAL: missing $f"; exit 1; }
+            cat "$f"
+          done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
+          [ -f "oracle-piece-ko-p1/output.tsv" ] || { echo "FATAL: missing oracle-piece-ko-p1/output.tsv"; exit 1; }
           cp "oracle-piece-ko-p1/output.tsv" "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
+          [ -f "oracle-piece-ja-p1/output.tsv" ] || { echo "FATAL: missing oracle-piece-ja-p1/output.tsv"; exit 1; }
           cp "oracle-piece-ja-p1/output.tsv" "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
           wc -l "$GITHUB_WORKSPACE/oracle/corpus"/*.tsv
       - name: Validate oracle tables
         run: |
           set -o pipefail
           cd "$GITHUB_WORKSPACE/oracle/corpus"
-          ok=0
+          ok=1
           for f in zh-cn-hanzi.tsv zh-tw-hanzi.tsv ko-sample.tsv ja-sample.tsv; do
             pcm=$(grep -c '^pcm' "$f" || true)
             nonzero=$(awk '/^pcm/{if ($2 > 0) n++} END{print n+0}' "$f")
             echo "$f: pcm_rows=$pcm nonzero=$nonzero"
-            if [ "$nonzero" -gt 0 ]; then ok=1; fi
+            if [ "$nonzero" -eq 0 ]; then ok=0; fi
           done
           if [ "$ok" -eq 0 ]; then
-            echo "FATAL: no dialect produced waveform output (all zero)"
+            echo "FATAL: at least one table produced no waveform output (all zero)"
             exit 1
           fi
-          echo "VALIDATE-OK: all four tables produced audio"
+          echo "VALIDATE-OK: every table produced audio"
       - name: Upload oracle tables
         uses: actions/upload-artifact@v4
         with:
