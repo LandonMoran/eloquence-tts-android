@@ -443,7 +443,7 @@ class EloquenceEngine(context: Context) {
             } catch (ignore: RejectedExecutionException) {
                 // A retired worker may still be using its handles; its in-flight task
                 // frees them on the owning thread once it returns (see synthWithTimeout.
-
+            }
             // Retire this worker so no fresh work lands on a closing executor; the
             // replacement starts with clean per-worker caches (fresh handles begin at the
             // engine-default voice, so no stale voice/param state can leak across an open).
