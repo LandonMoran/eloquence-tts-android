@@ -353,7 +353,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *rs = NULL;
         size_t outLen = 0;
         vv_trim_silence(pcm, &samples);
-        if (vv_resample_4x(pcm, samples, &rs,,&outLen) !=
+        if (vv_resample_4x(pcm, samples, &rs, &outLen) !=
                         0 || !rs || outLen == 0) {
                     /* #137: never fall back to the engine's native 11,025 Hz -- Kotlin
                      * always advertises 44,100; wrong-rate output is a format violation. */
@@ -413,7 +413,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
             short *rs = NULL;
                         size_t outLen = 0;
                         vv_trim_silence(s->pcm, &s->pcmLen);
-            if (vv_resample_4x(s->pcm, s->pcmLen, &rs,,&outLen) != 0 || !rs || outLen == 0) {
+            if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0 || !rs || outLen == 0) {
                             /* #137: resampler failure is synthesis failure -- never silently return
                              * the engine's native 11,025 Hz PCM while Kotlin always advertises 44,100. */
                             __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "44.1k resampler failed: refusing to return 11.025k PCM (#137)");
