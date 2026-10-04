@@ -198,7 +198,7 @@ class EloquenceEngine(context: Context) {
                 if (e.word.isEmpty()) continue
                 val flag = if (e.caseSensitive) "" else "(?i)"
                 val re = Regex(flag + "\\b" + Regex.escape(e.word) + "\\b")
-                t = re.replace(t,  e.spoken)
+                t = re.replace(t) { e.spoken }
             }
             return t
         }
