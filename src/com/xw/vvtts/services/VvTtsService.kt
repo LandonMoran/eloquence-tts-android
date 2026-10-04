@@ -294,8 +294,19 @@ class VvTtsService : TextToSpeechService() {
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
         val hasVariant = variant != null && variant.isNotEmpty()
-        if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
-        if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
+        if (hasCountry) {
+            // #18: the registry is the single source of truth for countries, too:
+            // requesting ("spa","ARG") must not claim LANG_COUNTRY_AVAILABLE
+            // when the shipped Spanish voices cover only ES/US/MX.
+            val countryShipped = CAPABLE_VOICES.any {
+                it.locale.language.equals(lang, ignoreCase = true) &&
+                    (it.locale.country.equals(country, ignoreCase = true) || it.locale.isO3Country.equals(country, ignoreCase = true)))
+            }
+            if (countryShipped) {
+                return if (hasVariant) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE else TextToSpeech.LANG_COUNTRY_AVAILABLE
+            }
+            return TextToSpeech.LANG_AVAILABLE
+        }
         return TextToSpeech.LANG_AVAILABLE
         }
     }
