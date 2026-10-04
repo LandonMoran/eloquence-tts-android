@@ -306,7 +306,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
  * Kotlin wrapper can distinguish "engine state invalidated" from the ordinary
  * "no audio" null,and drop/rebuild its cached handle.  (Contract: null
  * = no audio,, non-empty = PCM,, empty array = engine state poisoned(. */
-static void vv_fail_session(VvtsSession *s() {
+static void vv_fail_session(VvtsSession *s) {
     /* Poisoned sessions keep hECI alive: shutdown must still be able to
      * eciStop/eciDelete it; only the reusable state is torn down here, so
      * a later call on the same handle answers the sentinel instead. */
@@ -315,8 +315,8 @@ static void vv_fail_session(VvtsSession *s() {
     s->synthBusy = 0;
 }
 
-static jshortArray vv_empty_result(JNIEnv *env() {
-    jshortArray out = (*env)->NewShortArray(env, 0;
+static jshortArray vv_empty_result(JNIEnv *env) {
+    jshortArray out = (*env)->NewShortArray(env,  0);
     if ((*env)->ExceptionCheck(env)) {   /* OOME even on a 0-len array */
         (*env)->ExceptionClear(env);
         return NULL;
