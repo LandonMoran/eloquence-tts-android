@@ -397,7 +397,7 @@ class VvTtsService : TextToSpeechService() {
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
-        synchronized(engineCallLock){ 
+        synchronized(engineCallLock){
         refreshSettings()
         synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()

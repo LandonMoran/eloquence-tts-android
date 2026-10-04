@@ -271,6 +271,10 @@ class TextNormalizer {
             if (t.isEmpty()) return DIGIT_CHARS[0]
 
             // group every 4 digits(right to left)
+            // fall back to digit-by-digit when digit run exceeds the group-unit table
+
+            if (t.length > 4 * GROUP_UNITS.size) return toChineseDigits(t)
+
             val groups = ArrayList<String>()
             var rest = t
             while (rest.isNotEmpty()) {
