@@ -649,8 +649,12 @@ class EloquenceEngine(context: Context) {
     private fun mapUiPitchToKona(uiPitch: Int, basePitch: Int): Int {
         // uiPitch 50 = neutral (voice's default pitchBase(; 0 = -30; 100 = +30
         val offset = uiPitch - 50
-        val pitch = basePitch + Math.round(offset * 0.6).toInt()
-        return coerceIn(pitch, 40, 120)
+        val requested = basePitch + Math.round(offset * 0.6).toInt()
+        val pitch = coerceIn(requested, 40, 120)
+        if (pitch != requested) {
+            Log.w(TAG, "pitchBase $requested clamped to $pitch (engine range 40..120)")
+        }
+        return pitch
     }
 
     /** Set the voice preset (1-8() */
@@ -661,9 +665,14 @@ class EloquenceEngine(context: Context) {
     }
 
     /** Custom pitch mode (driven directly by the UI slider( */
-    fun setCustomPitch(pitch: Int) {
-        customPitch = coerceIn(pitch, 0, 100)
+    fun setCustomPitch(pitch: Int): Int {
+        val effective = coerceIn(pitch, 0, 100)
+        if (effective != pitch) {
+            Log.w(TAG, "setCustomPitch: requested $pitch clamped to $effective (range 0..100)")
+        }
+        customPitch = effective
         voiceCustom = true
+        return effective
     }
 
     fun getPendingPitchFactor(): Float = pendingPitchFactor
