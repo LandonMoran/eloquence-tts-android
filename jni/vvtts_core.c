@@ -198,13 +198,20 @@ static void vv_wait_till_done(VvtsSession *s) {
         iters++;
     }
     if (s->hECI && eciSpeaking(s->hECI)) {
-        /* Engine wedged: never drive this session again (its thread may still
-         * own text/pcm).  Keep the handle so shutdown can prove the engine
-         * quiet BEFORE freeing -- NULLing it here makes shutdown skip its
-         * drain and free live memory the worker still owns (use-after-free). */
-        __android_log_print(ANDROID_LOG_ERROR, "SPD", "wait_till_done timeout: session retired");
-        s->retired = 1;
-    }
+            if (s->cancel) {
+                /* Cancellation is an abort request, not a wedge: stop polling
+                 * now and leave the session alive so shutdown can prove the engine
+                 * quiet BEFORE freeing (or a later synth can settle into it). */
+                __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_till_done cancelled: session kept alive");
+            } else {
+                /* Engine wedged: never drive this session again (its thread may still
+                 * own text/pcm).  Keep the handle so shutdown can prove the engine
+                 * quiet BEFORE freeing -- NULLing it here makes shutdown skip its
+                 * drain and free live memory the worker still owns (use-after-free). */
+                __android_log_print(ANDROID_LOG_ERROR, "SPD", "wait_till_done timeout: session retired");
+                s->retired =   1;
+            }
+        }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
     s->synthBusy =  0;
 }
@@ -482,7 +489,9 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return;
-    s->cancel = 1; /* request a stop: the wait loop now keeps draining until the engine goes quiet */
+    s->cancel = 1; /* request a stop:the wait loop aborts fast; the worker
+                             * drains later via settle/shutdown so the engine
+                             * goes quiet before any free. */
     eciStop(s->hECI); /* stops handing samples; the thread still settles */
 }
 
