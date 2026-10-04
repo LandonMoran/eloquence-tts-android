@@ -183,6 +183,10 @@ class EloquenceEngine(context: Context) {
 
     companion object {
         private const val TAG = "EloquenceEngine"
+        /** Serializes ALL native synthesis ops engine-side delivery — Settings diagnostics,
+         *  the TTS service, warmup and stop (issue #197). Reentrant: callers that already hold
+         *  their own engineCallLock just nest safely. */
+        private val nativeLock = Any()
 
         /** CI autotest (zh oracle) skips the en warmup: its forced-synthesis init
          *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
@@ -194,7 +198,7 @@ class EloquenceEngine(context: Context) {
                 if (e.word.isEmpty()) continue
                 val flag = if (e.caseSensitive) "" else "(?i)"
                 val re = Regex(flag + "\\b" + Regex.escape(e.word) + "\\b")
-                t = re.replace(t,  e.spoken)
+                t = re.replace(t) { e.spoken }
             }
             return t
         }
@@ -425,7 +429,7 @@ class EloquenceEngine(context: Context) {
             // handles cross-thread is safe now that they live in a ConcurrentHashMap the worker may lazily grow.
 
             val worker = synthWorker
-            for (h in worker.handles.values) VvtttsCore.stop(h)
+            for (h in worker.handles.values) VvttsCore.stop(h)
         }
 
     @Synchronized
@@ -437,7 +441,7 @@ class EloquenceEngine(context: Context) {
                     // Cleanup queues behind any in-flight synthesis so it frees the
                     // handles on their owning thread only after the native call returns.
 
-                    for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                    for (h in worker.handles.values) VvttsCore.shutdown(h)
                     worker.handles.clear()
                 }
             } catch (ignore: RejectedExecutionException) {
@@ -543,7 +547,7 @@ class EloquenceEngine(context: Context) {
         return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
     }
 
-    fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? {
+    fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? = synchronized(nativeLock) {
         return synthWithTimeout { worker ->
         // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
             //the native side would reject them; we intercept so the TTS service gets a clean null
@@ -572,7 +576,7 @@ class EloquenceEngine(context: Context) {
 
             if (voice.eciVoiceNumber != worker.pendingEciVoiceByDialect[dialect]) {
 
-                            VvtttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
+                            VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
                             worker.pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
                         }
 
@@ -583,6 +587,7 @@ class EloquenceEngine(context: Context) {
             val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
             val sig = sigBase + "|" + sigChar
             val sameAsLast = sig == worker.lastParamSig
+            var paramWriteFailed = false   // set by the 8-param injection loop on native failure
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
             val speedVal = Math.round(50.0f * uiRate /  100.0f)
                 .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
@@ -597,11 +602,13 @@ class EloquenceEngine(context: Context) {
             // Custom overrides first; otherwise KonaVoice defaults
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
                 val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+                if (ret < 0) paramWriteFailed = true
                 // Diagnostic-only logging (remove after root cause found): failures always;
                 // successes once per param, so a dead channel shows in logcat without spam.
 
                 if (ret < 0) {
                     Log.w("VvTts", "voice param #$p=$value -> ret $ret (FAILURE)")
+                    paramWriteFailed = true
                 } else if (p==2 && !pitchLogged) {
 
                     Log.i("VvTts", "voice param #2 pitch=$value -> ret $ret (OK)")
@@ -617,20 +624,20 @@ class EloquenceEngine(context: Context) {
 
             // User UI params
             // Pitch: UI 0-100 -> Apple pitchBase (±30 around the voice's own pitchBase
-            VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
+            if (VvttsCore.setVoiceParam(handle, 0, 2, pitchBase) < 0) paramWriteFailed = true   // eciPitchBaseline
 
             // Speed: eciSpeed voice param (voice param 6, range 0..250, 50=normal,
                         // matching the CSV speed in the 8-param injection above; previously eciSampleRate
                         // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
                         // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
                         // Engine outputs native 11025;the JNI layer upsamplest it to 44.1k for playback.
-                        VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
+                        if (VvttsCore.setVoiceParam(handle, 0, 6, speedVal) < 0) paramWriteFailed = true
                         VvttsCore.setParam(handle,  5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
                                                 lastSynthRate = 44100  // post-resample playback rate
 
 
             // Volume: CSV preset volume; no second applyVolume; set the voice param first
-            VvttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
+            if (VvttsCore.setVoiceParam(handle, 0,   7, voice.vol) < 0) paramWriteFailed = true   // eciVolume
                         }
             // Encoding
             val cs = charsetForDialect(dialect)
@@ -656,6 +663,7 @@ class EloquenceEngine(context: Context) {
             for (p in 0..7) {
                 val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
                 val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
+                if (ret < 0) paramWriteFailed = true
             }
             VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
                         VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
@@ -667,7 +675,7 @@ class EloquenceEngine(context: Context) {
             runCatching { outFile.delete() }
             if (pcm != null && pcm.size > 0) {
                 pcm = applyVolume(pcm, volume)
-                worker.lastParamSig = sig  // only admit success:failed param writes must retry
+                if (!paramWriteFailed) worker.lastParamSig = sig  // only admit success:failed param writes must retry (stale sig ⇒ next utterance re-injects them)
             }
             pcm
         }
@@ -813,7 +821,7 @@ class EloquenceEngine(context: Context) {
                     // already-cleared cache) makes this a no-op.
 
                     if (synthWorker !== worker) {
-                        for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                        for (h in worker.handles.values) VvttsCore.shutdown(h)
                         worker.handles.clear()
                     }
                 }

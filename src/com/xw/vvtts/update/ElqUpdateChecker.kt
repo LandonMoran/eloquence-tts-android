@@ -111,7 +111,9 @@ object ElqUpdateChecker {
                 else latestCode > localVersionCode
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
-                hasUpdate = hasUpdate,
+                // An update is only reported when the newer release actually ships a
+                // compatible APK asset the updater can download.
+                hasUpdate = apkUrl != null && latestCode > localVersionCode,
                 currentVersionCode = localVersionCode,
                 latestVersionCode = (latestSemVer?.packed() ?: latestCode).takeIf { it >= 0 },
                 latestTag = target.tagName,

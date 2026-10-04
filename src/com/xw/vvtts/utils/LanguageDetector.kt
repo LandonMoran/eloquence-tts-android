@@ -133,7 +133,7 @@ class LanguageDetector {
             }
         }
 
-        fun getEnabledLanguages(): Set<String> = enabledLanguages
+        fun getEnabledLanguages(): Set<String> = java.util.Collections.unmodifiableSet(enabledLanguages)
 
         /** Per-utterance pin (e.g. zh from a picker row(,applied on top of the whitelist
          * without rebuilding Lingua. Cleared from the finally block. */
@@ -167,7 +167,13 @@ class LanguageDetector {
             preloadLingua()
         }
 
-        fun setDefaultLanguage(dialect: Int) { synchronized(stateLock) { defaultLanguage = dialect } }
+        fun setDefaultLanguage(dialect: Int) {
+            synchronized(stateLock) {
+                if (dialect == defaultLanguage) return
+                defaultLanguage = dialect
+                invalidateLatinCache()
+            }
+        }
         fun getDefaultLanguage() = defaultLanguage
 
         /**
@@ -180,10 +186,22 @@ class LanguageDetector {
             return -1 // unspecified
         }
 
-        fun setDetectionEnabled(enabled: Boolean) { synchronized(stateLock) { detectionEnabled = enabled } }
+        fun setDetectionEnabled(enabled: Boolean) {
+            synchronized(stateLock) {
+                if (enabled == detectionEnabled) return
+                detectionEnabled = enabled
+                invalidateLatinCache()
+            }
+        }
         fun isDetectionEnabled() = detectionEnabled
 
-        fun setFixedDialect(dialect: Int) { synchronized(stateLock) { fixedDialect = dialect } }
+        fun setFixedDialect(dialect: Int) {
+            synchronized(stateLock) {
+                if (dialect == fixedDialect) return
+                fixedDialect = dialect
+                invalidateLatinCache()
+            }
+        }
         fun getFixedDialect() = fixedDialect
 
         /** Preload Lingua(async, single-flight: called at startup before any segment classification, so the first segment's Lingua results are reliable)) */
@@ -228,6 +246,10 @@ class LanguageDetector {
                 try {
                     val t0 = System.currentTimeMillis()
                     val langs = getEnabledLanguageEnums()
+                    // Lingua needs >=2 candidates. Without disabled-language fillers
+                    // (#182( the pruned set can be 0..1 — skip building (the caller handlesthe
+                    // sole-enabled-language case directly).
+                    if (langs.size < 2) return null
                     var builder = LanguageDetectorBuilder
                         .fromLanguages(*langs.toTypedArray())
                         .withMinimumRelativeDistance(0.0)
@@ -271,16 +293,11 @@ class LanguageDetector {
                     filtered.add(l)
                 }
             }
-            // need at least one language or Lingua's build fails
-            // Lingua requires >=2 languages to build. The default whitelist has all 8
-            // Latin codes,so this only matters when the user prunes down to <=1(Latin
-            // (e.g. English-only(or when the service starts before prefs are read(.
-            // Top up neutrally; downstream gating (detectLatin() re-checks the
-            // real whitelist per segment, so fillers never leak through.
-            if (filtered.size < 2) {
-                if (!filtered.contains(Language.ENGLISH)) filtered.add(Language.ENGLISH)
-                if (filtered.size < 2) filtered.add(Language.GERMAN)
-            }
+            // No filler candidates: Lingua requires >=2 languages to build, but
+            // padding the candidate set with disabled languages would let those
+            // fillers skew classifications (#182). When the user's real whitelist has
+            // fewer than two Latin languages, getLingua() skips building entirely
+            // and the caller returns the sole enabled language directly.
             return filtered
         }
 
@@ -342,6 +359,7 @@ class LanguageDetector {
                 // separator(space/punct):always follows the previous segment's language
                 if (type == 4) {
                     current.append(text, i, unitEnd)
+                    i = unitEnd
                     continue
                 }
 
@@ -354,6 +372,7 @@ class LanguageDetector {
                         currentType = 5
                     }
                     current.append(text, i, unitEnd)
+                    i = unitEnd
                     continue
                 }
 
@@ -708,7 +727,7 @@ class LanguageDetector {
             // ambiguous runs back here -- only then does Lingua's heavier n-gram
             // scan run. Both paths share the same LRU cache:re-announcing a seen
             // UI string short-circuits before either scan runs.
-            if (text.length <= 256) {
+            if (text.length <= 256 && transientEnabled == null) {
                 synchronized(latinCache) {
                     val hit = latinCache[text]
                     if (hit != null) return hit
@@ -731,7 +750,7 @@ class LanguageDetector {
                 }
                 if (dialect >=0) {
                     synchronized(latinCache) {
-                        if (text.length <= 256) {
+                        if (text.length <= 256 && transientEnabled == null) {
                             if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
                             latinCache[text] = dialect
                         }
@@ -741,8 +760,11 @@ class LanguageDetector {
             }
             val ld = getLingua()
             if (ld == null) {
-                // Lingua unavailable:default Latin language(if default is Latin;otherwise English)
+                // Lingua unavailable OR fewerk than two enabled Latin languages (#182(:
+                // fillers must never score the text — return the sole enabled one directly.
                 val dl = resolveDefaultLanguage()
+                val real = getEnabledLanguageEnums()
+                if (real.size == 1) return languageToDialect(real[0])
                 return latinFallback(dl, fallbackDialect)
             }
 
@@ -764,7 +786,7 @@ class LanguageDetector {
                 }
                 val detectedDialect = languageToDialect(lang)
                 synchronized(latinCache) {
-                    if (text.length <= 256) {
+                    if (text.length <= 256 && transientEnabled == null) {
                         if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
                         latinCache[text] = detectedDialect
                     }

@@ -42,6 +42,11 @@ class VvTtsService : TextToSpeechService() {
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
+    // BCP-47 tags advertised by onGetVoices; onLoadVoice accepts exactly these.
+    private val shippedVoiceTags: List<String> = listOf(
+        "en-US", "en-GB", "de-DE", "fr-FR", "fr-CA", "es-ES", "es-US", "es-MX",
+        "it-IT", "ja-JP", "pl-PL", "pt-BR", "fi-FI", "zh-CN",
+    )
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
@@ -392,6 +397,7 @@ class VvTtsService : TextToSpeechService() {
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
+        synchronized(engineCallLock){
         refreshSettings()
         synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
@@ -553,6 +559,7 @@ class VvTtsService : TextToSpeechService() {
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
+        }
                     if (!started && !stopping && gen == generation.get()) {
                         // Playback contract: start() must precede done(), the framework
                         // throws otherwise. Silent/empty/early returns get the pair
@@ -609,6 +616,9 @@ class VvTtsService : TextToSpeechService() {
 
     private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     @Volatile private var stopping = false
+    /** Signals the pacing wait in hold(): onStop()/bumpGeneration() notifyAll()
+     *  so a cancellation interrupts the artificial audio-duration sleep at once. */
+    private val pacingMonitor = Any()
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
     private val generation = AtomicLong(0)
@@ -618,14 +628,16 @@ class VvTtsService : TextToSpeechService() {
     private fun bumpGeneration() {
         stopping = true
         generation.incrementAndGet()
+        synchronized(pacingMonitor) { (pacingMonitor as Object).notifyAll() }  // wake the pacing wait now
         Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
         /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
+            synchronized(pacingMonitor) { (pacingMonitor as Object)..notifyAll() }  // wake the pacing wait so cancellation is immediate
             // stop() queues native work on the engine worker. Generation invalidation
-            // stays synchronous, and this callback never waits for native synthesis.
+            // stays synchronous,and this callback never waits for native synthesis.
             try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         }
 
@@ -706,10 +718,21 @@ class VvTtsService : TextToSpeechService() {
         private fun hold(pace: Pace) {
             var over = pace.aheadMs() - PACE_LEAD_MS
             while (over > 0L && !stopping) {
-                try {
-                    Thread.sleep(minOf(over, 20L))
-                } catch (interrupted: InterruptedException) {
-                    break
+                // Monitor-wait instead of a raw sleep: onStop()/bumpGeneration()
+                // notifyAll() so a stop interrupts the artificial pacing period
+                // immediately instead of only after the sleep interval ends.
+                synchronized(pacingMonitor) {
+                    if (!stopping) {
+                        var waiterHit = false
+                        try {
+                            (pacingMonitor as Object).wait(minOf(over, 20L))
+                        } catch (ie: InterruptedException) {
+                            waiterHit = true
+                        }
+                        // break/continue inside synchronized() (an inline lambda) is
+                        // experimental in Kotlin 1.9 and errors out; re-check in plain scope.
+                        if (waiterHit) { break }
+                    }
                 }
                 over = pace.aheadMs() - PACE_LEAD_MS
             }
@@ -739,6 +762,19 @@ class VvTtsService : TextToSpeechService() {
                         private const val CHUNK_MAX = 110
                         private const val CHUNK_SENTENCE_GRACE = 120
                         private const val MIN_CHUNK_SENTENCE =  40
+                        // Sentence-ending punctuation: ASCII + full-width/Unicode
+                        // variants, so localized text splits on the same boundaries..
+                        private val SENTENCE_ENDS = ".!?。！？．"
+                        /** Central numeric-token rules shared by every cut decision:
+                         *  punctuation binding digits is numeric notation (decimal
+                         *  point, thousands separator, date/symbol run), never a
+                         *  sentence/boundary cut; full-width variants count too. */
+                        private fun isNumericBoundary(c: Char, prev: Char, next: Char): Boolean =
+                            ((c == '.' || c == '．' || c == '。') && (prev.isDigit() || next.isDigit()))
+                                || ((c == ',' || c == '，') && prev.isDigit() && next.isDigit())
+
+                        private fun isNumericRunChar(c: Char): Boolean =
+                            c.isDigit() || c == ':' || c == '/' || c == '-' || c == '.' || c == '．'
 
             // === Process-scoped engine reuse ===
             // TextToSpeechService is created/destroyed each time the framework binds the
@@ -750,6 +786,11 @@ class VvTtsService : TextToSpeechService() {
 
             private val engineLock = Any()
             @Volatile private var processEngine: EloquenceEngine? = null
+            // #16: serialization lock for concurrent engine ops (stop/synthesizeCore/
+            // warmupDialect( must be process-scoped too — a per-instance lock would
+            // let tworebound instances race the same shared native engine (calling
+            // stop() while another instance synthesizes(.
+            private val engineCallLock = Any()
 
 
             private fun acquireProcessEngine(ctx: Context): EloquenceEngine {
@@ -790,12 +831,11 @@ class VvTtsService : TextToSpeechService() {
                     // phrasing/intonation survive instead of hard mid-sentence cuts. Only
                     // hunt after a minimum length, so short texts still land fast..
                     var i = Math.min(n, end + CHUNK_SENTENCE_GRACE)
-                    val sentenceEnds = ".!?。！？"
                     while (i > start + MIN_CHUNK_SENTENCE) {
                         val c = text[i - 1]
-                        val nextIsDigit = i < n && text[i].isDigit()
-                        val prevIsDigit = i >= 2 && text[i - 2].isDigit()
-                        if (sentenceEnds.indexOf(c) >= 0 && !(c == '.' && (prevIsDigit || nextIsDigit))) {
+                        val prev = if (i >= 2) text[i - 2] else ' '
+                        val next = if (i < n) text[i] else ' '
+                        if (SENTENCE_ENDS.indexOf(c) >= 0 && !isNumericBoundary(c, prev, next)) {
                             cut = i
                             break
                         }
@@ -809,29 +849,35 @@ class VvTtsService : TextToSpeechService() {
                             val c = text[j - 1]
                             val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
                                 || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
-                                || c == '！' || c == '？' || c == '、'
+                                || c == '！' || c == '？' || c == '、' || c == '．'
                             if (isBoundary) {
                                 val prev = if (j >= 2) text[j - 2] else ' '
                                 val next = if (j < n) text[j] else ' '
-                                val digitGuard = (c == '.' && (prev.isDigit() || next.isDigit()))
-                                    || (c == ',' && prev.isDigit() && next.isDigit())
-                                if (!digitGuard) cut = j
+                                if (!isNumericBoundary(c, prev, next)) cut = j
                             }
                             j--
                         }
                     }
                     // Pass C: no boundary in range: force-cut, backing off digit/symbol
-                    // runs so dates/numbers are never split mid-run..
+                    // runs so dates/numbers are never split mid-run; never below the
+                    // minimum progress size so a lone sliver is never handed out.
                     if (cut < 0) {
                         cut = end
-                        while (cut > start + 1 && (text[cut - 1].isDigit() || text[cut - 1] == ':'
-                                || text[cut - 1] == '/' || text[cut - 1] == '-' || text[cut - 1] == '.')) {
+                        val minCut = start + MIN_CHUNK_SENTENCE
+                        while (cut > minCut && isNumericRunChar(text[cut - 1])) {
                             cut--
                         }
+                        // Unsplittable run: the run spans past the min floor, so force the
+                        // cut at the cap instead (chunks stay near max size, never empty / tiny.
+                        if (cut <= minCut) cut = end
+                    }
+                    // A forced cut can land between a surrogate pair: back off one char so
+                    // the pair stays together in the following chunk (valid UTF-16.
+                    if (cut > start + 1 && cut < n && text[cut - 1].isHighSurrogate() && text[cut].isLowSurrogate()) {
+                        cut--
                     }
                     chunks.add(text.substring(start, cut))
                     start = cut
-                    while (start < n && text[start].isWhitespace()) start++
                 }
                 return chunks
             }
