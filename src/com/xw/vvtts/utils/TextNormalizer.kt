@@ -142,22 +142,46 @@ class TextNormalizer {
             return sb.toString()
         }
 
+        /** Hard cap on spoken symbol expansion:never emit more than this many
+         * normalized chars of symbol names per call (#87,#103(,#185(. Symbols
+         * past the budget stay literal, so pathological symbol-heavy text can't
+         * amplify the native-encoder input without bound. Additionally:runs
+         * of identical symbols also read once, not once per char.
+         */
+        private const val MAX_NORMALIZED_CHARS =2048
+
         /** Symbols -> Chinese readings */
         fun normalizeSymbols(input: String): String {
             val sb = StringBuilder(input.length)
+            var expanded = 0
+            var runChar: Char? = null
             for (i in input.indices) {
                 val c = input[i]
                 if (c == '-' && i > 0 && i + 1 < input.length &&
                     (input[i - 1].isDigit() || input[i - 1] .code in setOf(0x96F6, 0x4E00, 0x4E8C, 0x4E09, 0x56DB,  0x4E94,  0x516D,  0x4E03,  0x516B,  0x4E5D,  0x5341,  0x767E,  0x5343)) &&
                     (input[i + 1].isDigit() || input[i + 1] .code in setOf(0x96F6, 0x4E00, 0x4E8C, 0x4E09, 0x56DB,  0x4E94,  0x516D,  0x4E03,  0x516B,  0x4E5D,  0x5341,  0x767E,  0x5343))
                 ) {
+                    // Date-like hyphens stay literal (so 2024-03-15 reads naturally(.
                     sb.append(c)
+                    runChar = null
                     continue
                 }
                 val name = SYMBOL_NAMES[c]
                 if (name != null) {
-                    sb.append(name)
+                    // A run of identical symbols reads once, not once per char(#185(:
+                    // "!!!!" -> 感叹号 (not 感叹号×4), "——" -> 破折号.
+                    if (runChar == c) continue
+                    runChar = c
+                    if (expanded + name.length <= MAX_NORMALIZED_CHARS) {
+                        sb.append(name)
+                        expanded += name.length
+                    } else {
+                        // Budget exhausted:keep the symbol literal so the output length
+                        // stays tied to the input instead of amplifying (#87,#103(.
+                        sb.append(c)
+                    }
                 } else {
+                    runChar = null
                     sb.append(c)
                 }
             }
@@ -203,6 +227,9 @@ class TextNormalizer {
 
         /** Convert by digit-count rules:≤4 digits read as a whole;≥5 digit-by-digit */
         fun convertNumber(digits: String): String {
+            // Leading zeros mark identifier/zero-padded values (phone, ID, code(:#70(:
+            // speaking every digit preserves the value ("0123" must not become 一百二十三).
+            if (digits.length > 1 && digits[0] == '0') return toChineseDigits(digits)
             var t = digits
             val firstNonZero = t.indexOfFirst { it != '0' }
             t = if (firstNonZero == -1) t.substring(t.length - 1) else t.substring(firstNonZero)
