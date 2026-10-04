@@ -579,14 +579,14 @@ class VvTtsService : TextToSpeechService() {
     private fun bumpGeneration() {
         stopping = true
         generation.incrementAndGet()
-        synchronized(pacingMonitor) { pacingMonitor.notifyAll() }  // wake the pacing wait now
+        synchronized(pacingMonitor) { (pacingMonitor as Object).notifyAll() }  // wake the pacing wait now
         Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
         /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            synchronized(pacingMonitor) { pacingMonitor.notifyAll() }  // wake the pacing wait so cancellation is immediate
+            synchronized(pacingMonitor) { (pacingMonitor as Object).notifyAll() }  // wake the pacing wait so cancellation is immediate
             try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
         }
 
@@ -665,11 +665,15 @@ class VvTtsService : TextToSpeechService() {
                 // immediately instead of only after the sleep interval ends.
                 synchronized(pacingMonitor) {
                     if (!stopping) {
+                        var waiterHit = false
                         try {
-                            pacingMonitor.wait(minOf(over, 20L))
-                        } catch (interrupted: InterruptedException) {
-                            break
+                            (pacingMonitor as Object).wait(minOf(over, 20L))
+                        } catch (ie: InterruptedException) {
+                            waiterHit = true
                         }
+                        // break/continue inside synchronized() (an inline lambda) is
+                        // experimental in Kotlin 1.9 and errors out; re-check in plain scope.
+                        if (waiterHit) { break }
                     }
                 }
                 over = pace.aheadMs() - PACE_LEAD_MS
@@ -709,7 +713,7 @@ class VvTtsService : TextToSpeechService() {
                          *  sentence/boundary cut; full-width variants count too. */
                         private fun isNumericBoundary(c: Char, prev: Char, next: Char): Boolean =
                             ((c == '.' || c == '．' || c == '。') && (prev.isDigit() || next.isDigit()))
-                                || ((c == ',' || c == '就是') && prev.isDigit() && next.isDigit())
+                                || ((c == ',' || c == '，') && prev.isDigit() && next.isDigit())
 
                         private fun isNumericRunChar(c: Char): Boolean =
                             c.isDigit() || c == ':' || c == '/' || c == '-' || c == '.' || c == '．'
@@ -781,7 +785,7 @@ class VvTtsService : TextToSpeechService() {
                         while (j > start + 1 && cut < 0) {
                             val c = text[j - 1]
                             val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
-                                || c == ';' || c == '!' || c == '?' || c == '。' || c == '就是'
+                                || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
                                 || c == '！' || c == '？' || c == '、' || c == '．'
                             if (isBoundary) {
                                 val prev = if (j >= 2) text[j - 2] else ' '
