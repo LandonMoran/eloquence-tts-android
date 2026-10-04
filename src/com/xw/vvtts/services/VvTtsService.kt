@@ -1,6 +1,7 @@
 package com.xw.vvtts.services
 
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -110,7 +111,7 @@ class VvTtsService : TextToSpeechService() {
         // repeatedly (process restarts are expensive). Let GC reclaim; a leaked
         // engine handle is acceptable (the handle lives as long as the service
         // process).
-        stopping = true
+        stopping.set(true)
         try {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
@@ -346,18 +347,18 @@ class VvTtsService : TextToSpeechService() {
             }
             return
         }
-        // The stop flag is cleared only here, once the utterance actually
-        // dequeues:clearing it in onSynthesizeText() would let previous
-        // utterance (still draining on the single-thread executor( resume
-        // after a TalkBack re-swipes, causing overlapping speech.
-        stopping = false
+        // The stop flag is cleared only here, at the start of each utterance:
+        // clearing it in onSynthesizeText() would let a stop() issued between
+        // the callback handoff and this point be lost, re-enabling stale
+        // utterance delivery after a TalkBack re-swipes.
+        stopping.set(false)
         // An onStop() can race in between the queue-time generation snapshot
         // (taken in onSynthesizeText()and this reset:it bumps generationand
         // sets stopping = true. Re-check so a just-issued cancellation isn't
         // cleared, which would let a stale utterance drain in full (ghost speech(.
         // Restore the stop flag and drop the utterance via error() instead.
         if (gen != generation.get()) {
-            stopping = true
+            stopping.set(true)
             Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
             try {
                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
@@ -471,7 +472,7 @@ class VvTtsService : TextToSpeechService() {
                         for (seg in segments) {
                             // Bail on either signal: stop() (framework( or a generation bump
                             // (a newer utterance superseded ours while we were mid-queue(.
-                            if (stopping || gen != generation.get()) break
+                            if (stopping.get() || gen != generation.get()) break
                             if (SystemClock.elapsedRealtime() > uttDeadline) {
 
                                 Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
@@ -495,7 +496,7 @@ class VvTtsService : TextToSpeechService() {
                 // uninterruptible synth of the whole segment (the "one second
                 // between swipes" / "fast swipes get clogged" regression).
                 for (chunkText in splitSynthChunks(segText)) {
-                    if (stopping || gen != generation.get()) break
+                    if (stopping.get() || gen != generation.get()) break
                     if (SystemClock.elapsedRealtime() > uttDeadline) {
                         synthFailedOrTruncated = true   // truncated: error(), not done()
                         break
@@ -526,7 +527,7 @@ class VvTtsService : TextToSpeechService() {
                         if (max > 0) {
                             var offset = 0
                             while (offset < bytes.size) {
-                                if (stopping || pipeEnded) break
+                                if (stopping.get() || pipeEnded) break
                                 val len = Math.min(max, bytes.size - offset)
                                 val verdict = callback.audioAvailable(bytes, offset, len)
                                 if (verdict != TextToSpeech.SUCCESS) {
@@ -624,7 +625,7 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
-    @Volatile private var stopping = false
+    private val stopping = AtomicBoolean(false)
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
     private val generation = AtomicLong(0)
@@ -632,13 +633,13 @@ class VvTtsService : TextToSpeechService() {
      *  and onUnbind so nothing flushes seconds after the service dies (two-voices
      *  overlap, late lock-screen speech(. */
     private fun bumpGeneration() {
-        stopping = true
+        stopping.set(true)
         generation.incrementAndGet()
         Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
     }
         /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
-            stopping = true
+            stopping.set(true)
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
             try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
         }
@@ -704,15 +705,25 @@ class VvTtsService : TextToSpeechService() {
          *  swipe/stop never drowns in queued speech.
          */
         private class Pace(private val sampleRate: Int) {
-            private val startMs: Long = SystemClock.elapsedRealtime()
-            private var handedMs: Long = 0
-            fun handed(bytes: Int) { handedMs += bytes / 2L * 1000L / sampleRate }
-            fun aheadMs(): Long = handedMs - (SystemClock.elapsedRealtime() - startMs)
+            // Clock starts lazily at the FIRST handed audio: engine open + native
+            // LPC load before it would skew the lead by seconds of dead time.
+            private var startNs: Long = Long.MIN_VALUE
+            private var handedNs: Long = 0
+            fun handed(bytes: Int) {
+                if (startNs == Long.MIN_VALUE) startNs = SystemClock.elapsedRealtimeNanos()
+                // Exact byte accounting in nanoseconds; converted to ms exactly once, in aheadMs().
+                handedNs += bytes.toLong() * 1_000_000_000L / (sampleRate.toLong() * 2)
+            }
+            /** Audio delivered ahead of the playback clock, in ms. */
+            fun aheadMs(): Long {
+                if (startNs == Long.MIN_VALUE) return 0
+                return (handedNs - (SystemClock.elapsedRealtimeNanos() - startNs)) / 1_000_000L
+            }
         }
 
         private fun hold(pace: Pace) {
             var over = pace.aheadMs() - PACE_LEAD_MS
-            while (over > 0L && !stopping) {
+            while (over > 0L && !stopping.get()) {
                 try {
                     Thread.sleep(minOf(over, 20L))
                 } catch (interrupted: InterruptedException) {
