@@ -17,6 +17,11 @@ package com.xw.vvtts.utils
 class TextNormalizer {
 
     companion object {
+        /** Cap the digit-run length that gets a grouped (whole-number) reading.
+         * Runs up to this many digits read as a grouped Chinese numeral; longer runs
+         * fall back to bounded digit-by-digit reading so output construction cannot
+         * overflow or index past the GROUP_UNITS table. */
+        private const val MAX_GROUP_LEN =  64
         private val DIGIT_CHARS = arrayOf("零", "一", "二", "三", "四", "五", "六", "七", "八", "九")
         private val PLACE_CHARS = arrayOf("", "十", "百", "千")
         private val GROUP_UNITS = arrayOf(
@@ -188,7 +193,7 @@ class TextNormalizer {
                         } else if (start > 0 && (input[start -  1] == ':' || input[start -  1] == '\uFF1A')) {
                             sb.append(convertNumber(digits))
                         } else {
-                            sb.append(digits)
+                            sb.append(convertNumber(digits))
                         }
                     } else {
                         sb.append(convertNumber(digits))
@@ -207,7 +212,7 @@ class TextNormalizer {
             val firstNonZero = t.indexOfFirst { it != '0' }
             t = if (firstNonZero == -1) t.substring(t.length - 1) else t.substring(firstNonZero)
             if (t.isEmpty()) return DIGIT_CHARS[0]
-            if (t.length <= 4) return toChineseNumeric(t)
+            if (t.length <= MAX_GROUP_LEN) return toChineseNumeric(t)
             return toChineseDigits(t)
         }
 
