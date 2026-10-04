@@ -37,6 +37,8 @@ class VvTtsService : TextToSpeechService() {
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
+    /** Loader thread for the n-gram tables; owned so teardown can interrupt backoff waits. */
+    @Volatile private var ngramLoadThread: Thread? = null
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
@@ -90,7 +92,10 @@ class VvTtsService : TextToSpeechService() {
         LanguageDetector.preloadLingua()
         // Preload the in-RAM n-gram tables (66KB asset,milliseconds(--primary detector
         // for Latin runs means Lingua only fires on ambiguous text.
-        Thread { NgramScorer.load(this) }.start()
+        ngramLoadThread = Thread { NgramScorer.load(this) }.apply {
+            name = "ngram-load"
+            start()
+        }
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
         if (eng.isInitialized()) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
@@ -106,6 +111,13 @@ class VvTtsService : TextToSpeechService() {
         // lock-screen speech arriving late on unlock. Reboot clears them naturally
         // ( process death kills the queue(; unbind/destroy must too.
         bumpGeneration()
+        // Interrupt any in-flight n-gram backoff wait; the loader thread is owned
+        // and must not outlive the service (no unmanaged threads on teardown).
+        try {
+            ngramLoadThread?.interrupt()
+        } catch (ignore: Throwable) {
+        }
+        ngramLoadThread = null
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
