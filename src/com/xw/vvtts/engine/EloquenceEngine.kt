@@ -555,6 +555,7 @@ class EloquenceEngine(context: Context) {
             val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
             val sig = sigBase + "|" + sigChar
             val sameAsLast = sig == lastParamSig
+            var paramWriteFailed = false   // set by the 8-param injection loop on native failure
             val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
             val speedVal = Math.round(50.0f * uiRate /  100.0f)
                 .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
@@ -574,6 +575,7 @@ class EloquenceEngine(context: Context) {
 
                 if (ret < 0) {
                     Log.w("VvTts", "voice param #$p=$value -> ret $ret (FAILURE)")
+                    paramWriteFailed = true
                 } else if (p==2 && !pitchLogged) {
 
                     Log.i("VvTts", "voice param #2 pitch=$value -> ret $ret (OK)")
@@ -639,7 +641,7 @@ class EloquenceEngine(context: Context) {
             runCatching { outFile.delete() }
             if (pcm != null && pcm.size > 0) {
                 pcm = applyVolume(pcm, volume)
-                lastParamSig = sig  // only admit success:failed param writes must retry
+                if (!paramWriteFailed) lastParamSig = sig  // only admit success:failed param writes must retry (stale sig ⇒ next utterance re-injects them)
             }
             pcm
         }
