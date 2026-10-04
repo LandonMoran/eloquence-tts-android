@@ -24,6 +24,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <pthread.h>
 #include "eci.h"
 #include "chs_oracle_synth.h"
 
@@ -143,13 +144,14 @@ typedef struct {
     size_t  pcmLen, pcmCap;
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
-    volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
+    pthread_mutex_t lifecycle; /* held through the entire JNI synthesis operation */
+    int shuttingDown;           /* atomic: a timed-out shutdown stays retired */
+    int cancel;                 /* atomic: stop/shutdown may bypass lifecycle */
 } VvtsSession;
 
-/* The engine calls back on its own synthesis thread; the caller only reads
- * s->pcm after waiting for eciSpeaking to go quiet, so no locking is needed
- * as long as one session is never driven from two threads at once (the
- * Kotlin side already serialises with its synthesis lock). */
+/* eciSpeaking delivers queued callbacks on the polling thread. Synthesis
+ * and shutdown hold lifecycle while polling, so PCM collection cannot race
+ * with JNI resampling/copying or session release. */
 static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     VvtsSession *s = (VvtsSession *)data;
     if (message != eciWaveformBuffer)
@@ -177,7 +179,8 @@ static void vv_wait_till_done(VvtsSession *s) {
      * samples but the synthesis thread still has to finish it.  Poll
      * eciSpeaking (as the old bridge did for Apple's object.. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
-    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
+    for (int i =  0; i < 4000 && s->hECI && eciSpeaking(s->hECI)
+            && !__atomic_load_n(&s->cancel, __ATOMIC_ACQUIRE); i++) {
         if ((i % 100) ==  0)
             __android_log_print(ANDROID_LOG_INFO, "SPD", "wait i=%d pcm=%zu", i, s->pcmLen);
         /* Polling is what collects the engine's queued samples: the engine
@@ -197,7 +200,8 @@ static void vv_wait_till_done(VvtsSession *s) {
  * from two threads concurrently, so wait for the engine to go quiet before
  * touching text/pcm again. */
 static void vv_settle(VvtsSession *s) {
-    for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
+    for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI)
+            && !__atomic_load_n(&s->cancel, __ATOMIC_ACQUIRE); i++) {
         struct timespec ts = {0, 500000L}; /* 0.5 ms: poll = collect, keep it short */
         nanosleep(&ts, NULL);
     }
@@ -290,6 +294,11 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         free(s);
         return 0;
     }
+    if (pthread_mutex_init(&s->lifecycle, NULL) != 0) {
+        eciDelete(s->hECI);
+        free(s);
+        return 0;
+    }
     eciRegisterCallback(s->hECI, vv_cb, s);
     eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk);  /* callback first: engine
                                                            * refuses a buffer until it has
@@ -298,12 +307,12 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
     return (jlong)(intptr_t)s;
 }
 
-JNIEXPORT jshortArray JNICALL
-Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
-        JNIEnv *env, jclass cls, jlong handle, jint dialect,
-        jbyteArray text, jint charsetId, jstring outPath) {
-    VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return NULL;
+/* Caller holds lifecycle, including all early returns and JNI array work. */
+static jshortArray vv_synthesize(JNIEnv *env, VvtsSession *s, jint dialect,
+                                jbyteArray text, jint charsetId) {
+    __atomic_store_n(&s->cancel, 0, __ATOMIC_RELEASE);
+    if (__atomic_load_n(&s->shuttingDown, __ATOMIC_ACQUIRE) || !s->hECI)
+        return NULL;
     if (!text) return NULL;
 
     jsize len = (*env)->GetArrayLength(env, text);
@@ -326,7 +335,6 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
 
     /* A stop may have aborted the previous wait loop: re-sync with the
      * engine's thread before we touch text/pcm for the new utterance. */
-    s->cancel = 0;
     vv_settle(s);
 
     if (dialect == 0x60000) {
@@ -408,6 +416,18 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         }
 }
 
+JNIEXPORT jshortArray JNICALL
+Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
+        JNIEnv *env, jclass cls, jlong handle, jint dialect,
+        jbyteArray text, jint charsetId, jstring outPath) {
+    VvtsSession *s = vv_find(env, handle);
+    if (!s) return NULL;
+    pthread_mutex_lock(&s->lifecycle);
+    jshortArray out = vv_synthesize(env, s, dialect, text, charsetId);
+    pthread_mutex_unlock(&s->lifecycle);
+    return out;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param, jint value) {
@@ -455,7 +475,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return;
-    s->cancel = 1; /* let the wait loop abort on the next 2 ms tick */
+    __atomic_store_n(&s->cancel, 1, __ATOMIC_RELEASE);
     eciStop(s->hECI); /* stops handing samples; the thread still settles */
 }
 
@@ -464,9 +484,13 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
     if (!s) return;
+    /* Stop before taking lifecycle: synthesis may be waiting for the engine.
+     * Callers must not start new operations on a handle being shut down. */
+    __atomic_store_n(&s->shuttingDown, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&s->cancel, 1, __ATOMIC_RELEASE);
+    if (s->hECI) eciStop(s->hECI);
+    pthread_mutex_lock(&s->lifecycle);
     if (s->hECI) {
-        s->cancel = 1; /* request cancellation:the synthesis thread still has to settle */
-        eciStop(s->hECI);
         /* eciStop stops the samples but the engine's own thread still has to
          * finish its current utterance.  Deleting the handle (or freeing the
          * session) while that thread is still running is use-after-free, so
@@ -475,8 +499,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
          * (which we just set: gating on it would exit immediately and delete
          * the very handle the native thread is still using).  A generous
          * bound guards the caller against a wedged engine: if quiet cannot
-         * be proven, the handle is retired (leaked by design -- deleting it
-         * while the engine thread owns it would be use-after-free). */
+         * be proven, retain the entire session, including the callback data,
+         * text and output buffer still owned by the engine. */
         int iters = 0;
         while (s->hECI && eciSpeaking(s->hECI) && iters < 40000) {
             struct timespec ts = {0, 500000L}; /* 0.5 ms */
@@ -484,15 +508,17 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
             iters++;
         }
         if (s->hECI && eciSpeaking(s->hECI)) {
-            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown drain timeout: ECI handle retired (leak by design)");
-            s->hECI = NULL;
-        } else {
-            eciDelete(s->hECI);
-            s->hECI = NULL; /* never touch the freed handle again */
+            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown drain timeout: session retained");
+            pthread_mutex_unlock(&s->lifecycle);
+            return;
         }
+        eciDelete(s->hECI);
+        s->hECI = NULL; /* never touch the freed handle again */
     }
     free(s->text);
     free(s->pcm);
+    pthread_mutex_unlock(&s->lifecycle);
+    pthread_mutex_destroy(&s->lifecycle);
     free(s);
 }
 
