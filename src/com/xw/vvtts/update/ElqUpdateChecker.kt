@@ -78,7 +78,16 @@ object ElqUpdateChecker {
             }
             val releases = parseReleases(json)
             val stable = releases.filter { !it.prerelease && !it.draft }
-            val target = stable.maxByOrNull { it.publishedAt ?: "" }
+            // Pick the highest numeric versionCode: publication order can hide an
+            // actually-newer release published earlier (a lower-version release may be
+            // published later ). Tie-break on newer publishedAt..
+            val target = stable
+                .mapNotNull { rel -> parseVersionCode(rel.tagName)?.let { it to rel } }
+                .maxWithOrNull(
+                    compareBy<Pair<Int, GitHubRelease>> { it.first }
+                        .thenBy { it.second.publishedAt ?: "" }
+                )
+                ?.second
             if (target == null) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }

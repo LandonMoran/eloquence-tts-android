@@ -93,7 +93,26 @@ class VvTtsService : TextToSpeechService() {
         Thread { NgramScorer.load(this) }.start()
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
-        if (eng.isInitialized()) synchronized(engineCallLock) { eng.warmupDialect(LanguageDetector.getFixedDialect()) }
+        // Background thread: binder queries (getLanguage/getVoices/onInit reply)
+        // can arrive while onCreate is still running; a long synchronous warmup
+        // would delay the init state the framework builds from. Synthesis locks
+        // engineCallLock, so a concurrent warmup is safe.
+        if (eng.isInitialized()) {
+            val warmDialect = try {
+                LanguageDetector.getFixedDialect()
+            } catch (t: Throwable) {
+                Log.w(TAG, "fixed dialect query failed; warming default", t)
+                LanguageDetector.DIALECT_EN_US
+            }
+            val warmEngine = eng
+            Thread {
+                try {
+                    synchronized(engineCallLock) { warmEngine.warmupDialect(warmDialect) }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "background warmup failed", t)
+                }
+            }.apply { isDaemon = true }.start()
+        }
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
@@ -254,39 +273,28 @@ class VvTtsService : TextToSpeechService() {
 
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
-        return voiceSafe(emptyList()) {
-        val voices = ArrayList<Voice>()
-        // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
-        voices.add(Voice("en-US", Locale.US,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("en-GB", Locale.UK,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("de-DE", Locale.GERMANY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fr-FR", Locale.FRANCE,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fr-CA", Locale.CANADA_FRENCH,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-ES", Locale("es", "ES"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-US", Locale("es", "US"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("es-MX", Locale("es", "MX"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("it-IT", Locale.ITALY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("ja-JP", Locale.JAPAN,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("pl-PL", Locale("pl", "PL"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("pt-BR", Locale("pt", "BR"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("fi-FI", Locale("fi", "FI"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        voices.add(Voice("zh-CN", Locale("zh", "CN"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
-        // Only advertise dialects actually linked in this build (build_native.sh LANGS)
-        return voices
+        // Dependency-free catalog with NON-NULL features: Voice.parceling converts
+        // features to ArrayList, and null features have been observed corrupting
+        // the binder reply on Android 15+ (Settings/TalkBack then die decoding a
+        // poisoned parcel: NPE Collection.toArray() in Parcel.createExceptionOrNull).
+        return voiceSafe(emptyList<Voice>()) {
+            val voices = ArrayList<Voice>(14)
+            voices.add(Voice("en-US", Locale.US, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("en-GB", Locale.UK, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("de-DE", Locale.GERMANY, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("fr-FR", Locale.FRANCE, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("fr-CA", Locale.CANADA_FRENCH, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("es-ES", Locale("es", "ES"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("es-US", Locale("es", "US"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("es-MX", Locale("es", "MX"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("it-IT", Locale.ITALY, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("ja-JP", Locale.JAPAN, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("pl-PL", Locale("pl", "PL"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("pt-BR", Locale("pt", "BR"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("fi-FI", Locale("fi", "FI"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            voices.add(Voice("zh-CN", Locale("zh", "CN"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            // Only advertise dialects actually linked in this build (build_native.sh LANGS).
+            voices
         }
     }
 

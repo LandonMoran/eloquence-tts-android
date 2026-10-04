@@ -38,9 +38,10 @@ object ElqUpdateInstaller {
                 ).apply {
                     setOriginatingUid(Process.myUid())
                 }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                params.setRequestUpdateOwnership(true)
-            }
+            // Do not request update ownership: setRequestUpdateOwnership requires
+            // android.permission.ENFORCE_UPDATE_OWNERSHIP, which this app does not declare,
+            // so the call makes createSession throw on Android 14+ and the self-updater fails.
+            // Normal PackageInstaller update-ownership is sufficient for self-update.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
             }
