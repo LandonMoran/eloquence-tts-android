@@ -41,9 +41,14 @@ class EloquenceEngine(context: Context) {
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
     private var initialized = false
-    @Volatile private var synthExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "elq-synth").apply { isDaemon = true }
+    // Keep handles with their owning worker, including after a timeout retires it.
+    private class SynthWorker {
+        val handles = HashMap<Int, Long>() // accessed only by this worker's executor
+        val executor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "elq-synth").apply { isDaemon = true }
+        }
     }
+    @Volatile private var synthWorker = SynthWorker()
     @Volatile private var hangDetected = false
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
     @Volatile private var engineEpoch = 0
@@ -410,15 +415,27 @@ class EloquenceEngine(context: Context) {
     fun stop() {
         stopped = true
         engineEpoch++
-        core?.let { for (h in coreHandles.values) VvttsCore.stop(h) }
+        val worker = synthWorker
+        try {
+            worker.executor.execute {
+                for (h in worker.handles.values) VvttsCore.stop(h)
+            }
+        } catch (ignore: RejectedExecutionException) {
+            // Rotation retired this worker. Never stop its handles from another thread.
+        }
     }
 
     @Synchronized
     fun shutdown() {
         engineEpoch++
-        core?.let {
-            for (h in coreHandles.values) VvttsCore.shutdown(h)
-            coreHandles.clear()
+        val worker = synthWorker
+        try {
+            worker.executor.execute {
+                for (h in worker.handles.values) VvttsCore.shutdown(h)
+                worker.handles.clear()
+            }
+        } catch (ignore: RejectedExecutionException) {
+            // A retired worker may still be using its handles; they cannot be freed here.
         }
         pendingEciVoiceByDialect.clear()
         initialized = false
@@ -430,7 +447,6 @@ class EloquenceEngine(context: Context) {
     fun getSampleRate(): Int = SAMPLE_RATE
 
         // ===== In-house bridge (the only synthesis path) =====
-    private val coreHandles = ConcurrentHashMap<Int, Long>()
     private var lastSynthRate =  44100  // output rate of the most recent synthesized audio (44.1k after resample(
     fun getCoreSampleRate(): Int = lastSynthRate
 
@@ -439,8 +455,8 @@ class EloquenceEngine(context: Context) {
      *  the critical path of the first utterance (the single biggest "hover to
      *  speech" latency component(.
      */
-    private fun ensureHandle(dialect: Int): Long {
-        val cached = coreHandles[dialect] ?: 0L
+    private fun ensureHandle(worker: SynthWorker, dialect: Int): Long {
+        val cached = worker.handles[dialect] ?: 0L
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
         val libDirRaw = info.nativeLibraryDir
@@ -465,7 +481,7 @@ class EloquenceEngine(context: Context) {
             VvttsCore.shutdown(handle)
             return   0L
         }
-        coreHandles[dialect] = handle
+        worker.handles[dialect] = handle
         return handle
     }
 
@@ -475,7 +491,8 @@ class EloquenceEngine(context: Context) {
      *  No synthesis happens here — just the native handle open. */
     fun warmupDialect(dialect: Int) {
         if (dialect <  0) return
-        synthExecutor.execute { ensureHandle(dialect) }
+        val worker = synthWorker
+        worker.executor.execute { ensureHandle(worker, dialect) }
     }
     /** Currently selected voice preset (1-8( and custom-mode flag */
     @Volatile private var voicePreset = 1
@@ -516,7 +533,7 @@ class EloquenceEngine(context: Context) {
     }
 
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? {
-        return synthWithTimeout {
+        return synthWithTimeout { worker ->
         // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
             //the native side would reject them; we intercept so the TTS service gets a clean null
             //(Android auto-fallbacks to other engines(, keeping every path away from the crashy eciNewEx.
@@ -527,7 +544,7 @@ class EloquenceEngine(context: Context) {
             if (core == null) core = VvttsCore()
 
             // session lazy-loading (cached per dialect(
-            val handle = ensureHandle(dialect)
+            val handle = ensureHandle(worker, dialect)
             if (handle ==  0L) return@synthWithTimeout null
 
         // === Voice row copy + full param tuning — Apple Kona CSV is the authoritative source.
@@ -766,14 +783,15 @@ class EloquenceEngine(context: Context) {
     // Runs a synthesis body on the single worker thread. If it has not finished
     // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
     // so THIS request fails fast — a frozen native call cannot take down the whole TTS.
-    private fun synthWithTimeout(block: () -> ShortArray?): ShortArray? {
+    private fun synthWithTimeout(block: (SynthWorker) -> ShortArray?): ShortArray? {
         val nowMin = SystemClock.elapsedRealtime()
         if (nowMin < retireUntilMs) {
             Log.w(TAG, "TTS_HANG: zombie grace until " + retireUntilMs + " (" + (retireUntilMs - nowMin) + " ms left); skipping to avoid doubling the retired native worker")
             return null
         }
+        val worker = synthWorker
         val future = try {
-            synthExecutor.submit<ShortArray?> { block() }
+            worker.executor.submit<ShortArray?> { block(worker) }
         } catch (e: RejectedExecutionException) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
@@ -808,25 +826,14 @@ class EloquenceEngine(context: Context) {
     // executor + fresh native handles so subsequent requests work again immediatel
     private fun rotateEngine() {
         try {
-            synthExecutor.shutdownNow()
+            synthWorker.executor.shutdownNow()
         } catch (e: Exception) {
             Log.e(TAG, "rotate: shutdown failed", e)
         }
-        // Best-effort: stop any in-flight render on the retired handles so a
-        // fresh open isn't competing with a zombie session. VvttsCore.stop is
-        // flag-based (non-blocking(, and this cross-thread usage mirrors stop().
-        // (The frozen worker's own native state can't be freed safely — that
-        // memory is released once per hang event, unavoidably.)
-        try {
-            for (h in coreHandles.values) VvttsCore.stop(h)
-        } catch (e: Exception) {
-            Log.e(TAG, "rotate: stop handles failed", e)
-        }
-        synthExecutor = Executors.newSingleThreadExecutor { r ->
-            Thread(r, "elq-synth").apply { isDaemon = true }
-        }
-        coreHandles.clear()
+        // JNI stop/shutdown are not safe while the retired worker is in native code.
+        // Leave its handles with it; the replacement worker owns a separate cache.
         engineEpoch++
+        synthWorker = SynthWorker()
         lastParamSig = null
         pendingEciVoiceByDialect.clear() // fresh handles start at engine-default voices; drop stale cache
         hangDetected = true

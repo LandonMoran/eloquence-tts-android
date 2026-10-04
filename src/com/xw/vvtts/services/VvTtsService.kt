@@ -33,7 +33,7 @@ import java.util.concurrent.RejectedExecutionException
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
-    private val engineCallLock = Any()          // serializes native engine calls: stop/synthesizeCore/warmupDialect
+    private val engineCallLock = Any()          // guards lifecycle stop/warmup dispatch
     // #12: engineRefLock guards only the engine *reference* — never the long native
     // waits — so lifecycle teardown never blocks behind a synthesis parked in
     // native code for up to HANG_TIMEOUT_S.
@@ -587,8 +587,8 @@ class VvTtsService : TextToSpeechService() {
         override fun onStop() {
             stopping = true
             generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            // #12: no engineCallLock here — engine.stop() is flag-based (non-blocking(,
-            // so holding a lock while native audio winds down would stall onStop.
+            // stop() queues native work on the engine worker. Generation invalidation
+            // stays synchronous, and this callback never waits for native synthesis.
             try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         }
 
