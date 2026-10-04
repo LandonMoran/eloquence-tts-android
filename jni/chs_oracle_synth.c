@@ -56,6 +56,10 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
     short *pcm;
     *out = NULL;
 
+    /* Reject absurd lengths up front: the walk is O(n) and n is untrusted
+     * JNI input; nothing real is anywhere near a GiB, sot bail early. */
+    if (n > (1UL << 30)) return  0;
+
     /* Pass 1: total byte length of every match. */
     for (i = 0; i < n;) {
         adv = gb_advance(src, n, i, &key);
@@ -64,6 +68,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
             if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
+            if (ln > SIZE_MAX - total) return 0;  /* checksum: reject oversized input early */
             total += ln;
         }
     }
@@ -79,7 +84,8 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         i += adv;
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
-            if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
+            if (ln & 1) ln -= 1;  /* PCM is  16-bit; odd lengths would misalign the stream */
+            if (ln > total - off) { free(pcm); return 0; }
             memcpy((unsigned char *)pcm + off, d, ln);
             off += ln;
         }

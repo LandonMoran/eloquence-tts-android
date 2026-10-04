@@ -9,12 +9,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 
 object ElqUpdateChecker {
 
     private const val TAG = "ElqUpdateChecker"
     private const val REPO_OWNER = "LandonMoran"
     private const val REPO_NAME = "eloquence-tts-android"
+
+    // #178: bound the GitHub release metadata response before decompression/parsing.
+    private const val MAX_COMPRESSED_BYTES = 256L * 1024L
+    private const val MAX_DECOMPRESSED_BYTES = 512L * 1024L
 
     private class GitHubAsset(
         val name: String?,
@@ -49,11 +56,19 @@ object ElqUpdateChecker {
      * Call from a background thread because this performs network I/O.
      */
     fun check(context: Context): UpdateResult {
-        val localVersionCode = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
+        val pkg = try {
+            context.packageManager.getPackageInfo(context.packageName, 0)
         } catch (e: Exception) {
-            0
+            null
         }
+        val localVersionCode = pkg?.longVersionCode?.toInt() ?: 0
+        // Compare the release tag against the app's semantic versionName (e.g. "1.0.1")
+        // so both sides go through the same parser on one comparable scale; fall back to the
+        // raw Android versionCode int when the versionName doesn't parse.
+
+
+
+        val localReleaseCode = parseVersionCode(pkg?.versionName) ?: localVersionCode
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
         var conn: HttpURLConnection? = null
         try {
@@ -78,16 +93,37 @@ object ElqUpdateChecker {
             }
             val releases = parseReleases(json)
             val stable = releases.filter { !it.prerelease && !it.draft }
-            val target = stable.maxByOrNull { it.publishedAt ?: "" }
+            // Pick the highest numeric versionCode: publication order can hide an
+            // actually-newer release published earlier (a lower-version release may be
+            // published later ). Tie-break on newer publishedAt..
+            val target = stable
+                .mapNotNull { rel -> parseVersionCode(rel.tagName)?.let { it to rel } }
+                .maxWithOrNull(
+                    compareBy<Pair<Int, GitHubRelease>> { it.first }
+                        .thenBy { it.second.publishedAt ?: "" }
+                )
+                ?.second
             if (target == null) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
             val latestCode = parseVersionCode(target.tagName) ?: -1
+            val localTag = try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: null
+            } catch (e: Exception) {
+                null
+            }
+            val latestSemVer = parseSemver(target.tagName)
+            val localSemVer = parseSemver(localTag)
+            val hasUpdate =
+                if (latestSemVer != null && localSemVer != null) latestSemVer > localSemVer
+                else latestCode > localVersionCode
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
-                hasUpdate = latestCode > localVersionCode,
+                // An update is only reported when the newer release actually ships a
+                // compatible APK asset the updater can download.
+                hasUpdate = apkUrl != null && latestCode > localReleaseCode,
                 currentVersionCode = localVersionCode,
-                latestVersionCode = latestCode.takeIf { it >= 0 },
+                latestVersionCode = (latestSemVer?.packed() ?: latestCode).takeIf { it >= 0 },
                 latestTag = target.tagName,
                 releaseNotes = target.body,
                 downloadUrl = apkUrl,
@@ -101,9 +137,42 @@ object ElqUpdateChecker {
         }
     }
 
+    /**
+* Parses a release tag (or installed versionName( into a comparable numeric code.
+     *
+     * Supports the repo's documented semantic-version tag format (`v1.0`, `v1.1.0`,
+     * `v2.10.3`) and plain numeric versionCode tags (`2000000002`). Rejects ambiguous
+     * values instead of extracting arbitrary digit runs: the previous regex could not read
+     * `v1.0` at all and mis-parsed names like `r37` as version 37.
+     */
     private fun parseVersionCode(tag: String?): Int? {
-        val m = Regex("""(\d{4,})""").find(tag ?: "") ?: return null
-        return m.groupValues[1].toIntOrNull()
+        val s = tag?.trim() ?: return null
+        s.toIntOrNull()?.let { return it }
+        // Semantic version tag: optional 'v' prefix + MAJOR.MINOR[.PATCH]; at least one dot
+        // required so bare values like `v1` stay rejected as ambiguous..
+        val m = Regex("""^[vV]?(\d+)\.(\d+)(?:\.(\d+))?$""").matchEntire(s) ?: return null
+        val major = m.groupValues[1].toLongOrNull() ?: return null
+        val minor = m.groupValues[2].toLongOrNull() ?: return null
+        val patch = m.groupValues[3].ifEmpty { "0" }.toLongOrNull() ?: return null
+        // Base-1000 encodes each component so numeric ordering matches semantic ordering; any
+        // component at or above 1000 would carry into the next slot, so reject those..
+        if (major >= 1000 || minor >= 1000 || patch >= 1000) return null
+        val code = major * 1000 * 1000 + minor * 1000 + patch
+        if (code > Int.MAX_VALUE) return null
+        return code.toInt()
+    }
+
+    /** Structurally-parsed dotted numeric version tag (v1.2.3). Rejects ambiguous tags (null): non-numeric segments, extra segments, trailing suffixes. */
+    private data class SemVer(val major: Int, val minor: Int, val patch: Int): Comparable<SemVer> {
+        override fun compareTo(other: SemVer): Int =
+            compareValuesBy(major, other.major, minor, other.minor, patch, other.patch)
+        fun packed(): Int = major * 1_000_000 + minor * 1_000 + patch
+    }
+
+    private fun parseSemver(tag: String?): SemVer? {
+        val m = Regex("""^v?(\d+)\.(\d+)\.(\d+)$""").find(tag ?: "") ?: return null
+        val parts = m.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
+        return SemVer(parts[0], parts[1], parts[2])
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {
@@ -153,13 +222,61 @@ object ElqUpdateChecker {
         return null
     }
 
-    private fun readBody(conn: HttpURLConnection): String {
-        val enc = conn.contentEncoding ?: ""
-        val stream = when {
-            enc.contains("gzip") -> GZIPInputStream(conn.inputStream)
-            enc.contains("deflate") -> InflaterInputStream(conn.inputStream)
-            else -> conn.inputStream
+    /** InputStream that counts bytes passing through and throws once the cap is exceeded;
+     * bounds the compressed wire stream (even when Content-Length is missing or lying)
+     * and the decompressed payload, so a malformed/compromised/oversized response
+     * can never exhaust memory or stall parsing on a giant JSONArray.
+     */
+    private class LimitedInputStream(
+        private val source: InputStream,
+        private val limit: Long,
+    ) : InputStream() {
+        private var count: Long = 0L
+
+        override fun read(): Int {
+            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
+            val b = source.read()
+            if (b >= 0) count++
+            return b
         }
-        return stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (len == 0) return 0
+            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
+            val n = source.read(b, off, minOf(len.toLong(), limit - count).toInt())
+            if (n > 0) count += n
+            return n
+        }
+    }
+
+    private fun readBody(conn: HttpURLConnection): String {
+        // #178: reject oversized Content-Length up front, then cap both the compressed wire
+        // stream and the decompressed payload so parsing sees only bounded input.
+        val declaredLen = conn.contentLengthLong
+        if (declaredLen > MAX_COMPRESSED_BYTES)
+            throw IOException("GitHub releases response too large: $declaredLen bytes (max $MAX_COMPRESSED_BYTES)")
+        val enc = conn.contentEncoding ?: ""
+        val capped = LimitedInputStream(conn.inputStream, MAX_COMPRESSED_BYTES)
+        val stream = when {
+            enc.contains("gzip") -> GZIPInputStream(capped)
+            enc.contains("deflate") -> InflaterInputStream(capped)
+            else -> capped
+        }
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var total: Long = 0L
+        while (true) {
+            val n = stream.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > MAX_DECOMPRESSED_BYTES) {
+                stream.close()
+                throw IOException("GitHub releases response exceeds $MAX_DECOMPRESSED_BYTES bytes decompressed")
+            }
+            out.write(buf, 0, n)
+        }
+        stream.close()
+        if (total == 0L) return ""
+        return out.toString(Charsets.UTF_8.name())
     }
 }

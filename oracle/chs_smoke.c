@@ -41,5 +41,16 @@ int main(void) {
     }
     printf("CHS SMOKE OK: engine 0x60000 instantiated; 你好 = %zu samples, non-silent\n", n);
     free(pcm);
-    return 0;
-}
+
+        /* oversized input must be rejected up front (regression for the
+         * pass-1/pass-2 overflow guards): no OOB walk of src. */
+        {
+            short *big = NULL;
+            size_t r = chs_build_pcm(text, (size_t)1 << 31,&big);
+            if (r != 0 || big != NULL) {
+                fprintf(stderr, "CHS SMOKE FAIL: oversized input not rejected\n");
+                return 1;
+            }
+        }
+        return 0;
+    }

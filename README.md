@@ -10,6 +10,7 @@
 - **8 个发音角色**：Reed / Sandy / Glen / Rocko / Bobby / Shelly / Grandpa / Grandma，通过 ECI voice param 机制切换
 - **多语言自动检测**：Unicode 规则 → 内存 n-gram 统计 → Lingua 三层检测，混合语言文本自动分片，各用各的引擎朗读
 - **自动更新**：基于 GitHub Releases 的检查/下载/安装通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）
+- **能力清单**：支持的语言 /  发音角色 /  能力唯一事实源见 `docs/languages-voices-capabilities.md`
 - **零延迟**：本地引擎，按下就出声，无云端往返
 - **自定义捏声**：长按发音角色可调节性别、头部大小、情感起伏、粗糙度、气息感等音色参数
 - **语速 / 音调 / 音量**：可独立调节，试听实时生效
@@ -68,7 +69,6 @@ bash build.sh
 
 - `oracle/table/*.consolidated.tsv`：一行一个汉字 + 真人 PCM，采集自参考 Eloquence 引擎
 - `oracle/merge_build.py`：把 consolidated TSV + legacy 行确定性合并成 `oracle_chs.c`（16,913 字）
-产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
 - 数字 0-9 由 `TextNormalizer` 归一为汉字（零一二…（，经同一语音库朗读
 
 ###角色切换
@@ -77,7 +77,7 @@ bash build.sh
 
 ###多语言检测
 
-三层架构：Unicode 规则层（O(n) 判定假名/谚文/汉字/拉丁）+ 内存 n-gram 层 + Lingua 统计层（拉丁 10 语言互分
+三层架构：Unicode 规则层（O(1( 判定假名/谚文/汉字/拉丁）+ 内存 n-gram 层 + Lingua 统计层（拉丁 10 语言互分
 
 
 
@@ -91,6 +91,7 @@ bash build.sh
 
 ## Roadmap
 
-- [ ] 重采 百 / 零 / 八 PCM（`oracle-dump` + `oracle-assemble`），合上最后一个数字静音口
-- [x] 首个发布：v1.0 · versionCode 1（版本策略见 `RELEASES.md`）
+- [ ] 补采 百 / /零 / /八 的 PCM 静音口（采集工具现状与计划见 `oracle/lpta-remake.md`）
+- [x] 首个发布：v1.0 · versionCode 2000000001（版本策略见 `RELEASES.md`）
+- [ ] 自动更新 ABI 匹配回退验证（部分资产缺失时回退为打开 Releases 页）
 - 发布变更说明见 `RELEASES.md`（随每次发布更新）
