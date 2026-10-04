@@ -114,10 +114,7 @@ class VvTtsService : TextToSpeechService() {
             // Bounded drain:a healthy teardown finishes well under a second (native
             // wind-down after stop() is flag-based(; a pathological native call gets
             // cut off at this timeout instead of stalling process teardown forever.
-
-
-            deliveryExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS.
-)
+            deliveryExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)
         } catch (ignore: InterruptedException) {
             Thread.currentThread().interrupt()
         }
