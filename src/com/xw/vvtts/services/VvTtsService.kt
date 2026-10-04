@@ -250,12 +250,6 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    /** onLoadVoice contract: a voice can only be "loaded" if this build ships it. */
-    override fun onLoadVoice(voiceName: String?, features: Array<out String>?): Int {
-        if (voiceName == null || voiceName !in shippedVoiceTags) return TextToSpeech.ERROR
-        return TextToSpeech.SUCCESS
-    }
-
     /** Reports the supported language detail level, or LANG_NOT_SUPPORTED for unknown languages or failures. */
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
