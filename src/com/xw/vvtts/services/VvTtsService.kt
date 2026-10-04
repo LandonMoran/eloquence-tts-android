@@ -28,8 +28,9 @@ import java.util.concurrent.RejectedExecutionException
 
 /**
  * Eloquence TTS service (openevv port, single engine).
- * 11 dialects are linked in this build: en-US/en-GB/de-DE/fr-FR/fr-CA/
- * es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL. (zh/pt/fi/ko are not linked here.)
+ * 14 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
+ * de-DE/fr-FR/fr-CA/es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL/pt-BR/fi-FI/zh-CN,
+ * matching the voices advertised in onGetVoices().ko is not linked here.
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
@@ -138,13 +139,8 @@ class VvTtsService : TextToSpeechService() {
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
-        stopping = true
-        deliveryExecutor.shutdown()
-        try {
-            deliveryExecutor.awaitTermination(250, java.util.concurrent.TimeUnit.MILLISECONDS)
-        } catch (ignore: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
+        // No executor anymore: synthesis is synchronous within onSynthesizeText(),
+        // so teardown just drops queued work via the generation bump above.
         try {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
@@ -243,6 +239,65 @@ class VvTtsService : TextToSpeechService() {
             fallback
         }
     }
+
+    /** Maps an incoming language tag to the two-letter prefix the dialect matchers
+     *  expect: the framework probes with ISO-639-2/T three-letter codes
+     *  (getISO3Language: eng, spa, jpn, ...) as well as ISO-639-1 two-letter ones.
+     *  Without this, "spa" never matches startsWith("es") and non-English
+     *  locales silently fall back to en-US. Passes 2-letter tags through. */
+    private fun langPrefix(tag: String?): String {
+        return when ((tag ?: "").lowercase()) {
+            "eng" -> "en"
+            "deu", "ger" -> "de"
+            "fra", "fre" -> "fr"
+            "spa" -> "es"
+            "ita" -> "it"
+            "jpn" -> "ja"
+            "pol" -> "pl"
+            "por" -> "pt"
+            "fin" -> "fi"
+            "zho", "chi" -> "zh"
+            else -> (tag ?: "").lowercase()
+        }
+    }
+
+    /** Maps a three-letter ISO-3166 country code (getISO3Country: USA, GBR, ...)
+     *  to its two-letter form for comparisons; passes 2-letter codes through. */
+    private fun countryCode(tag: String?): String {
+        return when ((tag ?: "").uppercase()) {
+            "USA" -> "US"
+            "GBR" -> "GB"
+            "DEU" -> "DE"
+            "FRA" -> "FR"
+            "CAN" -> "CA"
+            "ESP" -> "ES"
+            "MEX" -> "MX"
+            "ITA" -> "IT"
+            "JPN" -> "JP"
+            "POL" -> "PL"
+            "BRA" -> "BR"
+            "FIN" -> "FI"
+            "CHN" -> "CN"
+            "TWN" -> "TW"
+            else -> (tag ?: "").uppercase()
+        }
+    }
+
+    /** Terminates a callback that never started with a zero-length utterance so the
+     *  framework's utterance contract holds (start() before done()) for utterances
+     *  superseded while still queued. Falls back to error() if even that fails. */
+    private fun silentComplete(callback: SynthesisCallback) {
+        try {
+            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+            callback.done()
+        } catch (t: Throwable) {
+            Log.w(TAG, "silentComplete failed; falling back to error()", t)
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {
+            }
+        }
+    }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
         return voiceSafe(arrayOf("en", "US", "")) {
@@ -261,8 +316,8 @@ class VvTtsService : TextToSpeechService() {
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
-        val lang = (language ?: "").lowercase()
-        val c = (country ?: "").uppercase()
+        val lang = langPrefix(language)
+        val c = countryCode(country)
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
@@ -284,6 +339,11 @@ class VvTtsService : TextToSpeechService() {
         // the binder reply on Android 15+ (Settings/TalkBack then die decoding a
         // poisoned parcel: NPE Collection.toArray() in Parcel.createExceptionOrNull).
         return voiceSafe(emptyList<Voice>()) {
+            // Voice names use BCP-47; Locale matches the dialect. The feature set
+            // MUST be non-null: Voice.writeToParcel builds "new ArrayList<>(features)"
+            // and NPEs on null, which poisons the getVoices() AIDL reply parcel and
+            // crashes the Settings picker / TalkBack TTS init (the "settings won't
+            // open when eloquence is the default engine" regression).
             val voices = ArrayList<Voice>(14)
             voices.add(Voice("en-US", Locale.US, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
             voices.add(Voice("en-GB", Locale.UK, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
@@ -299,8 +359,8 @@ class VvTtsService : TextToSpeechService() {
             voices.add(Voice("pt-BR", Locale("pt", "BR"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
             voices.add(Voice("fi-FI", Locale("fi", "FI"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
             voices.add(Voice("zh-CN", Locale("zh", "CN"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            // Only advertise dialects actually linked in this build (build_native.sh LANGS).
-            voices
+            // Only advertise dialects actually linked in this build (build_native.sh LANGS)
+            return voices
         }
     }
 
@@ -308,12 +368,12 @@ class VvTtsService : TextToSpeechService() {
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
-        val lang = language.lowercase()
+        val lang = langPrefix(language)
         val supported = lang.startsWith("en") || lang.startsWith("de")
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
                 || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
                 || lang.startsWith("zh")
-        if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
+        if (lang.startsWith("zh") && countryCode(country) == "TW") return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
@@ -332,12 +392,19 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    /** Queues synthesis with the current cancellation generation; reports an error if shutdown rejects it. */
+    /** Synthesizes synchronously:every callback call (start/audio/done/error) finishes
+     *  within this method's lifetime, per the framework contract. */
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
         try {
-            val gen = generation.get()  // snapshot: a stop() while queued must drop this task
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
+            // Per-utterance bump: the newest request supersedes still-QUEUED
+            // older ones — never a plain FIFO for a screen reader (a FIFO that
+            // outpaces the paced drain trails focus for seconds, then "dies").
+            // In-flight is unaffected: the chunk loops bail only on stopping(),
+            // and this snapshot post-dates the bump, so THIS task survives the
+            // dequeue gates. The engine cannot abandon an active synthesis.
+            val gen = generation.incrementAndGet()
+            runSynthesis(request, callback, gen, schedAt)
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
             // Framework contract: every onSynthesizeText must terminate the
@@ -356,16 +423,29 @@ class VvTtsService : TextToSpeechService() {
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
+        synchronized(cancellationLock) {
         var text: String? = request.charSequenceText?.toString()
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
         // speech after cancellation) and must not clear the stopping flag.
         // error() is the designated failure termination (never started).
         if (gen != generation.get()) {
-            Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {
+            if (stopping) {
+                // A stop() bumped the generation: the framework canceled this
+                // utterance, so it must not speak (ghost speech after cancel).
+                // error() is the designated failure termination (never started).
+                Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
+                try {
+                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                } catch (ignore: Throwable) {
+                }
+            } else {
+                // No stop: a newer utterance superseded this still-QUEUED one.
+                // Complete it silently (start+done, zero audio) so the
+                // framework's utterance contract holds and TalkBack does not
+                // treat a superseded focus as a synthesis failure.
+                Log.d(TAG, "dropping superseded utterance (gen $gen != $generation)")
+                silentComplete(callback)
             }
             return
         }
@@ -373,19 +453,37 @@ class VvTtsService : TextToSpeechService() {
         // dequeues:clearing it in onSynthesizeText() would let previous
         // utterance (still draining on the single-thread executor( resume
         // after a TalkBack re-swipes, causing overlapping speech.
-        stopping = false
+        // Snapshot the flag BEFORE the gate check: a stop() racing between the
+        // snapshot and the re-check keeps its flag ( the reset runs only after
+        // the check(, so a genuine cancellation is never misrouted to silentComplete()
+        // instead of error().)
+        val stopPending = stopping
         // An onStop() can race in between the queue-time generation snapshot
-        // (taken in onSynthesizeText()and this reset:it bumps generationand
-        // sets stopping = true. Re-check so a just-issued cancellation isn't
-        // cleared, which would let a stale utterance drain in full (ghost speech(.
-        // Restore the stop flag and drop the utterance via error() instead.
+        // (taken in onSynthesizeText())and this gate:it bumps generationand
+        // sets stopping = true. A just-issued cancellation must drop via
+        // error() ( not silentComplete(); restore the flag as needed below..
         if (gen != generation.get()) {
-            stopping = true
-            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {}
+            if (stopPending || stopping) {
+                // Genuine stop race: restore the flag and drop via error()..
+                // (Re-set only whenthe snapshot saw it; a stop past the checkpoint
+                // already left the flag true — never clear it.)
+                if (stopPending) stopping = true
+                Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
+                try {
+                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                } catch (ignore: Throwable) {}
+            } else {
+                // A newer utterance won the queue in this window: superseded,
+                // complete it silently without touching the stop flag.
+                Log.d(TAG, "utterance superseded mid-queue; gen=" + gen + " generation=" + generation.get())
+                silentComplete(callback)
+            }
             return
+        }
+        // The generation gate passed:this utterance's own bump is the current one,
+        // so no stop() has fired since it was queued. Clear the flag here —
+        // AFTER the re-check — so a racing stop() is never erased..
+        stopping = false
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
                 if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
@@ -488,9 +586,11 @@ class VvTtsService : TextToSpeechService() {
                 started = true
             }
                         for (seg in segments) {
-                            // Bail on either signal: stop() (framework( or a generation bump
-                            // (a newer utterance superseded ours while we were mid-queue(.
-                            if (stopping || gen != generation.get()) break
+                            // Bail on stop() only. A per-utterance generation bump
+                            // supersedes QUEUED work at the dequeue gates; the engine
+                            // cannot abandon an in-flight synthesis, so a new utterance
+                            // must never cut this one mid-stream.
+                            if (stopping) break
                             if (SystemClock.elapsedRealtime() > uttDeadline) {
 
                                 Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
@@ -513,7 +613,8 @@ class VvTtsService : TextToSpeechService() {
                 // uninterruptible synth of the whole segment (the "one second
                 // between swipes" / "fast swipes get clogged" regression).
                 for (chunkText in splitSynthChunks(segText)) {
-                    if (stopping || gen != generation.get()) break
+                    // stop() only, same rule as the segment loop above.
+                    if (stopping) break
                     if (SystemClock.elapsedRealtime() > uttDeadline) break
                     var textToSynth: String = chunkText
                     val expanded = when (seg.dialect) {
@@ -614,8 +715,10 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
-    private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    
     @Volatile private var stopping = false
+    /** Serializes stop-gate checks/flag-reset in runSynthesis against onStop()/bumpGeneration() generation bumps. */
+    private val cancellationLock = Any()
     /** Signals the pacing wait in hold(): onStop()/bumpGeneration() notifyAll()
      *  so a cancellation interrupts the artificial audio-duration sleep at once. */
     private val pacingMonitor = Any()
@@ -626,19 +729,24 @@ class VvTtsService : TextToSpeechService() {
      *  and onUnbind so nothing flushes seconds after the service dies (two-voices
      *  overlap, late lock-screen speech(. */
     private fun bumpGeneration() {
-        stopping = true
-        generation.incrementAndGet()
-        synchronized(pacingMonitor) { (pacingMonitor as Object).notifyAll() }  // wake the pacing wait now
-        Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
+        synchronized(cancellationLock) {
+            stopping = true
+            generation.incrementAndGet()
+            synchronized(pacingMonitor) { (pacingMonitor as Object).notifyAll() }  // wake the pacing wait now
+            Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
+        }
     }
         /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
-            stopping = true
-            generation.incrementAndGet()  // invalidate utterances already queued pre-stop
-            synchronized(pacingMonitor) { (pacingMonitor as Object)..notifyAll() }  // wake the pacing wait so cancellation is immediate
+            synchronized(cancellationLock) {
+                stopping = true
+                generation.incrementAndGet()  // invalidate utterances already queued pre-stop
+                synchronized(pacingMonitor) { (pacingMonitor as Object).notifyAll() }  // wake the pacing wait so cancellation is immediate
+            }
             // stop() queues native work on the engine worker. Generation invalidation
             // stays synchronous,and this callback never waits for native synthesis.
-            try { currentEngine()?.stop() } catch (ignore: Throwable) {}
+try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
+        }
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected
