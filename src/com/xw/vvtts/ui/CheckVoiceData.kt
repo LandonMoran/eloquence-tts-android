@@ -22,7 +22,6 @@ class CheckVoiceData : Activity() {
         available.add("it-IT")
         available.add("ja-JP")
         available.add("pl-PL")
-        available.add("pt-PT")
         available.add("pt-BR")
         available.add("fi-FI")
         available.add("zh-CN")
