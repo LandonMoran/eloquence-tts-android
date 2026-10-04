@@ -419,21 +419,20 @@ class VvTtsService : TextToSpeechService() {
         // dequeues:clearing it in onSynthesizeText() would let previous
         // utterance (still draining on the single-thread executor( resume
         // after a TalkBack re-swipes, causing overlapping speech.
-        // Snapshot the flag BEFORE clearing it: an onStop() racing in between
-        // gate-1 and this reset sets stopping=true; after the reset there is no
-        // way to know a stop was issued (only that generation moved).
+        // Snapshot the flag BEFORE the gate check: a stop() racing between the
+        // snapshot and the re-check keeps its flag ( the reset runs only after
+        // the check(, so a genuine cancellation is never misrouted to silentComplete()
+        // instead of error().)
         val stopPending = stopping
-        stopping = false
         // An onStop() can race in between the queue-time generation snapshot
-        // (taken in onSynthesizeText()) and this reset: it bumps generation and
-        // sets stopping = true. Re-check so a just-issued cancellation isn't
-        // cleared, which would let a stale utterance drain in full (ghost speech).
-        // Restore the stop flag and drop the utterance via error() instead.
+        // (taken in onSynthesizeText())and this gate:it bumps generationand
+        // sets stopping = true. A just-issued cancellation must drop via
+        // error() ( not silentComplete(); restore the flag as needed below..
         if (gen != generation.get()) {
             if (stopPending || stopping) {
-                // Genuine stop race: restore the flag and drop via error().
-                // (Only re-set when the snapshot saw it; a stop landing after
-                // the reset already left the flag true.)
+                // Genuine stop race: restore the flag and drop via error()..
+                // (Re-set only whenthe snapshot saw it; a stop past the checkpoint
+                // already left the flag true — never clear it.)
                 if (stopPending) stopping = true
                 Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
                 try {
@@ -447,6 +446,10 @@ class VvTtsService : TextToSpeechService() {
             }
             return
         }
+        // The generation gate passed:this utterance's own bump is the current one,
+        // so no stop() has fired since it was queued. Clear the flag here —
+        // AFTER the re-check — so a racing stop() is never erased..
+        stopping = false
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
                 if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                     Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
