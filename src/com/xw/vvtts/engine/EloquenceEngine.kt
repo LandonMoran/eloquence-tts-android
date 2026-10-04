@@ -530,7 +530,15 @@ class EloquenceEngine(context: Context) {
 
      *  No synthesis happens here — just the native handle open. */
     fun warmupDialect(dialect: Int) {
-        if (dialect < 0) return
+        if (dialect <  0) return
+        // Fail closed while the engine is retired: no fresh handle may open
+        // beside a possibly-still-alive zombie worker..
+
+        if (SystemClock.elapsedRealtime() < retireUntilMs) {
+
+            Log.w(TAG, "TTS_HANG: skipped warmup while engine retired")
+            return
+        }
         val worker = synthWorker
         // After shutdown() the executor is dead and the natives are closed: a
         // warmup submitted then would throw RejectedExecutionException into
@@ -614,9 +622,14 @@ class EloquenceEngine(context: Context) {
 
             if (voice.eciVoiceNumber != worker.pendingEciVoiceByDialect[dialect]) {
 
-                            VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
-                            worker.pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
-                        }
+                if (VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber) >=  0) {
+                    worker.pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
+                } else {
+                    // Voice copy failed: drop the cached voice so a later utterance retries the copy.
+
+                    worker.pendingEciVoiceByDialect.remove(dialect)
+                }
+            }
 
             val vp = voiceProfile
             val sigBase = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber
@@ -867,6 +880,17 @@ class EloquenceEngine(context: Context) {
         val worker = synthWorker
         val future = try {
             worker.executor.submit<ShortArray?> {
+                // Fail closed even if queued before retire:the retired engine's native
+                // worker may still own the session; no queued output may escape while retired.
+
+
+ 
+                if (SystemClock.elapsedRealtime() < retireUntilMs) {
+
+
+                    Log.w(TAG, "TTS_HANG: retired engine; dropping queued synthesis")
+                    null
+                } else {
                 val r = try {
                     block(worker)
                 } finally {
@@ -882,6 +906,8 @@ class EloquenceEngine(context: Context) {
                     }
                 }
                 r
+                }
+            }
             }
         } catch (e: RejectedExecutionException) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
@@ -930,4 +956,3 @@ class EloquenceEngine(context: Context) {
         synthWorker = SynthWorker()
         hangDetected = true
     }
-}
