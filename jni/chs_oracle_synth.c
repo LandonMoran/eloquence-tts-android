@@ -64,6 +64,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
             if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
+            if (ln > (size_t)-1 - total) { total = 0; break; }
             total += ln;
         }
     }
