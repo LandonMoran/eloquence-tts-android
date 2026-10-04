@@ -653,9 +653,8 @@ class LanguageDetector {
                 var nonAsciiLetter = false
                 var i = text.length
                 while (i > 0) {
-                val cp = text.codePointBefore(i)
-                    val c = text[i - 1]
-                    if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
+                    val cp = text.codePointBefore(i)
+                    if (cp > 0x7F && Character.isLetter(cp)) { nonAsciiLetter = true; break }
                     i -= Character.charCount(cp)
                 }
                 if (!nonAsciiLetter) return englishDialect

@@ -147,13 +147,15 @@ typedef struct {
     int     failed;      /* engine-state-invalidation flag (see vv_fail_session( */
 } VvtsSession;
 
+static void vv_fail_session(VvtsSession *s);
+
 /* The engine calls back on its own synthesis thread; the caller only reads
  * s->pcm after waiting for eciSpeaking to go quiet, so no locking is needed
  * as long as one session is never driven from two threads at once (the
  * Kotlin side already serialises with its synthesis lock). */
 static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     VvtsSession *s = (VvtsSession *)data;
-    if (message != eciWaveformBuffer)
+    if (s->failed || message != eciWaveformBuffer)
         return eciDataProcessed;
     if (param < 0) return eciDataProcessed;
     {
@@ -163,7 +165,10 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
             size_t cap = s->pcmCap ? s->pcmCap : 16384;
             while (cap < s->pcmLen + n) cap *= 2;
             short *p = (short *)realloc(s->pcm, cap * sizeof(short));
-            if (!p) return eciDataProcessed; /* drop rather than lose the session */
+            if (!p) {
+                vv_fail_session(s);
+                return eciDataProcessed;
+            }
             s->pcm = p;
             s->pcmCap = cap;
         }
@@ -316,12 +321,8 @@ static void vv_fail_session(VvtsSession *s) {
 }
 
 static jshortArray vv_empty_result(JNIEnv *env) {
-    jshortArray out = (*env)->NewShortArray(env,  0);
-    if ((*env)->ExceptionCheck(env)) {   /* OOME even on a 0-len array */
-        (*env)->ExceptionClear(env);
-        return NULL;
-    }
-    return out;
+    /* Leave allocation exceptions pending so the Kotlin wrapper can signal failure. */
+    return (*env)->NewShortArray(env, 0);
 }
 /* ------------------------------------------------------------------ */
 
@@ -330,15 +331,22 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         JNIEnv *env, jclass cls, jlong handle, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return NULL;
+    if (!s) return NULL;
+    if (s->failed) return vv_empty_result(env);
+    if (!s->hECI) return NULL;
     if (!text) return NULL;
 
     jsize len = (*env)->GetArrayLength(env, text);
+    if ((*env)->ExceptionCheck(env)) goto failed;
     if (len <= 0) return NULL;
 
     void *buf = malloc((size_t)len + 1);
-    if (!buf) return NULL;
+    if (!buf) goto failed;
     (*env)->GetByteArrayRegion(env, text, 0, len, (jbyte *)buf);
+    if ((*env)->ExceptionCheck(env)) {
+        free(buf);
+        goto failed;
+    }
     ((char *)buf)[len] = '\0';
 
     /* charsetId describes how the byte array was encoded by the Kotlin
@@ -355,6 +363,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
      * engine's thread before we touch text/pcm for the new utterance. */
     s->cancel = 0;
     vv_settle(s);
+    if (s->failed) goto failed;
 
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
@@ -379,33 +388,35 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *rs = NULL;
         size_t outLen = 0;
         vv_trim_silence(pcm, &samples);
-        if (vv_resample_4x(pcm, samples, &rs, &outLen) ==
-                0 && rs && outLen >  0) {
+        if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0) {
             free(pcm);
-            pcm = rs;
-            samples = outLen;
+            goto failed;
         }
+        free(pcm);
+        pcm = rs;
+        samples = outLen;
         free(s->pcm);
         s->pcm = pcm;
         s->pcmLen = samples;
         s->pcmCap = samples;
         jshortArray out = (*env)->NewShortArray(env, (jsize)samples);
-        if (!out) return NULL;
+        if (!out || (*env)->ExceptionCheck(env)) goto failed;
         (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
+        if ((*env)->ExceptionCheck(env)) goto failed;
         return out;
     }
 
-    eciClearInput(s->hECI);
+    if (!eciClearInput(s->hECI)) goto failed;
     /* The CLI probe's canonical order: an empty insert (index 4242( pushes
      * the current voice/environment params into the engine and is REQUIRED for
      * synthesis itself -- removing it (commit 380ddce( broke all speech(
      * and for the params eciSetVoiceParam just wrote to reach the engine. */
-    et_insertIndex(s->hECI,  4242);
-                et_addText(s->hECI, buf);
+    if (!et_insertIndex(s->hECI, 4242)) goto failed;
+    if (!et_addText(s->hECI, buf)) goto failed;
                 s->synthBusy =  1;
                 struct timespec st1, st2, st3;
                 clock_gettime(CLOCK_MONOTONIC, &st1);
-                et_synthesize(s->hECI);
+                if (!et_synthesize(s->hECI)) goto failed;
                 clock_gettime(CLOCK_MONOTONIC, &st2);
                 vv_wait_till_done(s);
                 clock_gettime(CLOCK_MONOTONIC, &st3);
@@ -413,26 +424,26 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
                 __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
 
+    if (s->failed) goto failed;
     if (s->pcmLen == 0) return NULL;
-        {
-            short *rs = NULL;
-                        size_t outLen = 0;
-                        vv_trim_silence(s->pcm, &s->pcmLen);
-            if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) ==    0 && rs && outLen >  0) {
-                            jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
-                            if (res) {
-                                (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, rs);
-                                free(rs);
-                                return res;
-                            }
-                            free(rs);
-                        }
-            /* fallback (should never trigger( : return the engine's own samples */
-            jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
-            if (!out) return NULL;
-            (*env)->SetShortArrayRegion(env, out, 0, (jsize)s->pcmLen, s->pcm);
-            return out;
-        }
+    short *rs = NULL;
+    size_t outLen = 0;
+    vv_trim_silence(s->pcm, &s->pcmLen);
+    if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0) goto failed;
+    jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);
+    if (!out || (*env)->ExceptionCheck(env)) {
+        free(rs);
+        goto failed;
+    }
+    (*env)->SetShortArrayRegion(env, out, 0, (jsize)outLen, rs);
+    free(rs);
+    if ((*env)->ExceptionCheck(env)) goto failed;
+    return out;
+
+failed:
+    vv_fail_session(s);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    return vv_empty_result(env);
 }
 
 JNIEXPORT jint JNICALL
