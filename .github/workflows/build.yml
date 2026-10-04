@@ -60,6 +60,7 @@ jobs:
           # Needed by the embeddable compiler when emitting nullability annotations (external funs)
           curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar /tmp/annotations-24.1.0.jar
+          (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
       # CI-only dev keystore: generated per build, never committed (gitignored).
       # Sideloads fine; not a release identity.
@@ -139,7 +140,12 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           python3 oracle/merge_build.py oracle/table native/openevv/lang/chs/oracle_chs.c /tmp/oracle_chs_merged.c
           python3 oracle/check_gbk_gate.py /tmp/oracle_chs_merged.c
-          cp /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c
+          if cmp -s /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c; then
+            echo "oracle_chs.c: regenerated content matches committed source (no tracked rewrite)"
+          else
+            echo "oracle_chs.c: regenerated content differs -- updating tracked source (review diff before committing)" >&2
+            cp /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c
+          fi
 
       - name: Build host openevv (enus + chs)
         run: make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv CC=cc LANGS="lang/enus lang/chs" RULES=c CFLAGS=-fPIC build/libevv-enus-chs.a
