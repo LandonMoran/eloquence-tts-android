@@ -442,7 +442,7 @@ class VvTtsService : TextToSpeechService() {
                         val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
             // Start the framework's audio pipe BEFORE synthesis: first-audio
             // latency must not include the first segment's native synth time.
-            // The finally block still emits the start+done pair exactly once.
+            // The finally block terminates normal or canceled synthesis.
             if (!started) {
                 callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
                 started = true
@@ -519,11 +519,11 @@ class VvTtsService : TextToSpeechService() {
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
-                    if (!started) {
+                    if (!started && !stopping && gen == generation.get()) {
                         // Playback contract: start() must precede done(), the framework
-                        // throws otherwise. One pair per utterance; every path funnels
-                        // here, so all silent/empty/early returns get the pair exactly
-                        // once. If start() itself fails, done() would also throw (it
+                        // throws otherwise. Silent/empty/early returns get the pair
+                        // unless canceled, which terminates with error() below.
+                        // If start() itself fails, done() would also throw (it
                         // requires a prior start), so error() is the contract's failure
                         // termination -- otherwise the callback is left unterminated.
                         try {
@@ -536,6 +536,13 @@ class VvTtsService : TextToSpeechService() {
                             }
                             return
                         }
+                    }
+                    if (stopping || gen != generation.get()) {
+                        try {
+                            callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                        } catch (ignore: Throwable) {
+                        }
+                        return
                     }
                     try {
                         callback.done()
