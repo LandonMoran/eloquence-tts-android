@@ -31,7 +31,7 @@ object CrashCodeDefender {
 
     @Volatile
     private var loaded: Boolean = false
-    private var initFailed: Boolean = false
+    @Volatile private var initFailed: Boolean = false
     @Volatile
     private var corpus: Set<String> = emptySet()
     private val gate = Any()

@@ -9,12 +9,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.GZIPInputStream
 import java.util.zip.InflaterInputStream
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 
 object ElqUpdateChecker {
 
     private const val TAG = "ElqUpdateChecker"
     private const val REPO_OWNER = "LandonMoran"
     private const val REPO_NAME = "eloquence-tts-android"
+
+    // #178: bound the GitHub release metadata response before decompression/parsing.
+    private const val MAX_COMPRESSED_BYTES = 256L * 1024L
+    private const val MAX_DECOMPRESSED_BYTES = 512L * 1024L
 
     private class GitHubAsset(
         val name: String?,
@@ -78,7 +85,16 @@ object ElqUpdateChecker {
             }
             val releases = parseReleases(json)
             val stable = releases.filter { !it.prerelease && !it.draft }
-            val target = stable.maxByOrNull { it.publishedAt ?: "" }
+            // Pick the highest numeric versionCode: publication order can hide an
+            // actually-newer release published earlier (a lower-version release may be
+            // published later ). Tie-break on newer publishedAt..
+            val target = stable
+                .mapNotNull { rel -> parseVersionCode(rel.tagName)?.let { it to rel } }
+                .maxWithOrNull(
+                    compareBy<Pair<Int, GitHubRelease>> { it.first }
+                        .thenBy { it.second.publishedAt ?: "" }
+                )
+                ?.second
             if (target == null) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
@@ -111,9 +127,20 @@ object ElqUpdateChecker {
         }
     }
 
+    /**
+     * Parses a x.y[.z] version from a release tag such as "v1.0" into a comparable
+     * versionCode, rejecting tags that don't match the repo's actual tag format (#150).
+     * Monotonic mapping (major*100000 + minor*1000 + patch( keeps ordering sane.
+     */
     private fun parseVersionCode(tag: String?): Int? {
-        val m = Regex("""(\d{4,})""").find(tag ?: "") ?: return null
-        return m.groupValues[1].toIntOrNull()
+        val m = Regex("""^[vV]?(\d+)\.(\d+)(?:\.(\d+))?$""").find(tag?.trim() ?: "") ?: return null
+        val major = m.groupValues[1].toIntOrNull() ?: return null
+        val minor = m.groupValues[2].toIntOrNull() ?: return null
+        val patch = m.groupValues[3].ifBlank { "0" }.toIntOrNull() ?: return null
+        if (minor !in 0..99 || patch !in 0..999) return null
+        val code = major.toLong() * 100000L + minor.toLong() * 1000L + patch
+        if (code > Int.MAX_VALUE) return null
+        return code.toInt()
     }
 
     /** Structurally-parsed dotted numeric version tag (v1.2.3). Rejects ambiguous tags (null): non-numeric segments, extra segments, trailing suffixes. */
@@ -176,13 +203,61 @@ object ElqUpdateChecker {
         return null
     }
 
-    private fun readBody(conn: HttpURLConnection): String {
-        val enc = conn.contentEncoding ?: ""
-        val stream = when {
-            enc.contains("gzip") -> GZIPInputStream(conn.inputStream)
-            enc.contains("deflate") -> InflaterInputStream(conn.inputStream)
-            else -> conn.inputStream
+    /** InputStream that counts bytes passing through and throws once the cap is exceeded;
+     * bounds the compressed wire stream (even when Content-Length is missing or lying)
+     * and the decompressed payload, so a malformed/compromised/oversized response
+     * can never exhaust memory or stall parsing on a giant JSONArray.
+     */
+    private class LimitedInputStream(
+        private val source: InputStream,
+        private val limit: Long,
+    ) : InputStream() {
+        private var count: Long = 0L
+
+        override fun read(): Int {
+            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
+            val b = source.read()
+            if (b >= 0) count++
+            return b
         }
-        return stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (len == 0) return 0
+            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
+            val n = source.read(b, off, minOf(len.toLong(), limit - count).toInt())
+            if (n > 0) count += n
+            return n
+        }
+    }
+
+    private fun readBody(conn: HttpURLConnection): String {
+        // #178: reject oversized Content-Length up front, then cap both the compressed wire
+        // stream and the decompressed payload so parsing sees only bounded input.
+        val declaredLen = conn.contentLengthLong
+        if (declaredLen > MAX_COMPRESSED_BYTES)
+            throw IOException("GitHub releases response too large: $declaredLen bytes (max $MAX_COMPRESSED_BYTES)")
+        val enc = conn.contentEncoding ?: ""
+        val capped = LimitedInputStream(conn.inputStream, MAX_COMPRESSED_BYTES)
+        val stream = when {
+            enc.contains("gzip") -> GZIPInputStream(capped)
+            enc.contains("deflate") -> InflaterInputStream(capped)
+            else -> capped
+        }
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var total: Long = 0L
+        while (true) {
+            val n = stream.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > MAX_DECOMPRESSED_BYTES) {
+                stream.close()
+                throw IOException("GitHub releases response exceeds $MAX_DECOMPRESSED_BYTES bytes decompressed")
+            }
+            out.write(buf, 0, n)
+        }
+        stream.close()
+        if (total == 0L) return ""
+        return out.toString(Charsets.UTF_8.name())
     }
 }
