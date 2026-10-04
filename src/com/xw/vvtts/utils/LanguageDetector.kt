@@ -73,9 +73,15 @@ class LanguageDetector {
         @Volatile private var fixedDialect = DIALECT_EN_US
 
         private val lock = Any()
+        /** Serializes the transient per-utterance pin block in runSynthesis() against detection-config setters. */
+        val stateLock = Any()
         @Volatile private var linguaDetector: com.github.pemistahl.lingua.api.LanguageDetector? = null
         @Volatile private var linguaInitFailed = false
         @Volatile private var linguaPreloaded = false
+        // Single-flight guard for the current generation. Resetting the whitelist
+        // allows a fresh preload; older workers must not update its flags.
+        @Volatile private var linguaInitInFlight = false
+        private var linguaGeneration = 0L // Guarded by lock.
 
         // Memo of recent Lingua-decided dialects. The n-gram scan is the largest single
         // per-segment cost on the delivery thread, and TalkBack constantly re-announces
@@ -89,21 +95,22 @@ class LanguageDetector {
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
 
-        fun setChineseDialect(dialect: Int) { chineseDialect = dialect }
+        fun setChineseDialect(dialect: Int) { synchronized(stateLock) { chineseDialect = dialect } }
         fun getChineseDialect() = chineseDialect
 
-        fun setEnglishDialect(dialect: Int) { englishDialect = dialect; invalidateLatinCache() }
+        fun setEnglishDialect(dialect: Int) { synchronized(stateLock) { englishDialect = dialect; invalidateLatinCache() } }
         fun getEnglishDialect() = englishDialect
 
-        fun setSpanishDialect(dialect: Int) { spanishDialect = dialect; invalidateLatinCache() }
+        fun setSpanishDialect(dialect: Int) { synchronized(stateLock) { spanishDialect = dialect; invalidateLatinCache() } }
         fun getSpanishDialect() = spanishDialect
 
-        fun setFrenchDialect(dialect: Int) { frenchDialect = dialect; invalidateLatinCache() }
+        fun setFrenchDialect(dialect: Int) { synchronized(stateLock) { frenchDialect = dialect; invalidateLatinCache() } }
         fun getFrenchDialect() = frenchDialect
 
         @Volatile private var transientEnabled: Set<String>? = null
 
         fun setEnabledLanguages(langs: Set<String>?) {
+            synchronized(stateLock) {
             val en = enabledLanguages
             if (langs == null || langs.isEmpty()) {
                 // Keep the current set on empty input (nothing to change;also avoid
@@ -123,6 +130,7 @@ class LanguageDetector {
             enabledLanguages = HashSet(langs)
             // whitelist changed:rebuild Lingua immediately,no restart needed
             resetLingua()
+            }
         }
 
         fun getEnabledLanguages(): Set<String> = java.util.Collections.unmodifiableSet(enabledLanguages)
@@ -130,7 +138,9 @@ class LanguageDetector {
         /** Per-utterance pin (e.g. zh from a picker row(,applied on top of the whitelist
          * without rebuilding Lingua. Cleared from the finally block. */
         fun setTransientEnabledLangs(langs: Set<String>?) {
+            synchronized(stateLock) {
             transientEnabled = langs
+            }
         }
 
         /** Whether a language code is in the detection whitelist */
@@ -146,17 +156,23 @@ class LanguageDetector {
         private fun resetLingua() {
             invalidateLatinCache()
             synchronized(lock) {
+                linguaGeneration++
                 linguaDetector = null
                 linguaInitFailed = false
                 linguaPreloaded = false
+                // A whitelist change invalidates any in-flight preload (its result would
+                // be stale(;allow the next preloadLingua()/detection to build fresh.
+                linguaInitInFlight = false
             }
             preloadLingua()
         }
 
         fun setDefaultLanguage(dialect: Int) {
-            if (dialect == defaultLanguage) return
-            defaultLanguage = dialect
-            invalidateLatinCache()
+            synchronized(stateLock) {
+                if (dialect == defaultLanguage) return
+                defaultLanguage = dialect
+                invalidateLatinCache()
+            }
         }
         fun getDefaultLanguage() = defaultLanguage
 
@@ -171,26 +187,46 @@ class LanguageDetector {
         }
 
         fun setDetectionEnabled(enabled: Boolean) {
-            if (enabled == detectionEnabled) return
-            detectionEnabled = enabled
-            invalidateLatinCache()
+            synchronized(stateLock) {
+                if (enabled == detectionEnabled) return
+                detectionEnabled = enabled
+                invalidateLatinCache()
+            }
         }
         fun isDetectionEnabled() = detectionEnabled
 
         fun setFixedDialect(dialect: Int) {
-            if (dialect == fixedDialect) return
-            fixedDialect = dialect
-            invalidateLatinCache()
+            synchronized(stateLock) {
+                if (dialect == fixedDialect) return
+                fixedDialect = dialect
+                invalidateLatinCache()
+            }
         }
         fun getFixedDialect() = fixedDialect
 
         /** Preload Lingua(called in the background at app startup) */
         fun preloadLingua() {
             synchronized(lock) {
-                if (linguaPreloaded || linguaInitFailed) return
+                // Single-flight:mark the initialization as in-flight BEFORE starting
+                // the thread,so concurrent callers (multiple TTS services, settings
+                // rebuilds( cannot spawn duplicate threads in the same generation;the
+                // built detector is published under the same lock when it lands.
+                if (linguaPreloaded || linguaInitFailed || linguaInitInFlight) return
+                linguaInitInFlight = true
+                val generation = linguaGeneration
                 Thread {
-                    getLingua()
-                    linguaPreloaded = true
+                    try {
+                        val detector = getLingua()
+                        synchronized(lock) {
+                            if (generation == linguaGeneration && detector != null) {
+                                linguaPreloaded = true
+                            }
+                        }
+                    } finally {
+                        synchronized(lock) {
+                            if (generation == linguaGeneration) linguaInitInFlight = false
+                        }
+                    }
                 }.start()
             }
         }
@@ -290,6 +326,7 @@ class LanguageDetector {
          * if detection is off,return the whole run + fixed dialect directly.
          */
         fun segment(text: String?): List<Segment> {
+            synchronized(stateLock) {
             val result = ArrayList<Segment>()
             if (text == null || text.isEmpty()) return result
 
@@ -359,6 +396,7 @@ class LanguageDetector {
             mergeConsecutive(result)
 
             return result
+            }
         }
 
         /**

@@ -9,7 +9,9 @@
 #   KS_PASS       keystore password (from env; no default(
 #   KEY_PASS      the key password (defaults to KS_PASS(
 
-set -u
+# Fail loudly: a dead packaging tail must never emit a signed-but-broken
+# APK (zip failure used to be masked by the trailing pipeline).
+set -euo pipefail
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 BUILD_TOOLS="${BUILD_TOOLS:-35.0.0}"
 AAPT="$SDK/build-tools/$BUILD_TOOLS/aapt"
@@ -114,7 +116,7 @@ done
 # 3. Assemble the APK
 rm -rf tmp_apk vvtts_base.apk vvtts_unsigned.apk vvtts_aligned.apk vvtts_signed.apk
 mkdir -p tmp_apk/lib/arm64-v8a tmp_apk/lib/armeabi-v7a tmp_apk/lib/x86_64 tmp_apk/assets
-[ -d assets ] && cp -r assets/. tmp_apk/assets/   # crash-code defender corpus (~48KB gz)
+if [ -d assets ]; then cp -r assets/. tmp_apk/assets/; fi   # crash-code defender corpus (~48KB gz)
 
 # Copy all dex files(multidex)
 cp out_dex/classes*.dex tmp_apk/
