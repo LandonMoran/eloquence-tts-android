@@ -118,7 +118,10 @@ object ElqUpdateChecker {
         val major = m.groupValues[1].toIntOrNull() ?: return null
         val minor = m.groupValues[2].toIntOrNull() ?: return null
         val patch = m.groupValues[3].ifBlank { "0" }.toIntOrNull() ?: return null
-        return major * 100000 + minor * 1000 + patch
+        if (minor !in 0..99 || patch !in 0..999) return null
+        val code = major.toLong() * 100000L + minor.toLong() * 1000L + patch
+        if (code > Int.MAX_VALUE) return null
+        return code.toInt()
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {

@@ -57,9 +57,13 @@ if [ -f "oracle/table/zh-cn.consolidated.tsv" ] || ls oracle/table/*.consolidate
   # merge_build takes the table DIR, globs every *.consolidated.tsv (parts),
   # reads the old committed C as legacy (and writes the merged bank back.
   tmp="$(mktemp "${TMPDIR:-/tmp}/oracle_chs.XXXXXX")" || exit 1
-  python3 oracle/merge_build.py oracle/table \
+  if ! python3 oracle/merge_build.py oracle/table \
     native/openevv/lang/chs/oracle_chs.c \
-    "$tmp"
+    "$tmp"; then
+    rm -f "$tmp"
+    echo "ERROR: oracle_chs.c generation failed; tracked source was not changed" >&2
+    exit 1
+  fi
   if cmp -s "$tmp" native/openevv/lang/chs/oracle_chs.c; then
     echo "oracle_chs.c: regenerated content matches committed source (no tracked rewrite)"
   else

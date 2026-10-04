@@ -67,6 +67,7 @@ object ElqUpdateDownloader {
             if (magic[0] != 'P'.code.toByte() || magic[1] != 'K'.code.toByte() || magic[2] != 3.toByte() || magic[3] != 4.toByte()) return false
             ZipFile(file).use { zf -> zf.getEntry("AndroidManifest.xml") != null }
         } catch (e: Exception) {
+            Log.w(TAG, "APK validation failed", e)
             false
         }
     }
