@@ -67,13 +67,24 @@ jobs:
           fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
-      - name: Generate keystore
+      - name: Prepare signing keystore
         run: |
-          keytool -genkeypair -v \
-            -keystore vvttts.jks -storepass android123 -keypass android123 \
-            -alias vvttts -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=CI Build,O=Home,C=US"
-
+          if [ -n "$RELEASE_KEYSTORE_B64" ]; then
+            echo "$RELEASE_KEYSTORE_B64" | base64 -d > vvttts.jks
+            chmod 600 vvttts.jks
+            echo "KS_PASS=${RELEASE_KS_PASS}" >> "$GITHUB_ENV"
+            echo "KEY_PASS=${RELEASE_KEY_PASS}" >> "$GITHUB_ENV"
+          else
+            KS_PASS="$(openssl rand -hex 16)"
+            keytool -genkeypair -v               -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS"               -alias vvttts -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=CI Build,O=Home,C=US"
+            echo "KS_PASS=${KS_PASS}" >> "$GITHUB_ENV"
+            echo "KEY_PASS=${KS_PASS}" >> "$GITHUB_ENV"
+          fi
+          echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          RELEASE_KS_PASS: ${{ secrets.KS_PASS }}
+          RELEASE_KEY_PASS: ${{ secrets.KEY_PASS }}
       - name: Build native bridge (x86_64)
         run: |
           export ANDROID_SDK="$HOME/android-sdk" ABI="x86_64"
@@ -85,8 +96,8 @@ jobs:
           bash build.sh
         env:
           KEYSTORE: vvttts.jks
-          KS_PASS: android123
-          KEY_PASS: android123
+          KS_PASS: ${{ env.KS_PASS }}
+          KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
           ABI: x86_64
 
