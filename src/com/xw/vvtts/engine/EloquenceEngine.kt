@@ -173,6 +173,10 @@ class EloquenceEngine(context: Context) {
 
     companion object {
         private const val TAG = "EloquenceEngine"
+        /** Serializes ALL native synthesis ops engine-side delivery — Settings diagnostics,
+         *  the TTS service, warmup and stop (issue #197). Reentrant: callers that already hold
+         *  their own engineCallLock just nest safely. */
+        private val nativeLock = Any()
 
         /** CI autotest (zh oracle) skips the en warmup: its forced-synthesis init
          *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
@@ -515,7 +519,7 @@ class EloquenceEngine(context: Context) {
         return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
     }
 
-    fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? {
+    fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? = synchronized(nativeLock) {
         return synthWithTimeout {
         // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
             //the native side would reject them; we intercept so the TTS service gets a clean null
