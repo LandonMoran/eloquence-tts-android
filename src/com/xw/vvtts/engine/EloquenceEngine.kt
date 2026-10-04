@@ -433,28 +433,53 @@ class EloquenceEngine(context: Context) {
         }
 
     @Synchronized
-        fun shutdown() {
-            engineEpoch++
-            val worker = synthWorker
-            try {
-                worker.executor.execute {
-                    // Cleanup queues behind any in-flight synthesis so it frees the
-                    // handles on their owning thread only after the native call returns.
+    fun shutdown() {
+        engineEpoch++
+        val worker = synthWorker
+        try {
+            worker.executor.execute {
+                // Cleanup queues behind any in-flight synthesis so it frees the
+                // handles on their owning thread only after the native call returns.
 
-                    for (h in worker.handles.values) VvttsCore.shutdown(h)
-                    worker.handles.clear()
-                }
-            } catch (ignore: RejectedExecutionException) {
-                // A retired worker may still be using its handles; its in-flight task
-                // frees them on the owning thread once it returns (see synthWithTimeout.
+
+                for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                worker.handles.clear()
             }
-            // Retire this worker so no fresh work lands on a closing executor; the
-            // replacement starts with clean per-worker caches (fresh handles begin at the
-            // engine-default voice, so no stale voice/param state can leak across an open).
-            worker.executor.shutdown()
-            synthWorker = SynthWorker()
-            initialized = false
-            core = null
+        } catch (ignore: RejectedExecutionException) {
+            // A retired worker may still be using its handles; its in-flight task
+
+
+            // frees them on the owning thread once it returns (see synthWithTimeout.
+
+        }
+        // Retire this worker so no fresh work lands on a closing executor;the
+        // replacement starts with clean per-worker caches (fresh handles begin at the
+        // engine-default voice, so no stale voice/param state can leak across an open).
+
+        worker.executor.shutdown()
+
+
+        // Drain/cancel in-flight work BEFORE closing the native handles: a worker
+        // still inside synthesizeCore would otherwise hit a native session that
+        // shutdown() just freed (use-after-free racing the closed EP pipe),and
+        // submit() during teardown would throw. A hung worker gets shutdownNow()
+        // after a short grant.
+
+
+
+        try {
+            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS))) {
+
+                worker.executor.shutdownNow()
+                worker.executor.awaitTermination(100, TimeUnit.MILLISECONDS)
+            }
+        } catch (ie: InterruptedException) {
+            Thread.currentThread().interrupt()
+            worker.executor.shutdownNow()
+        }
+        synthWorker = SynthWorker()
+        initialized = false
+        core = null
         }
 
     fun isInitialized(): Boolean = initialized
@@ -505,9 +530,22 @@ class EloquenceEngine(context: Context) {
 
      *  No synthesis happens here — just the native handle open. */
     fun warmupDialect(dialect: Int) {
-        if (dialect <  0) return
+        if (dialect < 0) return
         val worker = synthWorker
-        worker.executor.execute { ensureHandle(worker, dialect) }
+        // After shutdown() the executor is dead and the natives are closed: a
+        // warmup submitted then would throw RejectedExecutionException into
+        // onLoadLanguage/onCreate. No-op instead (initialized is the gate).
+
+
+        if (!initialized) {
+            Log.i(TAG, "warmupDialect skipped: engine not initialized")
+            return
+        }
+        try {
+            worker.executor.execute { ensureHandle(worker, dialect) }
+        } catch (e: RejectedExecutionException) {
+            Log.w(TAG, "warmupDialect skipped: executor shutting down")
+        }
     }
     /** Currently selected voice preset (1-8( and custom-mode flag */
     @Volatile private var voicePreset = 1

@@ -107,7 +107,7 @@ class LanguageDetector {
         fun setFrenchDialect(dialect: Int) { synchronized(stateLock) { frenchDialect = dialect; invalidateLatinCache() } }
         fun getFrenchDialect() = frenchDialect
 
-        @Volatile private var transientEnabled: Set<String>? = null
+        private val transientEnabled = ThreadLocal<Set<String>?>()
 
         fun setEnabledLanguages(langs: Set<String>?) {
             synchronized(stateLock) {
@@ -138,14 +138,12 @@ class LanguageDetector {
         /** Per-utterance pin (e.g. zh from a picker row(,applied on top of the whitelist
          * without rebuilding Lingua. Cleared from the finally block. */
         fun setTransientEnabledLangs(langs: Set<String>?) {
-            synchronized(stateLock) {
-            transientEnabled = langs
-            }
+            transientEnabled.set(langs)
         }
 
         /** Whether a language code is in the detection whitelist */
         fun isLanguageEnabled(code: String): Boolean {
-            val te = transientEnabled
+            val te = transientEnabled.get()
             if (te != null && te.contains(code)) return true
             val en = enabledLanguages
             if (en == null) return false
@@ -733,7 +731,7 @@ class LanguageDetector {
                     if (hit != null) return hit
                 }
             }
-            val effEnabled = transientEnabled?.let { enabledLanguages + it } ?: enabledLanguages
+            val effEnabled = transientEnabled.get()?.let { enabledLanguages + it } ?: enabledLanguages
             val ngramId = NgramScorer.detect(text, effEnabled)
 
             if (ngramId >= 0) {
