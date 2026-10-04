@@ -197,7 +197,7 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
             short *p = (short *)realloc(s->pcm, cap * sizeof(short));
             if (!p) {
                 vv_fail(s);  /* allocation failure stops synthesis (#42( instead of continuing with a stale buffer */
-                vv_fail_session(s;
+                vv_fail_session(s);
                 return eciDataProcessed;
             }
             s->pcm = p;
