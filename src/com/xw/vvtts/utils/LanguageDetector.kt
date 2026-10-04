@@ -202,13 +202,17 @@ class LanguageDetector {
         }
         fun getFixedDialect() = fixedDialect
 
-        /** Preload Lingua(called in the background at app startup) */
+        /** Preload Lingua(async, single-flight: called at startup before any segment classification, so the first segment's Lingua results are reliable)) */
         fun preloadLingua() {
             synchronized(lock) {
                 // Single-flight:mark the initialization as in-flight BEFORE starting
                 // the thread,so concurrent callers (multiple TTS services, settings
                 // rebuilds( cannot spawn duplicate threads in the same generation;the
                 // built detector is published under the same lock when it lands.
+
+                // #152 reliability: any segment that needs Lingua blocks in getLingua()'s
+                // lock until the preload worker publishes it ("first segment's results are
+                // reliable"）, while startup itself doesn't stall on the model build (#161).
                 if (linguaPreloaded || linguaInitFailed || linguaInitInFlight) return
                 linguaInitInFlight = true
                 val generation = linguaGeneration
@@ -627,18 +631,19 @@ class LanguageDetector {
             var i = text.length
             while (i > 0) {
                 val cp = text.codePointBefore(i)
-                when (text[i]) {
+                when (cp) {
                     // Spanish: ñ/Ñ are unique among shipped languages
-                    '\u00F1', '\u00D1' ->
-                        if (isLanguageEnabled("es")) return spanishDialect else continue
+                    0x00F1, 0x00D1 ->
+                        if (isLanguageEnabled("es")) return spanishDialect
                     // German: ß is unique among shipped languages
-                    '\u00DF' ->
-                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else continue
+                    0x00DF ->
+                        if (isLanguageEnabled("de")) return DIALECT_DE_DE
                     // Polish: Ąą Ęę Ćć Śś Źź Żż Ńń (ogonek/acutes) are Polish-only among shipped languages
-                    '\u0105', '\u0104', '\u0119', '\u0118', '\u0107', '\u0106',
-                    '\u015A', '\u015B', '\u0179', '\u017A', '\u017B', '\u017C', '\u0143', '\u0144' ->
-                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else continue
+                    0x0105, 0x0104, 0x0119, 0x0118, 0x0107, 0x0106,
+                    0x015A, 0x015B, 0x0179, 0x017A, 0x017B, 0x017C, 0x0143, 0x0144 ->
+                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL
                 }
+                i -= Character.charCount(cp)
             }
             return -1
         }
@@ -700,9 +705,9 @@ class LanguageDetector {
                 var nonAsciiLetter = false
                 var i = text.length
                 while (i > 0) {
-                val cp = text.codePointBefore(i)
-                    val c = text[i]
-                    if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
+                    val cp = text.codePointBefore(i)
+                    if (cp > 0x7F && Character.isLetter(cp)) { nonAsciiLetter = true; break }
+                    i -= Character.charCount(cp)
                 }
                 if (!nonAsciiLetter) return englishDialect
             }
