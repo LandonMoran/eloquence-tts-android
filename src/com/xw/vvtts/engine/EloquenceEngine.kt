@@ -468,7 +468,7 @@ class EloquenceEngine(context: Context) {
 
 
         try {
-            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS))) {
+            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS)) {
 
                 worker.executor.shutdownNow()
                 worker.executor.awaitTermination(100, TimeUnit.MILLISECONDS)

@@ -633,7 +633,7 @@ synchronized(engineCallLock) {
                     return
                 }
             }
-                        for (seg in segments) {
+                        synth@ for (seg in segments) {
                             // Bail on stop() only. A per-utterance generation bump
                             // supersedes QUEUED work at the dequeue gates; the engine
                             // cannot abandon an in-flight synthesis, so a new utterance
@@ -712,9 +712,12 @@ synchronized(engineCallLock) {
                             // 0/negative maxBufferSize: PCM was synthesized but the framework
                             // refuses to accept any of it. A bare done() here would report
                             // TextToSpeech.SUCCESS for zero audio -- the TalkBack silent-success
-                            // bug. Report error() via the failure flag instead.
+                            // bug. Report error() via the failure flag instead. Abort both loops
+                            // so later chunks don't keep paying native synth cost before the
+                            // failure surfaces (#233 review).
                             Log.e(TAG, "framework maxBufferSize=$max; failing synthesis instead of silent success")
                             synthFailedOrTruncated = true
+                            break@synth
                         }
                     } else {
                         // Null/empty PCM from the native synth (a failure, not a silence: the

@@ -72,8 +72,7 @@ class SettingsActivity : Activity() {
             val fresh = EloquenceEngine(applicationContext)
             var initOk = false
             try {
-                fresh.initialize()
-                initOk = fresh.isInitialized()
+                initOk = fresh.initialize() && fresh.isInitialized()
             } catch (t: Throwable) {
                 Log.e("SettingsActivity", "engine initialize() failed", t)
             }
