@@ -403,6 +403,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 }
                 clock_gettime(CLOCK_MONOTONIC, &st2);
                 vv_wait_till_done(s);
+                s->synthBusy = 0;   /* #139: clear busy once the session has drained: success must not poison later synthesis */
                 clock_gettime(CLOCK_MONOTONIC, &st3);
                 long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
