@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <pthread.h>
 #include <time.h>
 #include "eci.h"
 #include "chs_oracle_synth.h"
@@ -53,6 +54,11 @@ extern int et_synthesize(void *h);
 #define VV_RSP_CUTOFF 0.498f  /* ~5500 Hz / 11025 Hz (cycles per input sample; sinc t is in input-sample units) */
 #define VV_RSP_BETA 8.0f    /* Kaiser window shape (~50 dB stopband( */
 
+/* Hard ceiling on accumulated engine-rate PCM (in samples): keeps every
+ * later size_t multiply within size_t/jsize bounds and caps the resampler's
+ * input so its 4x output always fits a jsize short array (INT32_MAX(. */
+#define VV_MAX_PCM_SAMPLES ((size_t)INT32_MAX / VV_RSP_PHASES)
+
 /* Modified Bessel I0 (series, 15 terms plenty for x <=  16(. */
 static float vv_rsp_bessel_i0(float x) {
     float sum =  1.0f, term =  1.0f;
@@ -64,12 +70,11 @@ static float vv_rsp_bessel_i0(float x) {
     return sum;
 }
 
-/* Static polyphase coefficient table, built once (thread-safe via a
- * simple guard -- the Android app synthesizes from one serialized worker, so
- * a mutex would be overkill;the guard just keeps double-init race-free
- * for the two-session warm-up path. */
+/* Static polyphase coefficient table, built exactly once.  A plain
+ * guarded init is NOT thread-safe (the warm-up path and first utterance
+ * can race and both threads build the table); pthread_once serialises it. */
 static float vv_rsp_coeff[VV_RSP_PHASES][VV_RSP_TAPS];
-static int  vv_rsp_ready =  0;
+static pthread_once_t vv_rsp_once = PTHREAD_ONCE_INIT;
 
 static void vv_rsp_build(void) {
     const float L2 = (float)VV_RSP_HALF;
@@ -95,14 +100,20 @@ static void vv_rsp_build(void) {
         for (int k =  0; k < VV_RSP_TAPS; k++)
             vv_rsp_coeff[p][k] /= sum;
     }
-    vv_rsp_ready =  1;
 }
 
 /* Resample a signed 16-bit mono buffer 4x.  Returns  0 on success
  * with *out allocated (caller frees( and *outn =  4*in_n;  -1 on alloc failure. */
 static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn) {
-    if (in_n == 0) { *outn =  0; return 0; }
-    if (!vv_rsp_ready) vv_rsp_build();
+    if (in_n ==  0) { *outn =  0; return  0; }
+    /* Overflow-proof sizing before ANY allocation:the 4x output must fit
+     * a jsize array (INT32_MAX( and the zero-pad input buffer must survive
+     * in_n +  2*HALF without wrapping size_t.  Check the inputs first,
+     * not the results of the multiply.  (#41,#133( */
+    if (in_n > VV_MAX_PCM_SAMPLES) return -1;
+    if (in_n > (SIZE_MAX -  2 * (size_t)VV_RSP_HALF)) return -1;
+
+    pthread_once(&vv_rsp_once, vv_rsp_build);
 
     short *zbuf = (short *)calloc(in_n +  2 * VV_RSP_HALF, sizeof(short));  /* zero padding both sides */
     if (!zbuf) return -1;
@@ -111,7 +122,6 @@ static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *out
     size_t out_n = in_n * VV_RSP_PHASES;
     short *o = (short *)malloc(out_n * sizeof(short));
     if (!o) { free(zbuf); return -1; }
-
     for (size_t n =  0; n < out_n; n++) {
         const size_t i = n >>  2;          /* source sample index */
         const int   p = (int)(n &     3);        /* polyphase branch */
@@ -144,7 +154,16 @@ typedef struct {
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
     volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
+    volatile int fatal;  /* set by the callback on overflow/alloc failure: synthesis must fail, not degrade ( see vv_fail( ) */
 } VvtsSession;
+
+/* Fatal callback error: flag the session so the wait loop stops fast (cancel)
+ * and nativeSynthesize fails instead of returning partial or rate-mismatched audio. */
+static int vv_fail(VvtsSession *s) {
+    s->fatal =  1;
+    s->cancel =  1;
+    return eciDataProcessed;
+}
 
 /* The engine calls back on its own synthesis thread; the caller only reads
  * s->pcm after waiting for eciSpeaking to go quiet, so no locking is needed
@@ -157,12 +176,20 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     if (param < 0) return eciDataProcessed;
     {
         size_t n = (size_t)param;
-        if (n > APP_SAMPLES) n = APP_SAMPLES;
-        if (s->pcmLen + n > s->pcmCap) {
+        if (n > APP_SAMPLES) return vv_fail(s);  /* contract violation:the engine sent more samples than the configured output buffer holds -- never silently truncate (#46( */
+        if (n > SIZE_MAX - s->pcmLen) return vv_fail(s);  /* size_t add would wrap (#39( */
+        size_t need = s->pcmLen + n;
+        if (need > VV_MAX_PCM_SAMPLES) return vv_fail(s);  /* hard cap:resampled output must stay within jsize bounds (#39( */
+        if (need > s->pcmCap) {
             size_t cap = s->pcmCap ? s->pcmCap : 16384;
-            while (cap < s->pcmLen + n) cap *= 2;
+            while (cap < need) {
+                if (cap > SIZE_MAX /  2) return vv_fail(s);
+                cap *=  2;
+            }
+            if (cap > VV_MAX_PCM_SAMPLES) cap = VV_MAX_PCM_SAMPLES;  /* cap >= need already, so squeezing keeps it valid */
+            if (cap > SIZE_MAX / sizeof(short)) return vv_fail(s);
             short *p = (short *)realloc(s->pcm, cap * sizeof(short));
-            if (!p) return eciDataProcessed; /* drop rather than lose the session */
+            if (!p) return vv_fail(s);  /* allocation failure stops synthesis (#42( instead of continuing with a stale buffer */
             s->pcm = p;
             s->pcmCap = cap;
         }
@@ -326,7 +353,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
 
     /* A stop may have aborted the previous wait loop: re-sync with the
      * engine's thread before we touch text/pcm for the new utterance. */
-    s->cancel = 0;
+    s->cancel =  0;
+    s->fatal =  0;
     vv_settle(s);
 
     if (dialect == 0x60000) {
@@ -343,7 +371,10 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *pcm = NULL;
         size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
         __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "build_pcm samples=%zu pcm=%p", samples, (void *)pcm);
-        if (samples == 0) return NULL;
+                if (samples == 0) return NULL;
+                /* (#40( refuse to hand a jsize array longer than the resampler can
+                 * 4x back into jsize bounds. */
+                if (samples > VV_MAX_PCM_SAMPLES) { free(pcm); return NULL; }
         /* Oracle clips are captured at the engine's native 11.025 kHz (the
          * same rate eci.ini fixed the en-us path at(.  Playback always runs
          * at 44.1 kHz (SAMPLE_RATE(, so zh must take the same 4x
@@ -351,13 +382,18 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
          * too fast (chipmunk/high-pitched( and comes out as garbled noise. */
         short *rs = NULL;
         size_t outLen = 0;
-        vv_trim_silence(pcm, &samples);
-        if (vv_resample_4x(pcm, samples, &rs, &outLen) ==
-                0 && rs && outLen >  0) {
-            free(pcm);
-            pcm = rs;
-            samples = outLen;
-        }
+        vv_trim_silence(pcm,&samples);
+                /* Resample failure is a synthesis failure: falling back to the
+                 * oracle's raw 11.025 kHz PCM while playback always runs at
+                 * 44.1 kHz would play 4x too fast (and lie about the rate(
+                 * -- #57/#137. */
+                if (vv_resample_4x(pcm, samples,&rs,&outLen) !=  0 || !rs || outLen ==  0) {
+                    free(pcm);
+                    return NULL;
+                }
+                free(pcm);
+                pcm = rs;
+                samples = outLen;
         free(s->pcm);
         s->pcm = pcm;
         s->pcmLen = samples;
@@ -391,7 +427,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
             short *rs = NULL;
                         size_t outLen = 0;
                         vv_trim_silence(s->pcm, &s->pcmLen);
-            if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) ==    0 && rs && outLen >  0) {
+                        if (vv_resample_4x(s->pcm, s->pcmLen, &rs,&outLen) ==    0 && rs && outLen >  0) {
                             jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
                             if (res) {
                                 (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, rs);
@@ -400,11 +436,9 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                             }
                             free(rs);
                         }
-            /* fallback (should never trigger( : return the engine's own samples */
-            jshortArray out = (*env)->NewShortArray(env, (jsize)s->pcmLen);
-            if (!out) return NULL;
-            (*env)->SetShortArrayRegion(env, out, 0, (jsize)s->pcmLen, s->pcm);
-            return out;
+            /* Resample failure is fatal (#57/#137): the engine's raw 11.025 kHz must
+                         * never be returned while Kotlin advertises 44.1 kHz — fail closed. */
+                        return NULL;
         }
 }
 
