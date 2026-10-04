@@ -28,8 +28,9 @@ import java.util.concurrent.RejectedExecutionException
 
 /**
  * Eloquence TTS service (openevv port, single engine).
- * 11 dialects are linked in this build: en-US/en-GB/de-DE/fr-FR/fr-CA/
- * es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL. (zh/pt/fi/ko are not linked here.)
+ * 14 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
+ * de-DE/fr-FR/fr-CA/es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL/pt-BR/fi-FI/zh-CN,
+ * matching the voices advertised in onGetVoices().ko is not linked here.
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
@@ -369,8 +370,7 @@ class VvTtsService : TextToSpeechService() {
             // In-flight is unaffected: the chunk loops bail only on stopping(),
             // and this snapshot post-dates the bump, so THIS task survives the
             // dequeue gates. The engine cannot abandon an active synthesis.
-            generation.incrementAndGet()
-            val gen = generation.get()
+            val gen = generation.incrementAndGet()
             deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
@@ -419,6 +419,10 @@ class VvTtsService : TextToSpeechService() {
         // dequeues:clearing it in onSynthesizeText() would let previous
         // utterance (still draining on the single-thread executor( resume
         // after a TalkBack re-swipes, causing overlapping speech.
+        // Snapshot the flag BEFORE clearing it: an onStop() racing in between
+        // gate-1 and this reset sets stopping=true; after the reset there is no
+        // way to know a stop was issued (only that generation moved).
+        val stopPending = stopping
         stopping = false
         // An onStop() can race in between the queue-time generation snapshot
         // (taken in onSynthesizeText()) and this reset: it bumps generation and
@@ -426,8 +430,11 @@ class VvTtsService : TextToSpeechService() {
         // cleared, which would let a stale utterance drain in full (ghost speech).
         // Restore the stop flag and drop the utterance via error() instead.
         if (gen != generation.get()) {
-            if (stopping) {
+            if (stopPending || stopping) {
                 // Genuine stop race: restore the flag and drop via error().
+                // (Only re-set when the snapshot saw it; a stop landing after
+                // the reset already left the flag true.)
+                if (stopPending) stopping = true
                 Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
                 try {
                     callback.error(TextToSpeech.ERROR_SYNTHESIS)
