@@ -85,7 +85,7 @@ object ElqUpdateChecker {
                 .mapNotNull { rel -> parseVersionCode(rel.tagName)?.let { it to rel } }
                 .maxWithOrNull(
                     compareBy<Pair<Int, GitHubRelease>> { it.first }
-                        .thenByDescending { it.second.publishedAt ?: "" }
+                        .thenBy { it.second.publishedAt ?: "" }
                 )
                 ?.second
             if (target == null) {
