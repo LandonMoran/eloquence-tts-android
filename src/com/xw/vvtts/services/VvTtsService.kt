@@ -42,6 +42,11 @@ class VvTtsService : TextToSpeechService() {
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
+    // BCP-47 tags advertised by onGetVoices; onLoadVoice accepts exactly these.
+    private val shippedVoiceTags: List<String> = listOf(
+        "en-US", "en-GB", "de-DE", "fr-FR", "fr-CA", "es-ES", "es-US", "es-MX",
+        "it-IT", "ja-JP", "pl-PL", "pt-BR", "fi-FI", "zh-CN",
+    )
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
