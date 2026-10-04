@@ -383,6 +383,9 @@ class VvTtsService : TextToSpeechService() {
         // A zh voice from the *system picker* always pins zh (explicit user
         // choice(;the app's own "Voice" row only pins zh when detection is OFF
         // with Auto ON the spoken-voice locale must follow the detected text,
+        // #159: no stale per-utterance language pin from a previous run may leak into
+        // this utterance's detection (a crash path can skip the finally).
+        LanguageDetector.setTransientEnabledLangs(null)
         // otherwise choosing "Auto detect" after a zh voice pick would read
         // every language as Chinese (the reported bug).
         val autoDetect = LanguageDetector.isDetectionEnabled()

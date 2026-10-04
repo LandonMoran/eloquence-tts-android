@@ -416,6 +416,24 @@ class EloquenceEngine(context: Context) {
     @Synchronized
     fun shutdown() {
         engineEpoch++
+        // Drain/cancel in-flight work BEFORE closing the native handles: a worker
+        // still inside synthesizeCore would otherwise hit a native session that
+        // shutdown() just freed (use-after-free racing the closed EP pipe), and
+        // submit() during teardown would throw. A hung worker gets shutdownNow()
+        // after a short grant.
+        val ex = synthExecutor
+        if (!ex.isShutdown) {
+            ex.shutdown()
+            try {
+                if (!ex.awaitTermination(150, TimeUnit.MILLISECONDS)) {
+                    ex.shutdownNow()
+                    ex.awaitTermination(100, TimeUnit.MILLISECONDS)
+                }
+            } catch (ie: InterruptedException) {
+                Thread.currentThread().interrupt()
+                ex.shutdownNow()
+            }
+        }
         core?.let {
             for (h in coreHandles.values) VvttsCore.shutdown(h)
             coreHandles.clear()
@@ -474,8 +492,19 @@ class EloquenceEngine(context: Context) {
 
      *  No synthesis happens here — just the native handle open. */
     fun warmupDialect(dialect: Int) {
-        if (dialect <  0) return
-        synthExecutor.execute { ensureHandle(dialect) }
+        if (dialect < 0) return
+        // After shutdown() the executor is dead and the natives are closed: a
+        // warmup submitted then would throw RejectedExecutionException into
+        // onLoadLanguage/onCreate. No-op instead (initialized is the gate).
+        if (!initialized) {
+            Log.i(TAG, "warmupDialect skipped: engine not initialized")
+            return
+        }
+        try {
+            synthExecutor.execute { ensureHandle(dialect) }
+        } catch (e: RejectedExecutionException) {
+            Log.w(TAG, "warmupDialect skipped: executor shutting down")
+        }
     }
     /** Currently selected voice preset (1-8( and custom-mode flag */
     @Volatile private var voicePreset = 1
