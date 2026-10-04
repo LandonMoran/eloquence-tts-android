@@ -586,7 +586,10 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
         JNIEnv *env, jclass cls, jlong handle, jint param, jint value) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return -1;
-    return eciSetParam(s->hECI, param, value);
+    /* #73: never hand raw values to the engine. Reject unknown param ids and
+     * clamp ranges exactly like the voice-param path. */
+    if (param < 0 || param >= eciNumVoiceParams) return -1;
+    return eciSetParam(s->hECI, param, vv_clamp_voice_param(param, value));
 }
 
 /* The app's presets are numbered like the old Apple CSV (which skips 5);

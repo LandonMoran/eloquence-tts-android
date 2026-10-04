@@ -43,6 +43,8 @@ class VvTtsService : TextToSpeechService() {
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
     private var deviceCtx: Context? = null
+/** Loader thread for the n-gram tables; owned so teardown can interrupt backoff waits. */
+    @Volatile private var ngramLoadThread: Thread? = null
     // BCP-47 tags advertised by onGetVoices; onLoadVoice accepts exactly these.
     private val shippedVoiceTags: List<String> = listOf(
         "en-US", "en-GB", "de-DE", "fr-FR", "fr-CA", "es-ES", "es-US", "es-MX",
@@ -100,7 +102,10 @@ class VvTtsService : TextToSpeechService() {
         LanguageDetector.preloadLingua()
         // Preload the in-RAM n-gram tables (66KB asset,milliseconds(--primary detector
         // for Latin runs means Lingua only fires on ambiguous text.
-        Thread { NgramScorer.load(this) }.start()
+        ngramLoadThread = Thread { NgramScorer.load(this) }.apply {
+            name = "ngram-load"
+            start()
+        }
                 // Warm the engine handle for the user's fixed dialect
         // utterance skips the native LPC load (biggest hover-to-speech delay(.
         // Background thread: binder queries (getLanguage/getVoices/onInit reply)
@@ -135,6 +140,13 @@ class VvTtsService : TextToSpeechService() {
         // lock-screen speech arriving late on unlock. Reboot clears them naturally
         // ( process death kills the queue(; unbind/destroy must too.
         bumpGeneration()
+        // Interrupt any in-flight n-gram backoff wait; the loader thread is owned
+        // and must not outlive the service (no unmanaged threads on teardown).
+        try {
+            ngramLoadThread?.interrupt()
+        } catch (ignore: Throwable) {
+        }
+        ngramLoadThread = null
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
@@ -485,7 +497,7 @@ class VvTtsService : TextToSpeechService() {
         stopping = false
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
-                if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+                if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                     Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
                 }
 
@@ -494,7 +506,7 @@ class VvTtsService : TextToSpeechService() {
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
-        synchronized(engineCallLock){
+synchronized(engineCallLock) {
         refreshSettings()
         synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
@@ -598,7 +610,7 @@ class VvTtsService : TextToSpeechService() {
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.d("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " len=" + segText.length)
-        if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+        if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
             Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
         }
                 // CJK normalization (width + number + symbol readings) happens once,
@@ -627,7 +639,7 @@ class VvTtsService : TextToSpeechService() {
                     val t3 = SystemClock.elapsedRealtime()
                     val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
-                    if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+                    if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
                     }
                     if (pcm != null && pcm.size > 0) {
