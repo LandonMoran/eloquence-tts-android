@@ -517,11 +517,10 @@ class VvTtsService : TextToSpeechService() {
             Log.e(TAG, "onSynthesizeText failed", e)
         } finally {
                     // Revert the per-utterance override (preserve app-pref state)
-                    LanguageDetector.setDefaultLanguage(savedDefault(
-                                        LanguageDetector.setTransientEnabledLangs(null(
-                                        LanguageDetector.setFixedDialect(savedFixed(
-                                        }
-                                        if (!started) {
+                    LanguageDetector.setDefaultLanguage(savedDefault)
+                    LanguageDetector.setTransientEnabledLangs(null)
+                    LanguageDetector.setFixedDialect(savedFixed)
+                    if (!started) {
                         // Playback contract: start() must precede done(), the framework
                         // throws otherwise. One pair per utterance; every path funnels
                         // here, so all silent/empty/early returns get the pair exactly
@@ -551,6 +550,7 @@ class VvTtsService : TextToSpeechService() {
                         }
                     }
                 }
+        }
     }
 
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
