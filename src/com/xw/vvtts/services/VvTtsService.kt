@@ -435,8 +435,10 @@ class VvTtsService : TextToSpeechService() {
             val rate = clamp(Math.round(sysRate.toFloat()).toInt(),1,300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
-            val pitch = clamp(voiceConfig!!.pitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0, 100)
-            val volume = voiceConfig!!.volume
+            val cfgVolume = voiceConfig?.volume ?: 100
+                        val cfgPitch = voiceConfig?.pitch ?: 100  // #189: never `!!` a nullable service config on the synthesis path
+                        val pitch = clamp(cfgPitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0,100)
+                        val volume = cfgVolume
 
             val pace = Pace(engine!!.getCoreSampleRate())
                         val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
