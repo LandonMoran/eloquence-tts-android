@@ -83,11 +83,21 @@ object ElqUpdateChecker {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
             val latestCode = parseVersionCode(target.tagName) ?: -1
+            val localTag = try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: null
+            } catch (e: Exception) {
+                null
+            }
+            val latestSemVer = parseSemver(target.tagName)
+            val localSemVer = parseSemver(localTag)
+            val hasUpdate =
+                if (latestSemVer != null && localSemVer != null) latestSemVer > localSemVer
+                else latestCode > localVersionCode
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
-                hasUpdate = latestCode > localVersionCode,
+                hasUpdate = hasUpdate,
                 currentVersionCode = localVersionCode,
-                latestVersionCode = latestCode.takeIf { it >= 0 },
+                latestVersionCode = (latestSemVer?.packed() ?: latestCode).takeIf { it >= 0 },
                 latestTag = target.tagName,
                 releaseNotes = target.body,
                 downloadUrl = apkUrl,
@@ -104,6 +114,19 @@ object ElqUpdateChecker {
     private fun parseVersionCode(tag: String?): Int? {
         val m = Regex("""(\d{4,})""").find(tag ?: "") ?: return null
         return m.groupValues[1].toIntOrNull()
+    }
+
+    /** Structurally-parsed dotted numeric version tag (v1.2.3). Rejects ambiguous tags (null): non-numeric segments, extra segments, trailing suffixes. */
+    private data class SemVer(val major: Int, val minor: Int, val patch: Int): Comparable<SemVer> {
+        override fun compareTo(other: SemVer): Int =
+            compareValuesBy(major, other.major, minor, other.minor, patch, other.patch)
+        fun packed(): Int = major * 1_000_000 + minor * 1_000 + patch
+    }
+
+    private fun parseSemver(tag: String?): SemVer? {
+        val m = Regex("""^v?(\d+)\.(\d+)\.(\d+)$""").find(tag ?: "") ?: return null
+        val parts = m.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
+        return SemVer(parts[0], parts[1], parts[2])
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {
