@@ -120,6 +120,9 @@ object ElqUpdateInstaller {
             val ok = latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             if (!ok) {
                 runCatching { appContext.unregisterReceiver(receiver) }
+                // A committed-but-unconfirmed session would otherwise linger; abandon it to
+                // return install state promptly (issue #202).
+                if (committed) runCatching { pm.packageInstaller.abandonSession(sessionId) }
                 return Result.Failed(null, "install timed out")
             }
         } catch (t: Throwable) {
@@ -127,6 +130,7 @@ object ElqUpdateInstaller {
             return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
         runCatching { appContext.unregisterReceiver(receiver) }
+        if (committed) runCatching { pm.packageInstaller.abandonSession(sessionId) }
         return result ?: Result.Failed(null, "install timed out")
     }
 
