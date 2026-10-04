@@ -81,7 +81,6 @@ class VvTtsService : TextToSpeechService() {
         registerAllPrefsListeners(applicationContext!!)
         val eng = acquireProcessEngine(device)
         engine = if (eng.isInitialized()) eng else null
-        engine = eng
         eng.setVoiceProfile(voiceProfile)
         val ok = eng.isInitialized()
         // Restore the language-detection settings from device-protected storage
@@ -326,10 +325,15 @@ class VvTtsService : TextToSpeechService() {
         // speech after cancellation) and must not clear the stopping flag.
         // error() is the designated failure termination (never started).
         if (gen != generation.get()) {
-            Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {
+            if (stopping) {
+                Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
+                try {
+                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                } catch (ignore: Throwable) {
+                }
+            } else {
+                Log.d(TAG, "utterance superseded mid-queue; gen=" + gen + " generation=" + generation.get())
+                silentComplete(callback
             }
             return
         }
@@ -344,11 +348,15 @@ class VvTtsService : TextToSpeechService() {
         // cleared, which would let a stale utterance drain in full (ghost speech(.
         // Restore the stop flag and drop the utterance via error() instead.
         if (gen != generation.get()) {
-            stopping = true
-            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {}
+            if (stopping) {
+                Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
+                try {
+                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                } catch (ignore: Throwable) {}
+            } else {
+                Log.d(TAG, "utterance superseded mid-queue after reset; gen=" + gen + " generation=" + generation.get())
+                silentComplete(callback
+            }
             return
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
@@ -448,9 +456,9 @@ class VvTtsService : TextToSpeechService() {
                 started = true
             }
                         for (seg in segments) {
-                            // Bail on either signal: stop() (framework( or a generation bump
-                            // (a newer utterance superseded ours while we were mid-queue(.
-                            if (stopping || gen != generation.get()) break
+                            // Bail on stop() only (framework cancel( — generation supersedes are
+                            // resolved at dequeue;never cut mid-flight speech(.
+                            if (stopping) break
                             if (SystemClock.elapsedRealtime() > uttDeadline) {
 
                                 Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
@@ -473,7 +481,7 @@ class VvTtsService : TextToSpeechService() {
                 // uninterruptible synth of the whole segment (the "one second
                 // between swipes" / "fast swipes get clogged" regression).
                 for (chunkText in splitSynthChunks(segText)) {
-                    if (stopping || gen != generation.get()) break
+                    if (stopping) break
                     if (SystemClock.elapsedRealtime() > uttDeadline) break
                     var textToSynth: String = chunkText
                     val expanded = when (seg.dialect) {
@@ -549,6 +557,22 @@ class VvTtsService : TextToSpeechService() {
                         }
                     }
                 }
+    }
+
+    /** Terminate a superseded utterance silently:the framework converts
+     *  start+done into silent playback, avoiding error() which a screen
+     *  reader treats as a failed focus ( re-announce/stall(.
+     */
+    private fun silentComplete(callback: SynthesisCallback] {
+        try {
+            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+            callback.done()
+        } catch (t: Throwable) {
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {
+            }
+        }
     }
 
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
@@ -637,7 +661,7 @@ class VvTtsService : TextToSpeechService() {
                     else -> {}
                 }
             }
-            e.apply()
+            e.commit()
         }
 
         // === Pacing ===
@@ -773,6 +797,7 @@ class VvTtsService : TextToSpeechService() {
                     // runs so dates/numbers are never split mid-run..
                     if (cut < 0) {
                         cut = end
+                        if (cut > start && cut < n && Character.isHighSurrogate(text[cut -  1]) && Character.isLowSurrogate(text[cut])) cut -= 1
                         while (cut > start + 1 && (text[cut - 1].isDigit() || text[cut - 1] == ':'
                                 || text[cut - 1] == '/' || text[cut - 1] == '-' || text[cut - 1] == '.')) {
                             cut--
