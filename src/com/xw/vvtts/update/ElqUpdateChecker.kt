@@ -49,11 +49,19 @@ object ElqUpdateChecker {
      * Call from a background thread because this performs network I/O.
      */
     fun check(context: Context): UpdateResult {
-        val localVersionCode = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
+        val pkg = try {
+            context.packageManager.getPackageInfo(context.packageName, 0)
         } catch (e: Exception) {
-            0
+            null
         }
+        val localVersionCode = pkg?.longVersionCode?.toInt() ?: 0
+        // Compare the release tag against the app's semantic versionName (e.g. "1.0.1")
+        // so both sides go through the same parser on one comparable scale; fall back to the
+        // raw Android versionCode int when the versionName doesn't parse.
+
+
+
+        val localReleaseCode = parseVersionCode(pkg?.versionName) ?: localVersionCode
         val apiUrl = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=25"
         var conn: HttpURLConnection? = null
         try {
@@ -85,7 +93,7 @@ object ElqUpdateChecker {
             val latestCode = parseVersionCode(target.tagName) ?: -1
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
-                hasUpdate = latestCode > localVersionCode,
+                hasUpdate = latestCode > localReleaseCode,
                 currentVersionCode = localVersionCode,
                 latestVersionCode = latestCode.takeIf { it >= 0 },
                 latestTag = target.tagName,
@@ -101,9 +109,29 @@ object ElqUpdateChecker {
         }
     }
 
+    /**
+     * Parses a release tag (or installed versionName( into a comparable numeric code.
+     *
+     * Supports the repo's documented semantic-version tag format (`v1.0`, `v1.1.0`,
+     * `v2.10.3`) and plain numeric versionCode tags (`2000000002`). Rejects ambiguous
+     * values instead of extracting arbitrary digit runs: the previous regex could not read
+     * `v1.0` at all and mis-parsed names like `r37` as version 37.
+     */
     private fun parseVersionCode(tag: String?): Int? {
-        val m = Regex("""(\d{4,})""").find(tag ?: "") ?: return null
-        return m.groupValues[1].toIntOrNull()
+        val s = tag?.trim() ?: return null
+        s.toIntOrNull()?.let { return it }
+        // Semantic version tag: optional 'v' prefix + MAJOR.MINOR[.PATCH]; at least one dot
+        // required so bare values like `v1` stay rejected as ambiguous..
+
+        val m = Regex("""^[vV]?(\d+)\.(\d+)(?:\.(\d+))?$""").matchEntire(s) ?: return null
+        val major = m.groupValues[1].toLong()
+        val minor = m.groupValues[2].toLong()
+        val patch = m.groupValues[3].ifEmpty { "0" }.toLong()
+        // Base-1000 encodes each component so numeric ordering matches semantic ordering; any
+        // component at or above 1000 would carry into the next slot, so reject those..
+
+        if (major >= 1000 || minor >= 1000 || patch >= 1000) return null
+        return (major * 1000 * 1000 + minor * 1000 + patch).toInt()
     }
 
     private fun parseReleases(json: String): List<GitHubRelease> {

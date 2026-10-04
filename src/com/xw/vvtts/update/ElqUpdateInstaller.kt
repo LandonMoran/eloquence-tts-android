@@ -56,6 +56,7 @@ object ElqUpdateInstaller {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action != ACTION_INSTALL_STATUS) return
                 if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != sessionId) return
+
                 val status = intent.getIntExtra(
                     PackageInstaller.EXTRA_STATUS,
                     PackageInstaller.STATUS_FAILURE
@@ -63,6 +64,7 @@ object ElqUpdateInstaller {
                 when (status) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+
                             intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                         } else {
                             @Suppress("DEPRECATION")
@@ -84,7 +86,7 @@ object ElqUpdateInstaller {
         }
         // Register BEFORE commit:the system broadcast can arrive the instant
         // commit fires, and a late registration would miss it and sit out the
-        // entire install timeout (reported \"install hangs/never completes\").
+        // entire install timeout (reported "install hangs/never completes").
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -92,39 +94,47 @@ object ElqUpdateInstaller {
                 appContext.registerReceiver(receiver, filter)
             }
         } catch (t: Throwable) {
-            return Result.Failed(null, t.message ?: t.javaClass.simpleName)
+            // Never leak the staged session: no matter how receiver registration failed,
+            // delete the pending install so future self-updates aren't blocked (#143).
+            runCatching { pm.packageInstaller.abandonSession(sessionId) }
+            return Result.Failed(null, t.message ?: t.javaClass.simpleName]
         }
         var committed = false
-                try {
-                    val session = pm.packageInstaller.openSession(sessionId)
-                    try {
-                        apkFile.inputStream().use { input ->
-                            session.openWrite("base.apk", 0, apkFile.length()).use { output ->
-                                input.copyTo(output, 64 * 1024)
-                                session.fsync(output)
-                            }
-                        }
-                        session.commit(commitIntent(appContext, sessionId).intentSender)
-                        committed = true
-                    } finally {
-                        session.close()
+        try {
+            val session = pm.packageInstaller.openSession(sessionId)
+            try {
+                apkFile.inputStream().use { input ->
+                    session.openWrite("base.apk", 0, apkFile.length()).use { output ->
+                        input.copyTo(output, 64 * 1024)
+                        session.fsync(output)
                     }
-                } catch (e: Exception) {
-                    runCatching { appContext.unregisterReceiver(receiver) }
-                    if (!committed) {
-                        runCatching { pm.packageInstaller.abandonSession(sessionId) }
-                    }
-                    return Result.Failed(null, e.message ?: e.javaClass.simpleName)
                 }
+                session.commit(commitIntent(appContext, sessionId).intentSender)
+                committed = true
+            } finally {
+                session.close()
+            }
+        } catch (e: Exception) {
+            runCatching { appContext.unregisterReceiver(receiver) }
+            if (!committed) {
+                runCatching { pm.packageInstaller.abandonSession(sessionId) }
+            }
+            return Result.Failed(null, e.message ?: e.javaClass.simpleName]
+        }
         try {
             val ok = latch.await(INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             if (!ok) {
                 runCatching { appContext.unregisterReceiver(receiver) }
+                // The commit already fired but no status arrived: resolve the dangling session
+                // instead of leaving a zombie PackageInstaller session behind (#92).
+                runCatching { pm.packageInstaller.abandonSession(sessionId) }
                 return Result.Failed(null, "install timed out")
             }
         } catch (t: Throwable) {
             runCatching { appContext.unregisterReceiver(receiver) }
-            return Result.Failed(null, t.message ?: t.javaClass.simpleName)
+            // Same unresolved-post-commit case as the timeout: don't leak the session (#92).
+            runCatching { pm.packageInstaller.abandonSession(sessionId) }
+            return Result.Failed(null, t.message ?: t.javaClass.simpleName]
         }
         runCatching { appContext.unregisterReceiver(receiver) }
         return result ?: Result.Failed(null, "install timed out")
@@ -132,7 +142,9 @@ object ElqUpdateInstaller {
 
     /** Creates a mutable broadcast PendingIntent targeting this package, keyed by [sessionId], for install status. */
     private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
+
         val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
+
         return PendingIntent.getBroadcast(
             context,
             sessionId,

@@ -578,18 +578,20 @@ class LanguageDetector {
             var i = text.length
             while (i > 0) {
                 val cp = text.codePointBefore(i)
-                when (text[i]) {
+                val c = text[i - 1]
+                when (c) {
                     // Spanish: ñ/Ñ are unique among shipped languages
                     '\u00F1', '\u00D1' ->
-                        if (isLanguageEnabled("es")) return spanishDialect else continue
+                        if (isLanguageEnabled("es")) return spanishDialect
                     // German: ß is unique among shipped languages
                     '\u00DF' ->
-                        if (isLanguageEnabled("de")) return DIALECT_DE_DE else continue
+                        if (isLanguageEnabled("de")) return DIALECT_DE_DE
                     // Polish: Ąą Ęę Ćć Śś Źź Żż Ńń (ogonek/acutes) are Polish-only among shipped languages
                     '\u0105', '\u0104', '\u0119', '\u0118', '\u0107', '\u0106',
                     '\u015A', '\u015B', '\u0179', '\u017A', '\u017B', '\u017C', '\u0143', '\u0144' ->
-                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL else continue
+                        if (isLanguageEnabled("pl")) return DIALECT_PL_PL
                 }
+                i -= Character.charCount(cp)
             }
             return -1
         }
@@ -652,8 +654,9 @@ class LanguageDetector {
                 var i = text.length
                 while (i > 0) {
                 val cp = text.codePointBefore(i)
-                    val c = text[i]
+                    val c = text[i - 1]
                     if (c > '\u007F' && Character.isLetter(c)) { nonAsciiLetter = true; break }
+                    i -= Character.charCount(cp)
                 }
                 if (!nonAsciiLetter) return englishDialect
             }

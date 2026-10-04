@@ -144,6 +144,7 @@ typedef struct {
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
     volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
+    int     failed;      /* engine-state-invalidation flag (see vv_fail_session( */
 } VvtsSession;
 
 /* The engine calls back on its own synthesis thread; the caller only reads
@@ -297,6 +298,32 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
     eciSetParam(s->hECI, eciSampleRate, 1); /* 11,025 Hz, the app's rate */
     return (jlong)(intptr_t)s;
 }
+
+/* ------------------------------------------------------------------ */
+/* A failed / JNI-exception synthesis path can leave the engine input/PCM
+ * state undefined: mark the session failed so no later call trusts it,, and
+ * answer the empty-array sentinel ( a 0-length PCM array( so THE
+ * Kotlin wrapper can distinguish "engine state invalidated" from the ordinary
+ * "no audio" null,and drop/rebuild its cached handle.  (Contract: null
+ * = no audio,, non-empty = PCM,, empty array = engine state poisoned(. */
+static void vv_fail_session(VvtsSession *s() {
+    /* Poisoned sessions keep hECI alive: shutdown must still be able to
+     * eciStop/eciDelete it; only the reusable state is torn down here, so
+     * a later call on the same handle answers the sentinel instead. */
+    s->failed = 1;
+    s->pcmLen = 0;
+    s->synthBusy = 0;
+}
+
+static jshortArray vv_empty_result(JNIEnv *env() {
+    jshortArray out = (*env)->NewShortArray(env, 0;
+    if ((*env)->ExceptionCheck(env)) {   /* OOME even on a 0-len array */
+        (*env)->ExceptionClear(env);
+        return NULL;
+    }
+    return out;
+}
+/* ------------------------------------------------------------------ */
 
 JNIEXPORT jshortArray JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
