@@ -192,6 +192,65 @@ class VvTtsService : TextToSpeechService() {
             fallback
         }
     }
+
+    /** Maps an incoming language tag to the two-letter prefix the dialect matchers
+     *  expect: the framework probes with ISO-639-2/T three-letter codes
+     *  (getISO3Language: eng, spa, jpn, ...) as well as ISO-639-1 two-letter ones.
+     *  Without this, "spa" never matches startsWith("es") and non-English
+     *  locales silently fall back to en-US. Passes 2-letter tags through. */
+    private fun langPrefix(tag: String?): String {
+        return when ((tag ?: "").lowercase()) {
+            "eng" -> "en"
+            "deu", "ger" -> "de"
+            "fra", "fre" -> "fr"
+            "spa" -> "es"
+            "ita" -> "it"
+            "jpn" -> "ja"
+            "pol" -> "pl"
+            "por" -> "pt"
+            "fin" -> "fi"
+            "zho", "chi" -> "zh"
+            else -> (tag ?: "").lowercase()
+        }
+    }
+
+    /** Maps a three-letter ISO-3166 country code (getISO3Country: USA, GBR, ...)
+     *  to its two-letter form for comparisons; passes 2-letter codes through. */
+    private fun countryCode(tag: String?): String {
+        return when ((tag ?: "").uppercase()) {
+            "USA" -> "US"
+            "GBR" -> "GB"
+            "DEU" -> "DE"
+            "FRA" -> "FR"
+            "CAN" -> "CA"
+            "ESP" -> "ES"
+            "MEX" -> "MX"
+            "ITA" -> "IT"
+            "JPN" -> "JP"
+            "POL" -> "PL"
+            "BRA" -> "BR"
+            "FIN" -> "FI"
+            "CHN" -> "CN"
+            "TWN" -> "TW"
+            else -> (tag ?: "").uppercase()
+        }
+    }
+
+    /** Terminates a callback that never started with a zero-length utterance so the
+     *  framework's utterance contract holds (start() before done()) for utterances
+     *  superseded while still queued. Falls back to error() if even that fails. */
+    private fun silentComplete(callback: SynthesisCallback) {
+        try {
+            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+            callback.done()
+        } catch (t: Throwable) {
+            Log.w(TAG, "silentComplete failed; falling back to error()", t)
+            try {
+                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            } catch (ignore: Throwable) {
+            }
+        }
+    }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
         return voiceSafe(arrayOf("en", "", "")) {
@@ -214,8 +273,8 @@ class VvTtsService : TextToSpeechService() {
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
-        val lang = (language ?: "").lowercase()
-        val c = (country ?: "").uppercase()
+        val lang = langPrefix(language)
+        val c = countryCode(country)
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
@@ -234,35 +293,39 @@ class VvTtsService : TextToSpeechService() {
     override fun onGetVoices(): List<Voice> {
         return voiceSafe(emptyList()) {
         val voices = ArrayList<Voice>()
-        // Voice names use BCP-47; Locale matches the dialect; feature=null = plain
+        // Voice names use BCP-47; Locale matches the dialect. The feature set
+        // MUST be non-null: Voice.writeToParcel builds "new ArrayList<>(features)"
+        // and NPEs on null, which poisons the getVoices() AIDL reply parcel and
+        // crashes the Settings picker / TalkBack TTS init (the "settings won't
+        // open when eloquence is the default engine" regression).
         voices.add(Voice("en-US", Locale.US,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("en-GB", Locale.UK,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("de-DE", Locale.GERMANY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("fr-FR", Locale.FRANCE,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("fr-CA", Locale.CANADA_FRENCH,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("es-ES", Locale("es", "ES"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("es-US", Locale("es", "US"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("es-MX", Locale("es", "MX"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("it-IT", Locale.ITALY,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("ja-JP", Locale.JAPAN,
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("pl-PL", Locale("pl", "PL"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("pt-BR", Locale("pt", "BR"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("fi-FI", Locale("fi", "FI"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         voices.add(Voice("zh-CN", Locale("zh", "CN"),
-            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+            Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, setOf<String>()))
         // Only advertise dialects actually linked in this build (build_native.sh LANGS)
         return voices
         }
@@ -272,12 +335,12 @@ class VvTtsService : TextToSpeechService() {
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
-        val lang = language.lowercase()
+        val lang = langPrefix(language)
         val supported = lang.startsWith("en") || lang.startsWith("de")
                 || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
                 || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
                 || lang.startsWith("zh")
-        if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
+        if (lang.startsWith("zh") && countryCode(country) == "TW") return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
@@ -300,7 +363,14 @@ class VvTtsService : TextToSpeechService() {
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
         try {
-            val gen = generation.get()  // snapshot: a stop() while queued must drop this task
+            // Per-utterance bump: the newest request supersedes still-QUEUED
+            // older ones — never a plain FIFO for a screen reader (a FIFO that
+            // outpaces the paced drain trails focus for seconds, then "dies").
+            // In-flight is unaffected: the chunk loops bail only on stopping(),
+            // and this snapshot post-dates the bump, so THIS task survives the
+            // dequeue gates. The engine cannot abandon an active synthesis.
+            generation.incrementAndGet()
+            val gen = generation.get()
             deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
@@ -326,10 +396,22 @@ class VvTtsService : TextToSpeechService() {
         // speech after cancellation) and must not clear the stopping flag.
         // error() is the designated failure termination (never started).
         if (gen != generation.get()) {
-            Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {
+            if (stopping) {
+                // A stop() bumped the generation: the framework canceled this
+                // utterance, so it must not speak (ghost speech after cancel).
+                // error() is the designated failure termination (never started).
+                Log.w(TAG, "dropping stale utterance queued before stop (gen $gen != $generation)")
+                try {
+                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                } catch (ignore: Throwable) {
+                }
+            } else {
+                // No stop: a newer utterance superseded this still-QUEUED one.
+                // Complete it silently (start+done, zero audio) so the
+                // framework's utterance contract holds and TalkBack does not
+                // treat a superseded focus as a synthesis failure.
+                Log.d(TAG, "dropping superseded utterance (gen $gen != $generation)")
+                silentComplete(callback)
             }
             return
         }
@@ -339,16 +421,23 @@ class VvTtsService : TextToSpeechService() {
         // after a TalkBack re-swipes, causing overlapping speech.
         stopping = false
         // An onStop() can race in between the queue-time generation snapshot
-        // (taken in onSynthesizeText()and this reset:it bumps generationand
+        // (taken in onSynthesizeText()) and this reset: it bumps generation and
         // sets stopping = true. Re-check so a just-issued cancellation isn't
-        // cleared, which would let a stale utterance drain in full (ghost speech(.
+        // cleared, which would let a stale utterance drain in full (ghost speech).
         // Restore the stop flag and drop the utterance via error() instead.
         if (gen != generation.get()) {
-            stopping = true
-            Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {}
+            if (stopping) {
+                // Genuine stop race: restore the flag and drop via error().
+                Log.w(TAG, "stop raced the stop flag reset; gen=" + gen + " generation=" + generation.get())
+                try {
+                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
+                } catch (ignore: Throwable) {}
+            } else {
+                // A newer utterance won the queue in this window: superseded,
+                // complete it silently without touching the stop flag.
+                Log.d(TAG, "utterance superseded mid-queue; gen=" + gen + " generation=" + generation.get())
+                silentComplete(callback)
+            }
             return
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
@@ -448,9 +537,11 @@ class VvTtsService : TextToSpeechService() {
                 started = true
             }
                         for (seg in segments) {
-                            // Bail on either signal: stop() (framework( or a generation bump
-                            // (a newer utterance superseded ours while we were mid-queue(.
-                            if (stopping || gen != generation.get()) break
+                            // Bail on stop() only. A per-utterance generation bump
+                            // supersedes QUEUED work at the dequeue gates; the engine
+                            // cannot abandon an in-flight synthesis, so a new utterance
+                            // must never cut this one mid-stream.
+                            if (stopping) break
                             if (SystemClock.elapsedRealtime() > uttDeadline) {
 
                                 Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
@@ -473,7 +564,8 @@ class VvTtsService : TextToSpeechService() {
                 // uninterruptible synth of the whole segment (the "one second
                 // between swipes" / "fast swipes get clogged" regression).
                 for (chunkText in splitSynthChunks(segText)) {
-                    if (stopping || gen != generation.get()) break
+                    // stop() only, same rule as the segment loop above.
+                    if (stopping) break
                     if (SystemClock.elapsedRealtime() > uttDeadline) break
                     var textToSynth: String = chunkText
                     val expanded = when (seg.dialect) {
