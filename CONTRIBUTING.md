@@ -3,7 +3,7 @@
 ## 构建（Building）
 
 - 原生引擎：仓库根运行 `./build_native.sh`（走 oracle 生成器流水线，详见 `docs/artifacts-contract.md`）。
-- APK：由 GitHub Actions CI 构建（见 `.github/workflows/` 各 lane）；本地无需配置 Gradle 环境，可仅读 CI 日志验证构建结果。
+- APK：本地构建在仓库根运行 `./build.sh`（需 Linux + Android SDK + JDK 11+）；GitHub Actions CI（见 `.github/workflows/` 各 lane）亦以该脚本构建并校验，可读 CI 日志核验构建结果。
 
 ##测试（Testing）
 
