@@ -209,6 +209,12 @@ class VvTtsService : TextToSpeechService() {
         CapableVoice("zh-CN", Locale("zh", "CN"), EloquenceEngine.DIALECT_ZH_CN)
     )
 
+    /** Normalizes ISO-639-2/T requests to the voice registry's two-letter language codes. */
+    private fun normalizeLanguage(language: String?): String {
+        val lang = (language ?: "").lowercase(Locale.ROOT)
+        return CAPABLE_VOICES.firstOrNull { it.locale.isO3Language == lang }?.locale?.language ?: lang
+    }
+
     /** Runs a voice query and logs any thrown failure before returning [fallback]. */
     private inline fun <T> voiceSafe(fallback: T, block: () -> T): T {
         return try { block() } catch (t: Throwable) {
@@ -218,18 +224,16 @@ class VvTtsService : TextToSpeechService() {
     }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
-        return voiceSafe(arrayOf("en", "", "")) {
+        return voiceSafe(arrayOf("eng", "", "")) {
         // Framework contract: exactly 3 elements — [language, country, variant]
         // of the language currently used by the engine (country/variant may be
         // ""; variant must be "" when country is). NOT a catalog: the picker
         // reads indices 0..2, so a 10-element list yields garbage locales.
-        // Truth = the active voice (BCP-47, defaults "en-US"); style matches
-        // onGetDefaultVoiceNameFor (lowercase language, uppercase country).
+        // Truth = the active voice (BCP-47, defaults "en-US"), reported as
+        // three-letter ISO language and country codes for the framework.
         val activeVoice = voiceConfig?.voice ?: "en-US"
-        val dash = activeVoice.indexOf('-')
-        val lang = if (dash > 0) activeVoice.substring(0, dash) else activeVoice
-        val country = if (dash > 0) activeVoice.substring(dash + 1).substringBefore('-') else ""
-        arrayOf(lang.lowercase(), country.uppercase(), "")
+        val locale = Locale.forLanguageTag(activeVoice)
+        arrayOf(locale.isO3Language, locale.isO3Country, "")
         }
     }
 
@@ -238,15 +242,15 @@ class VvTtsService : TextToSpeechService() {
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
-        val lang = (language ?: "").lowercase()
-        val c = (country ?: "").uppercase()
+        val lang = normalizeLanguage(language)
+        val c = (country ?: "").uppercase(Locale.ROOT)
         // #18: refuse to map languages with no shipped voice —the registry is the
         // single source of truth (default en-US matches the pre-existing fallback).
         if (CAPABLE_VOICES.none { it.locale.language.equals(lang, ignoreCase = true) }) return "en-US"
-        if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
+        if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
-        if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return when (c) { "US" -> "es-US"; "MX" -> "es-MX"; else -> "es-ES" }
+        if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
+        if (lang.startsWith("es")) return when (c) { "US", "USA" -> "es-US"; "MX", "MEX" -> "es-MX"; else -> "es-ES" }
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
@@ -266,7 +270,7 @@ class VvTtsService : TextToSpeechService() {
         // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
         for (v in CAPABLE_VOICES) {
             voices.add(Voice(v.voiceName, v.locale,
-                Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, null))
+                Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
         }
         return voices
         }
@@ -276,7 +280,7 @@ class VvTtsService : TextToSpeechService() {
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
-        val lang = language.lowercase()
+        val lang = normalizeLanguage(language)
         // #18: availability derives from the voice registry —the same single source
         // that drives the catalog;the engine's shipped whitelist remains the ground
         // truth for what can synthesize,so availability can never advertise a
@@ -284,7 +288,7 @@ class VvTtsService : TextToSpeechService() {
 
 
         val supported = CAPABLE_VOICES.any { it.locale.language.equals(lang, ignoreCase = true) }
-        if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
+        if (lang.startsWith("zh") && (country.equals("TW", ignoreCase = true) || country.equals("TWN", ignoreCase = true))) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
