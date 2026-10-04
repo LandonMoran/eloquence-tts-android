@@ -76,12 +76,10 @@ class LanguageDetector {
         @Volatile private var linguaDetector: com.github.pemistahl.lingua.api.LanguageDetector? = null
         @Volatile private var linguaInitFailed = false
         @Volatile private var linguaPreloaded = false
-        // Single-flight guard:true while a background Lingua-construction thread is
-        // pending/running.so concurrent preloadLingua()/resetLingua() callers (multiple
-        // TTS service instances, settings rebuilds( can never spawn parallel builder
-        // threads. Cleared when the build finishes;reset when the whitelist changes so
-        // the new whitelist can start a fresh build.
+        // Single-flight guard for the current generation. Resetting the whitelist
+        // allows a fresh preload; older workers must not update its flags.
         @Volatile private var linguaInitInFlight = false
+        private var linguaGeneration = 0L // Guarded by lock.
 
         // Memo of recent Lingua-decided dialects. The n-gram scan is the largest single
         // per-segment cost on the delivery thread, and TalkBack constantly re-announces
@@ -152,6 +150,7 @@ class LanguageDetector {
         private fun resetLingua() {
             invalidateLatinCache()
             synchronized(lock) {
+                linguaGeneration++
                 linguaDetector = null
                 linguaInitFailed = false
                 linguaPreloaded = false
@@ -186,16 +185,23 @@ class LanguageDetector {
             synchronized(lock) {
                 // Single-flight:mark the initialization as in-flight BEFORE starting
                 // the thread,so concurrent callers (multiple TTS services, settings
-                // rebuilds( can never spawn duplicate Lingua-construction threads;the
+                // rebuilds( cannot spawn duplicate threads in the same generation;the
                 // built detector is published under the same lock when it lands.
                 if (linguaPreloaded || linguaInitFailed || linguaInitInFlight) return
                 linguaInitInFlight = true
+                val generation = linguaGeneration
                 Thread {
                     try {
-                        getLingua()
-                        linguaPreloaded = true
+                        val detector = getLingua()
+                        synchronized(lock) {
+                            if (generation == linguaGeneration && detector != null) {
+                                linguaPreloaded = true
+                            }
+                        }
                     } finally {
-                        synchronized(lock) { linguaInitInFlight = false }
+                        synchronized(lock) {
+                            if (generation == linguaGeneration) linguaInitInFlight = false
+                        }
                     }
                 }.start()
             }
