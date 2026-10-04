@@ -8,6 +8,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Signature-level gate for the install-status broadcast channel
+         (ElqUpdateInstaller registers its receiver with this permission
+         on devices below Android 13, where RECEIVER_NOT_EXPORTED is absent). -->
+    <permission
+        android:name="com.xw.vvttts.permission.INSTALL_STATUS"
+        android:protectionLevel="signature" />
+
     <application
         android:label="Eloquence TTS"
         android:largeHeap="true"

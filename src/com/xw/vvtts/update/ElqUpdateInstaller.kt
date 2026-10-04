@@ -23,6 +23,9 @@ object ElqUpdateInstaller {
     private const val ACTION_INSTALL_STATUS = "com.xw.vvtts.action.APP_UPDATE_INSTALL_STATUS"
     private const val INSTALL_TIMEOUT_MINUTES = 5L
 
+    /** Signature-level permission gating the install-status broadcast channel on pre-API-33 devices. */
+    private const val INSTALL_STATUS_PERMISSION = "com.xw.vvtts.permission.INSTALL_STATUS"
+
     /**
      * Writes and commits [apkFile] through PackageInstaller, registering the status receiver before commit.
      *
@@ -55,6 +58,13 @@ object ElqUpdateInstaller {
             /** Converts an install status broadcast into a result, releases the waiting caller and unregisters this receiver. */
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action != ACTION_INSTALL_STATUS) return
+                // Ignore broadcasts that are not delivered through this app's own
+                // package-scoped PendingIntent: a spoofed channel must not move state.
+                if (intent.`package` != appContext.packageName) return
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val sender = getSenderPackage()
+                    if (sender == null || sender != appContext.packageName) return
+                }
                 if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != sessionId) return
                 val status = intent.getIntExtra(
                     PackageInstaller.EXTRA_STATUS,
@@ -68,7 +78,13 @@ object ElqUpdateInstaller {
                             @Suppress("DEPRECATION")
                             intent.getParcelableExtra(Intent.EXTRA_INTENT)
                         }
-                        result = Result.UserActionRequired(confirm)
+                        // The confirmation intent must belong to this package or the
+                        // platform installer; anything else is untrusted and fails closed.
+                        if (!isTrustedConfirmIntent(appContext, confirm)) {
+                            result = Result.Failed(status, "untrusted install confirmation intent")
+                        } else {
+                            result = Result.UserActionRequired(confirm)
+                        }
                     }
                     PackageInstaller.STATUS_SUCCESS -> {
                         result = Result.Success(status)
@@ -89,7 +105,10 @@ object ElqUpdateInstaller {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
             } else {
-                appContext.registerReceiver(receiver, filter)
+                // Pre-Android-13: no RECEIVER_NOT_EXPORTED; gate the channel with a
+                // signature-level permission so only this app can receive status.
+                @Suppress("DEPRECATION")
+                appContext.registerReceiver(receiver, filter, INSTALL_STATUS_PERMISSION, null)
             }
         } catch (t: Throwable) {
             return Result.Failed(null, t.message ?: t.javaClass.simpleName)
@@ -130,7 +149,16 @@ object ElqUpdateInstaller {
         return result ?: Result.Failed(null, "install timed out")
     }
 
-    /** Creates a mutable broadcast PendingIntent targeting this package, keyed by [sessionId], for install status. */
+    /**
+     * Creates a package-scoped broadcast PendingIntent keyed by [sessionId] for install status.
+     *
+     * FLAG_MUTABLE is required here: PackageInstaller.Session.commit() must inject the
+     * status extras (session id, status code, ...) into this intent, and the platform
+     * throws IllegalArgumentException for an immutable statusReceiver when the caller
+     * targets SDK 35+ (this app targets 36). The remaining exposure is closed by the
+     * package-scoped intent, the non-exported / permission-protected receiver
+     * registration, and the sender + session validation in onReceive().
+     */
     private fun commitIntent(context: Context, sessionId: Int): PendingIntent {
         val intent = Intent(ACTION_INSTALL_STATUS).setPackage(context.packageName)
         return PendingIntent.getBroadcast(
@@ -139,5 +167,20 @@ object ElqUpdateInstaller {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
+    }
+
+    /**
+     * Accepts only confirmation intents scoped to this package, issued by the platform
+     * installer, or implicit (resolved by the system). Anything else is an untrusted
+     * intent that could redirect the user to a malicious confirmation flow.
+     */
+    private fun isTrustedConfirmIntent(context: Context, confirm: Intent?): Boolean {
+        if (confirm == null) return false
+        val pkg = confirm.`package`
+        if (pkg == null) return true
+        if (pkg == context.packageName) return true
+        return pkg == "android" ||
+            pkg == "com.android.packageinstaller" ||
+            pkg == "com.google.android.packageinstaller"
     }
 }
