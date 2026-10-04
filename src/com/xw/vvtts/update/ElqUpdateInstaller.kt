@@ -62,7 +62,7 @@ object ElqUpdateInstaller {
                 // package-scoped PendingIntent: a spoofed channel must not move state.
                 if (intent.`package` != appContext.packageName) return
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val sender = getSenderPackage()
+                    val sender = intent.getCreatorPackage()
                     if (sender == null || sender != appContext.packageName) return
                 }
                 if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != sessionId) return
