@@ -144,6 +144,7 @@ typedef struct {
     void   *text;               /* text kept alive for the engine's thread */
     int     synthBusy;
     volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
+    int     retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
 
 /* The engine calls back on its own synthesis thread; the caller only reads
@@ -197,10 +198,12 @@ static void vv_wait_till_done(VvtsSession *s) {
         iters++;
     }
     if (s->hECI && eciSpeaking(s->hECI)) {
-        /* Engine wedged: never reuse this session (its thread may still own
-         * it); retire the handle so nothing can drive it again. */
+        /* Engine wedged: never drive this session again (its thread may still
+         * own text/pcm).  Keep the handle so shutdown can prove the engine
+         * quiet BEFORE freeing -- NULLing it here makes shutdown skip its
+         * drain and free live memory the worker still owns (use-after-free). */
         __android_log_print(ANDROID_LOG_ERROR, "SPD", "wait_till_done timeout: session retired");
-        s->hECI = NULL;
+        s->retired = 1;
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
     s->synthBusy =  0;
@@ -319,6 +322,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
     if (!s || !s->hECI) return NULL;
+    if (s->retired) return NULL; /* engine wedge: never re-drive this session */
     if (!text) return NULL;
 
     jsize len = (*env)->GetArrayLength(env, text);
@@ -401,6 +405,14 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
                 long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
                 __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
 
+    if (s->retired) {
+        /* Timeout mid-flight: the engine thread may still be writing s->pcm.
+         * Return failure WITHOUT reading, trimming or resampling PCM; the
+         * session stays cached until shutdown reclaims it safely. */
+        __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: session retired; returning null");
+        return NULL;
+    }
+
     if (s->pcmLen == 0) return NULL;
         {
             short *rs = NULL;
@@ -480,15 +492,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     VvtsSession *s = vv_find(env, handle);
     if (!s) return;
     if (s->hECI) {
-        s->cancel = 1; /* abort the wait loop fast */
+        s->cancel = 1; /* let a concurrent wait loop abort fast */
         eciStop(s->hECI);
-        /* let the synthesis thread finish its current utterance before we
-         * free the session it is still pointing at */
-        for (int i = 0; i < 4000 && eciSpeaking(s->hECI) && !s->cancel; i++) {
+        /* Let the synthesis thread finish its current utterance before we
+         * free the session it is still pointing at.  This drain ignores
+         * cancel: aborting it would eciDelete while the worker still owns
+         * the session (use-after-free). */
+        for (int i = 0; i < 4000 && eciSpeaking(s->hECI); i++) {
             struct timespec ts = {0, 500000L}; /* 0.5 ms */
             nanosleep(&ts, NULL);
         }
+        if (eciSpeaking(s->hECI)) {
+            /* Wedged for real: the worker thread still owns the session.
+             * Take one leak per hang instead of a use-after-free. */
+            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown: session still busy; retaining session (leak-once)");
+            return;
+        }
         eciDelete(s->hECI);
+        s->hECI = NULL;
     }
     free(s->text);
     free(s->pcm);
