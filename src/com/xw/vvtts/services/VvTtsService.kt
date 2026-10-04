@@ -227,11 +227,11 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return when (c) { "US" -> "es-US"; "MX" -> "es-MX"; else -> "es-ES" }
+        if (lang.startsWith("es") || lang.startsWith("spa")) return when (c) { "US" -> "es-US"; "MX" -> "es-MX"; else -> "es-ES" }
         if (lang.startsWith("it")) return "it-IT"
-        if (lang.startsWith("ja")) return "ja-JP"
-        if (lang.startsWith("pl")) return "pl-PL"
-        if (lang.startsWith("pt")) return "pt-BR"
+        if (lang.startsWith("ja") || lang.startsWith("jpn")) return "ja-JP"
+        if (lang.startsWith("pl") || lang.startsWith("pol")) return "pl-PL"
+        if (lang.startsWith("pt") || lang.startsWith("por")) return "pt-BR"
         if (lang.startsWith("fi")) return "fi-FI"
         if (lang.startsWith("zh")) return "zh-CN"
         return "en-US"
@@ -282,8 +282,9 @@ class VvTtsService : TextToSpeechService() {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
         val lang = language.lowercase()
         val supported = lang.startsWith("en") || lang.startsWith("de")
-                || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
-                || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
+                || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("spa") || lang.startsWith("it")
+                || lang.startsWith("ja") || lang.startsWith("jpn") || lang.startsWith("pl") || lang.startsWith("pol")
+                || lang.startsWith("pt") || lang.startsWith("por") || lang.startsWith("fi")
                 || lang.startsWith("zh")
         if (lang.startsWith("zh") && country != null && country.equals("TW", ignoreCase = true)) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
