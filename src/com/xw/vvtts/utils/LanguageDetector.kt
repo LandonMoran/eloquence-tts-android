@@ -188,7 +188,7 @@ class LanguageDetector {
                 // the thread,so concurrent callers (multiple TTS services, settings
                 // rebuilds( can never spawn duplicate Lingua-construction threads;the
                 // built detector is published under the same lock when it lands.
-                if (linguaPreloaded || linguaInitFailed || linguaInitInFlight)) return
+                if (linguaPreloaded || linguaInitFailed || linguaInitInFlight) return
                 linguaInitInFlight = true
                 Thread {
                     try {
