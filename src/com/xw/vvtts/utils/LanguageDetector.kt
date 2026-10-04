@@ -73,6 +73,8 @@ class LanguageDetector {
         @Volatile private var fixedDialect = DIALECT_EN_US
 
         private val lock = Any()
+        /** Serializes the transient per-utterance pin block in runSynthesis() against detection-config setters. */
+        val stateLock = Any()
         @Volatile private var linguaDetector: com.github.pemistahl.lingua.api.LanguageDetector? = null
         @Volatile private var linguaInitFailed = false
         @Volatile private var linguaPreloaded = false
@@ -89,21 +91,22 @@ class LanguageDetector {
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
 
-        fun setChineseDialect(dialect: Int) { chineseDialect = dialect }
+        fun setChineseDialect(dialect: Int) { synchronized(stateLock) { chineseDialect = dialect } }
         fun getChineseDialect() = chineseDialect
 
-        fun setEnglishDialect(dialect: Int) { englishDialect = dialect; invalidateLatinCache() }
+        fun setEnglishDialect(dialect: Int) { synchronized(stateLock) { englishDialect = dialect; invalidateLatinCache() } }
         fun getEnglishDialect() = englishDialect
 
-        fun setSpanishDialect(dialect: Int) { spanishDialect = dialect; invalidateLatinCache() }
+        fun setSpanishDialect(dialect: Int) { synchronized(stateLock) { spanishDialect = dialect; invalidateLatinCache() } }
         fun getSpanishDialect() = spanishDialect
 
-        fun setFrenchDialect(dialect: Int) { frenchDialect = dialect; invalidateLatinCache() }
+        fun setFrenchDialect(dialect: Int) { synchronized(stateLock) { frenchDialect = dialect; invalidateLatinCache() } }
         fun getFrenchDialect() = frenchDialect
 
         @Volatile private var transientEnabled: Set<String>? = null
 
         fun setEnabledLanguages(langs: Set<String>?) {
+            synchronized(stateLock) {
             val en = enabledLanguages
             if (langs == null || langs.isEmpty()) {
                 // Keep the current set on empty input (nothing to change;also avoid
@@ -123,6 +126,7 @@ class LanguageDetector {
             enabledLanguages = HashSet(langs)
             // whitelist changed:rebuild Lingua immediately,no restart needed
             resetLingua()
+            }
         }
 
         fun getEnabledLanguages(): Set<String> = enabledLanguages
@@ -130,7 +134,9 @@ class LanguageDetector {
         /** Per-utterance pin (e.g. zh from a picker row(,applied on top of the whitelist
          * without rebuilding Lingua. Cleared from the finally block. */
         fun setTransientEnabledLangs(langs: Set<String>?) {
+            synchronized(stateLock) {
             transientEnabled = langs
+            }
         }
 
         /** Whether a language code is in the detection whitelist */
@@ -153,7 +159,7 @@ class LanguageDetector {
             preloadLingua()
         }
 
-        fun setDefaultLanguage(dialect: Int) { defaultLanguage = dialect }
+        fun setDefaultLanguage(dialect: Int) { synchronized(stateLock) { defaultLanguage = dialect } }
         fun getDefaultLanguage() = defaultLanguage
 
         /**
@@ -166,10 +172,10 @@ class LanguageDetector {
             return -1 // unspecified
         }
 
-        fun setDetectionEnabled(enabled: Boolean) { detectionEnabled = enabled }
+        fun setDetectionEnabled(enabled: Boolean) { synchronized(stateLock) { detectionEnabled = enabled } }
         fun isDetectionEnabled() = detectionEnabled
 
-        fun setFixedDialect(dialect: Int) { fixedDialect = dialect }
+        fun setFixedDialect(dialect: Int) { synchronized(stateLock) { fixedDialect = dialect } }
         fun getFixedDialect() = fixedDialect
 
         /** Preload Lingua(called in the background at app startup) */
@@ -279,6 +285,7 @@ class LanguageDetector {
          * if detection is off,return the whole run + fixed dialect directly.
          */
         fun segment(text: String?): List<Segment> {
+            synchronized(stateLock) {
             val result = ArrayList<Segment>()
             if (text == null || text.isEmpty()) return result
 
@@ -346,6 +353,7 @@ class LanguageDetector {
             mergeConsecutive(result)
 
             return result
+            }
         }
 
         /**

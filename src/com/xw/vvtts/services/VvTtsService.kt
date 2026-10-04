@@ -371,6 +371,7 @@ class VvTtsService : TextToSpeechService() {
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
         refreshSettings()
+        synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
@@ -558,6 +559,7 @@ class VvTtsService : TextToSpeechService() {
                         }
                     }
                 }
+        }
     }
 
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
