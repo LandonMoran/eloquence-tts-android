@@ -429,7 +429,7 @@ class EloquenceEngine(context: Context) {
             // handles cross-thread is safe now that they live in a ConcurrentHashMap the worker may lazily grow.
 
             val worker = synthWorker
-            for (h in worker.handles.values) VvtttsCore.stop(h)
+            for (h in worker.handles.values) VvttsCore.stop(h)
         }
 
     @Synchronized
@@ -441,7 +441,7 @@ class EloquenceEngine(context: Context) {
                     // Cleanup queues behind any in-flight synthesis so it frees the
                     // handles on their owning thread only after the native call returns.
 
-                    for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                    for (h in worker.handles.values) VvttsCore.shutdown(h)
                     worker.handles.clear()
                 }
             } catch (ignore: RejectedExecutionException) {
@@ -576,7 +576,7 @@ class EloquenceEngine(context: Context) {
 
             if (voice.eciVoiceNumber != worker.pendingEciVoiceByDialect[dialect]) {
 
-                            VvtttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
+                            VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber)
                             worker.pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
                         }
 
@@ -821,7 +821,7 @@ class EloquenceEngine(context: Context) {
                     // already-cleared cache) makes this a no-op.
 
                     if (synthWorker !== worker) {
-                        for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                        for (h in worker.handles.values) VvttsCore.shutdown(h)
                         worker.handles.clear()
                     }
                 }

@@ -752,6 +752,11 @@ class VvTtsService : TextToSpeechService() {
 
             private val engineLock = Any()
             @Volatile private var processEngine: EloquenceEngine? = null
+            // #16: serialization lock for concurrent engine ops (stop/synthesizeCore/
+            // warmupDialect( must be process-scoped too — a per-instance lock would
+            // let tworebound instances race the same shared native engine (calling
+            // stop() while another instance synthesizes(.
+            private val engineCallLock = Any()
 
 
             private fun acquireProcessEngine(ctx: Context): EloquenceEngine {
