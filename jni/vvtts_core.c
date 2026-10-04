@@ -257,11 +257,16 @@ static void vv_wait_till_done(VvtsSession *s) {
  * engine's own thread still has to finish; one session must never be driven
  * from two threads concurrently, so wait for the engine to go quiet before
  * touching text/pcm again. */
-static void vv_settle(VvtsSession *s) {
-    for (int i = 0; i < 4000 && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
+static int vv_settle(VvtsSession *s) {
+    int i;
+    for (i =   0; i < VV_DRAIN_MAX_ITERS && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
         struct timespec ts = {0, 500000L}; /* 0.5 ms: poll = collect, keep it short */
         nanosleep(&ts, NULL);
     }
+    /* Only a proven !eciSpeaking (or a cancel,, which the caller supercedes) may
+     * proceed; a full drain-length wait without quiet means the engine thread
+     * is wedged -- driving it again would corrupt state (#137(#138(#139(. */
+    return (s->cancel || !s->hECI || !eciSpeaking(s->hECI)) ? 1 :  0;
 }
 
 /* The engine emits short lead-in/trailing silence around every utterance;
@@ -434,8 +439,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     s->cancel =  0;
     s->fatal =  0;
     operation = "vv_settle";
-    vv_settle(s);
-    if (s->failed) goto failed;
+    if (!vv_settle(s) || s->failed) goto failed;
 
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
@@ -451,7 +455,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *pcm = NULL;
         size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
         __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "build_pcm samples=%zu pcm=%p", samples, (void *)pcm);
-    if (samples == 0) return NULL;
+        if (samples == 0) { free(pcm); return NULL; }
     /* (#40( refuse to hand a jsize array longer than the resampler can
     * 4x back into jsize bounds. */
     if (samples > VV_MAX_PCM_SAMPLES) { free(pcm); return NULL; }
@@ -487,7 +491,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
 }
 
     operation = "eciClearInput";
-    if (eciClearInput(s->hECI) != 0) {
+    if (!eciClearInput(s->hECI)) {
         /* #134: a rejected clear means the previous input state is undefined;
          * never synthesize on top of it. */
         __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "eciClearInput failed: refusing to synthesize on stale input state (#134)");
@@ -500,17 +504,17 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     operation = "et_insertIndex";
     if (!et_insertIndex(s->hECI, 4242)) goto failed;
     operation = "et_addText";
-    if (et_addText(s->hECI, buf) != 0) {
-    /* #135: a rejected text insertion must never be followed by
-    * synthesis of stale/empty input; stop here and return failure. */
-    __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
-    return NULL;
-    }
-    s->synthBusy =  1;
-    struct timespec st1, st2, st3;
-    clock_gettime(CLOCK_MONOTONIC, &st1);
-    int synthRet = et_synthesize(s->hECI);
-    if (synthRet != 0) {
+       if (!et_addText(s->hECI, buf)) {
+           /* #135: a rejected text insertion must never be followed by
+            * synthesis of stale/empty input; stop here and return failure. */
+           __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
+           return NULL;
+       }
+       s->synthBusy = 1;
+       struct timespec st1, st2, st3;
+       clock_gettime(CLOCK_MONOTONIC, &st1);
+       int synthRet = et_synthesize(s->hECI);
+       if (!synthRet) {
     /* #136: a rejected synthesis must be terminal for this request;
     * never let stale PCM escape as a normal result. */
     s->synthBusy =  0;   /* failure is terminal: clear busy before returning */
@@ -638,7 +642,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
          * free the session it is still pointing at.  This drain ignores
          * cancel: aborting it would eciDelete while the worker still owns
          * the session (use-after-free). */
-        for (int i = 0; i < 4000 && eciSpeaking(s->hECI); i++) {
+        for (int i = 0; i < VV_DRAIN_MAX_ITERS && eciSpeaking(s->hECI); i++) {
             struct timespec ts = {0, 500000L}; /* 0.5 ms */
             nanosleep(&ts, NULL);
         }

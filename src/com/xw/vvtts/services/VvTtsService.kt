@@ -708,6 +708,13 @@ synchronized(engineCallLock) {
                                 // don't pace-waste seconds on a dead delivery.
                                 hold(pace)
                             }
+                        } else {
+                            // 0/negative maxBufferSize: PCM was synthesized but the framework
+                            // refuses to accept any of it. A bare done() here would report
+                            // TextToSpeech.SUCCESS for zero audio -- the TalkBack silent-success
+                            // bug. Report error() via the failure flag instead.
+                            Log.e(TAG, "framework maxBufferSize=$max; failing synthesis instead of silent success")
+                            synthFailedOrTruncated = true
                         }
                     } else {
                         // Null/empty PCM from the native synth (a failure, not a silence: the
