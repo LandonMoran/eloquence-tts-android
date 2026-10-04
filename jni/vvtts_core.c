@@ -385,7 +385,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         JNIEnv *env, jclass cls, jlong handle, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
-if (!s) return NULL;
+    if (!s) return NULL;
     if (s->failed) return vv_empty_result(env);
     if (s->retired) return NULL; /* engine wedge: never re-drive this session */
     if (!s->hECI) return NULL;
@@ -449,10 +449,10 @@ if (!s) return NULL;
         short *pcm = NULL;
         size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
         __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "build_pcm samples=%zu pcm=%p", samples, (void *)pcm);
-                if (samples == 0) return NULL;
-                /* (#40( refuse to hand a jsize array longer than the resampler can
-                 * 4x back into jsize bounds. */
-                if (samples > VV_MAX_PCM_SAMPLES) { free(pcm); return NULL; }
+    if (samples == 0) return NULL;
+    /* (#40( refuse to hand a jsize array longer than the resampler can
+    * 4x back into jsize bounds. */
+    if (samples > VV_MAX_PCM_SAMPLES) { free(pcm); return NULL; }
         /* Oracle clips are captured at the engine's native 11.025 kHz (the
          * same rate eci.ini fixed the en-us path at(.  Playback always runs
          * at 44.1 kHz (SAMPLE_RATE(, so zh must take the same 4x
@@ -462,23 +462,15 @@ if (!s) return NULL;
         size_t outLen = 0;
         vv_trim_silence(pcm, &samples);
         operation = "vv_resample_4x (oracle)";
-        if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0) {
-            free(pcm);
-            goto failed;
-        }
-        free(pcm);
-        pcm = rs;
-        samples = outLen;
-        if (vv_resample_4x(pcm, samples, &rs, &outLen) !=
-                        0 || !rs || outLen == 0) {
-                    /* #137: never fall back to the engine's native 11,025 Hz -- Kotlin
-                     * always advertises 44,100; wrong-rate output is a format violation. */
-                    free(pcm);
-                    return NULL;
-                }
-                free(pcm);
-                pcm = rs;
-                samples = outLen;
+    if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0 || !rs || outLen == 0) {
+    /* #137: never fall back to the engine's native 11,025 Hz -- Kotlin
+    * always advertises 44,100; wrong-rate output is a format violation. */
+    free(pcm);
+    return NULL;
+    }
+    free(pcm);
+    pcm = rs;
+    samples = outLen;
         free(s->pcm);
         s->pcm = pcm;
         s->pcmLen = samples;
@@ -490,10 +482,9 @@ if (!s) return NULL;
         (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
         if ((*env)->ExceptionCheck(env)) goto failed;
         return out;
-    }
+}
 
     operation = "eciClearInput";
-    if (!eciClearInput(s->hECI)) goto failed;
     if (eciClearInput(s->hECI) != 0) {
         /* #134: a rejected clear means the previous input state is undefined;
          * never synthesize on top of it. */
@@ -507,45 +498,37 @@ if (!s) return NULL;
     operation = "et_insertIndex";
     if (!et_insertIndex(s->hECI, 4242)) goto failed;
     operation = "et_addText";
-    if (!et_addText(s->hECI, buf)) goto failed;
-                s->synthBusy =  1;
-                struct timespec st1, st2, st3;
-                clock_gettime(CLOCK_MONOTONIC, &st1);
-                operation = "et_synthesize";
-                if (!et_synthesize(s->hECI)) goto failed;
-    et_insertIndex(s->hECI,  4242);
-                if (et_addText(s->hECI, buf) != 0) {
-                    /* #135: a rejected text insertion must never be followed by
-                     * synthesis of stale/empty input; stop here and return failure. */
-                    __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
-                    return NULL;
-                }
-                s->synthBusy =  1;
-                struct timespec st1, st2, st3;
-                clock_gettime(CLOCK_MONOTONIC, &st1);
-                int synthRet = et_synthesize(s->hECI);
-                if (synthRet != 0) {
-                    /* #136: a rejected synthesis must be terminal for this request;
-                     * never let stale PCM escape as a normal result. */
-                    s->synthBusy =  0;   /* failure is terminal: clear busy before returning */
-                    __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_synthesize failed (%d): synthesis terminal (#136)", synthRet);
-                    return NULL;
-                }
-                clock_gettime(CLOCK_MONOTONIC, &st2);
-                operation = "vv_wait_till_done";
-                vv_wait_till_done(s);
-                if (s->fatal) {
-                    s->pcmLen =   0;   /* fail-closed: an overflow/alloc failure must abort the utterance, never ship partial PCM as success */
-                    return NULL;
-                }
-                s->synthBusy = 0;   /* #139: clear busy once the session has drained: success must not poison later synthesis */
-                if (s->cancel) return NULL;
-                clock_gettime(CLOCK_MONOTONIC, &st3);
-                long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
-                long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
-                __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
-
-if (s->failed) goto failed;
+    if (et_addText(s->hECI, buf) != 0) {
+    /* #135: a rejected text insertion must never be followed by
+    * synthesis of stale/empty input; stop here and return failure. */
+    __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
+    return NULL;
+    }
+    s->synthBusy =  1;
+    struct timespec st1, st2, st3;
+    clock_gettime(CLOCK_MONOTONIC, &st1);
+    int synthRet = et_synthesize(s->hECI);
+    if (synthRet != 0) {
+    /* #136: a rejected synthesis must be terminal for this request;
+    * never let stale PCM escape as a normal result. */
+    s->synthBusy =  0;   /* failure is terminal: clear busy before returning */
+    __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_synthesize failed (%d): synthesis terminal (#136)", synthRet);
+    return NULL;
+    }
+    clock_gettime(CLOCK_MONOTONIC, &st2);
+    operation = "vv_wait_till_done";
+    vv_wait_till_done(s);
+    if (s->fatal) {
+    s->pcmLen =   0;   /* fail-closed: an overflow/alloc failure must abort the utterance, never ship partial PCM as success */
+    return NULL;
+    }
+    s->synthBusy = 0;   /* #139: clear busy once the session has drained: success must not poison later synthesis */
+    if (s->cancel) return NULL;
+    clock_gettime(CLOCK_MONOTONIC, &st3);
+    long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
+    long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
+    __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
+    if (s->failed) goto failed;
     if (s->retired) {
         /* Timeout mid-flight: the engine thread may still be writing s->pcm.
          * Return failure WITHOUT reading, trimming or resampling PCM; the
@@ -558,7 +541,12 @@ if (s->failed) goto failed;
     size_t outLen = 0;
     vv_trim_silence(s->pcm, &s->pcmLen);
     operation = "vv_resample_4x";
-    if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0) goto failed;
+    if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0 || !rs || outLen == 0) {
+        /* #137: resampler failure is synthesis failure -- never silently return
+         * the engine native 11,025 Hz PCM while Kotlin always advertises 44,100. */
+        __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "44.1k resampler failed: refusing to return 11.025k PCM (#137)");
+        return NULL;
+    }
     operation = "NewShortArray";
     jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);
     if (!out || (*env)->ExceptionCheck(env)) {
@@ -578,25 +566,6 @@ failed:
     vv_fail_session(s);
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     return vv_empty_result(env);
-        {
-            short *rs = NULL;
-                        size_t outLen = 0;
-                        vv_trim_silence(s->pcm, &s->pcmLen);
-            if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0 || !rs || outLen == 0) {
-                            /* #137: resampler failure is synthesis failure -- never silently return
-                             * the engine's native 11,025 Hz PCM while Kotlin always advertises 44,100. */
-                            __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "44.1k resampler failed: refusing to return 11.025k PCM (#137)");
-                            return NULL;
-                        }
-                        jshortArray res = (*env)->NewShortArray(env, (jsize)outLen);
-                        if (res) {
-                            (*env)->SetShortArrayRegion(env, res, 0, (jsize)outLen, rs);
-                            free(rs);
-                            return res;
-                        }
-                        free(rs);
-                        return NULL;
-        }
 }
 
 JNIEXPORT jint JNICALL
