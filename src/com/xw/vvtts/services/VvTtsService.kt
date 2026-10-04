@@ -110,13 +110,8 @@ class VvTtsService : TextToSpeechService() {
         // No aggressive shutdown: TextToSpeechService gets created/destroyed,
         // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
         // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
-        stopping = true
-        deliveryExecutor.shutdown()
-        try {
-            deliveryExecutor.awaitTermination(250, java.util.concurrent.TimeUnit.MILLISECONDS)
-        } catch (ignore: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
+        // No executor anymore: synthesis is synchronous within onSynthesizeText(),
+        // so teardown just drops queued work via the generation bump above.
         try {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
@@ -360,7 +355,8 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    /** Queues synthesis with the current cancellation generation; reports an error if shutdown rejects it. */
+    /** Synthesizes synchronously:every callback call (start/audio/done/error) finishes
+     *  within this method's lifetime, per the framework contract. */
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val schedAt = SystemClock.elapsedRealtime()
         try {
@@ -371,7 +367,7 @@ class VvTtsService : TextToSpeechService() {
             // and this snapshot post-dates the bump, so THIS task survives the
             // dequeue gates. The engine cannot abandon an active synthesis.
             val gen = generation.incrementAndGet()
-            deliveryExecutor.execute(Runnable { runSynthesis(request, callback, gen, schedAt) })
+            runSynthesis(request, callback, gen, schedAtÂÂ)
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "service shutting down;dropping utterance", e)
             // Framework contract: every onSynthesizeText must terminate the
@@ -390,6 +386,7 @@ class VvTtsService : TextToSpeechService() {
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
+        synchronized(cancellationLock) {
         var text: String? = request.charSequenceText?.toString()
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
@@ -450,6 +447,7 @@ class VvTtsService : TextToSpeechService() {
         // so no stop() has fired since it was queued. Clear the flag here —
         // AFTER the re-check — so a racing stop() is never erased..
         stopping = false
+        }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
                 if (getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                     Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
@@ -667,8 +665,10 @@ class VvTtsService : TextToSpeechService() {
         return out
     }
 
-    private val deliveryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    
     @Volatile private var stopping = false
+    /** Serializes stop-gate checks/flag-reset in runSynthesis against onStop()/bumpGeneration() generation bumps. */
+    private val cancellationLock = Any()
     /** Bumped by onStop(); utterances queued before the bump are stale (the
      *  framework already canceled them) and must not speak after the stop. */
     private val generation = AtomicLong(0)
@@ -676,14 +676,18 @@ class VvTtsService : TextToSpeechService() {
      *  and onUnbind so nothing flushes seconds after the service dies (two-voices
      *  overlap, late lock-screen speech(. */
     private fun bumpGeneration() {
-        stopping = true
-        generation.incrementAndGet()
-        Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
+        synchronized(cancellationLock) {
+            stopping = true
+            generation.incrementAndGet()
+            Log.i("VvTtsX", "generation bump (stop/unbind(: generation=" + generation)
+        }
     }
         /** Invalidates queued requests, stops audio delivery and asks the current engine to stop. */
         override fun onStop() {
-            stopping = true
-            generation.incrementAndGet()  // invalidate utterances already queued pre-stop
+            synchronized(cancellationLock) {
+                stopping = true
+                generation.incrementAndGet()  // invalidate utterances already queued pre-stop
+            }
             try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
         }
 
