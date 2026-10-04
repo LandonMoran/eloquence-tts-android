@@ -333,7 +333,7 @@ class VvTtsService : TextToSpeechService() {
                 }
             } else {
                 Log.d(TAG, "utterance superseded mid-queue; gen=" + gen + " generation=" + generation.get())
-                silentComplete(callback
+                silentComplete(callback)
             }
             return
         }
@@ -355,7 +355,7 @@ class VvTtsService : TextToSpeechService() {
                 } catch (ignore: Throwable) {}
             } else {
                 Log.d(TAG, "utterance superseded mid-queue after reset; gen=" + gen + " generation=" + generation.get())
-                silentComplete(callback
+                silentComplete(callback)
             }
             return
         }
@@ -563,7 +563,7 @@ class VvTtsService : TextToSpeechService() {
      *  start+done into silent playback, avoiding error() which a screen
      *  reader treats as a failed focus ( re-announce/stall(.
      */
-    private fun silentComplete(callback: SynthesisCallback] {
+    private fun silentComplete(callback: SynthesisCallback) {
         try {
             callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
             callback.done()

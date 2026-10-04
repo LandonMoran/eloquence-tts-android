@@ -336,12 +336,15 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     if (!s->hECI) return NULL;
     if (!text) return NULL;
 
+    const char *operation = "GetArrayLength";
     jsize len = (*env)->GetArrayLength(env, text);
     if ((*env)->ExceptionCheck(env)) goto failed;
     if (len <= 0) return NULL;
 
+    operation = "malloc text buffer";
     void *buf = malloc((size_t)len + 1);
     if (!buf) goto failed;
+    operation = "GetByteArrayRegion";
     (*env)->GetByteArrayRegion(env, text, 0, len, (jbyte *)buf);
     if ((*env)->ExceptionCheck(env)) {
         free(buf);
@@ -362,6 +365,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     /* A stop may have aborted the previous wait loop: re-sync with the
      * engine's thread before we touch text/pcm for the new utterance. */
     s->cancel = 0;
+    operation = "vv_settle";
     vv_settle(s);
     if (s->failed) goto failed;
 
@@ -388,6 +392,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         short *rs = NULL;
         size_t outLen = 0;
         vv_trim_silence(pcm, &samples);
+        operation = "vv_resample_4x (oracle)";
         if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0) {
             free(pcm);
             goto failed;
@@ -399,25 +404,32 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         s->pcm = pcm;
         s->pcmLen = samples;
         s->pcmCap = samples;
+        operation = "NewShortArray (oracle)";
         jshortArray out = (*env)->NewShortArray(env, (jsize)samples);
         if (!out || (*env)->ExceptionCheck(env)) goto failed;
+        operation = "SetShortArrayRegion (oracle)";
         (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
         if ((*env)->ExceptionCheck(env)) goto failed;
         return out;
     }
 
+    operation = "eciClearInput";
     if (!eciClearInput(s->hECI)) goto failed;
     /* The CLI probe's canonical order: an empty insert (index 4242( pushes
      * the current voice/environment params into the engine and is REQUIRED for
      * synthesis itself -- removing it (commit 380ddce( broke all speech(
      * and for the params eciSetVoiceParam just wrote to reach the engine. */
+    operation = "et_insertIndex";
     if (!et_insertIndex(s->hECI, 4242)) goto failed;
+    operation = "et_addText";
     if (!et_addText(s->hECI, buf)) goto failed;
                 s->synthBusy =  1;
                 struct timespec st1, st2, st3;
                 clock_gettime(CLOCK_MONOTONIC, &st1);
+                operation = "et_synthesize";
                 if (!et_synthesize(s->hECI)) goto failed;
                 clock_gettime(CLOCK_MONOTONIC, &st2);
+                operation = "vv_wait_till_done";
                 vv_wait_till_done(s);
                 clock_gettime(CLOCK_MONOTONIC, &st3);
                 long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
@@ -429,18 +441,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     short *rs = NULL;
     size_t outLen = 0;
     vv_trim_silence(s->pcm, &s->pcmLen);
+    operation = "vv_resample_4x";
     if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0) goto failed;
+    operation = "NewShortArray";
     jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);
     if (!out || (*env)->ExceptionCheck(env)) {
         free(rs);
         goto failed;
     }
+    operation = "SetShortArrayRegion";
     (*env)->SetShortArrayRegion(env, out, 0, (jsize)outLen, rs);
     free(rs);
     if ((*env)->ExceptionCheck(env)) goto failed;
     return out;
 
 failed:
+    __android_log_print(ANDROID_LOG_ERROR, "VvttsCore",
+                        "nativeSynthesize failed during %s (dialect=0x%x, JNI exception=%d)",
+                        operation, (unsigned int)dialect, (int)(*env)->ExceptionCheck(env));
     vv_fail_session(s);
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     return vv_empty_result(env);
