@@ -167,16 +167,18 @@ class VvTtsService : TextToSpeechService() {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
         }
+        cleanupExecutor.shutdown()
         super.onDestroy()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        // Engine hot-swap ( switching TTS engines in Settings/at lock/unlock(
-        // unbinds the old engine without calling onStop(;drop every queued
-        // utterance so nothing flushes seconds later when the user is already
-        // elsewhere (the "two voices overlapping" and "late 1-10s speech"
-        // reports(.
         bumpGeneration()
+        // Hot-swap unbind: drop queued AND active speech. The ACTIVE utterance
+        // matters — without stop()the delivery thread stays parked up to
+        // HANG_TIMEOUT_S in native synthesis while the user has already moved on (and,
+        // sincethe engine is process-shared, that saturated worker blocks other
+        // binds' first speech too(.
+        try { engine?.stop() } catch (ignore: Throwable) {}
         return super.onUnbind(intent)
     }
 

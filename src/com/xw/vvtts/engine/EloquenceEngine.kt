@@ -16,11 +16,14 @@ import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
+import java.util.concurrent.FutureTask
+import java.util.concurrent.Callable
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -437,6 +440,22 @@ class EloquenceEngine(context: Context) {
             val worker = synthWorker
             for (h in worker.handles.values) VvttsCore.stop(h)
         }
+
+    /** Call after delivery has drained, so no more synthesis from that service can start. */
+    fun awaitActiveSynthesis() {
+        var interrupted = false
+        for (completion in activeSynthesis.toList()) {
+            while (true) {
+                try {
+                    completion.await()
+                    break
+                } catch (e: InterruptedException) {
+                    interrupted = true
+                }
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
+    }
 
     @Synchronized
     fun shutdown() {
@@ -917,6 +936,7 @@ class EloquenceEngine(context: Context) {
             }
             }
         } catch (e: RejectedExecutionException) {
+            future.cancel(false) // Never started; release its completion marker.
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
