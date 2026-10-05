@@ -15,19 +15,21 @@ cd "$GITHUB_WORKSPACE"
 if [ -f "${SMOKE_APK:-$GITHUB_WORKSPACE/vvttts_signed.apk}" ]; then
   APK="${SMOKE_APK:-$GITHUB_WORKSPACE/vvttts_signed.apk}"
   echo "using in-job APK: $APK"
+elif [ -f "${SMOKE_APK:-/github/workspace/vvttts_signed.apk}" ]; then
+  APK="${SMOKE_APK:-/github/workspace/vvttts_signed.apk}"
 else
   echo "no in-job APK; falling back to artifact fetch"
   mkdir -p /tmp/apk && cd /tmp/apk
   R=""
   for i in $(seq 1 60); do
-    R=$(gh run list --workflow build.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+    R=$(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml --branch "${GITHUB_REF#refs/heads/}" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
     [ -n "$R" ] && break
     sleep 10
   done
   echo "latest build-apk run: $R"
   for i in $(seq 1 180); do
     [ -n "$R" ] || break
-    C=$(gh run view "$R" --json status,conclusion --jq 'if .status=="completed" then .conclusion else "in_progress" end')
+    C=$(gh run view -R "$GITHUB_REPOSITORY" "$R" --json status,conclusion --jq 'if .status=="completed" then .conclusion else "in_progress" end')
     [ "$C" = "success" ] && break
     [ "$C" != "in_progress" ] && { echo "latest build-apk run concluded: $C"; R=""; break; }
     sleep 10
