@@ -1,5 +1,9 @@
 package com.xw.vvtts.services
 
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
@@ -39,6 +43,8 @@ class VvTtsService : TextToSpeechService() {
     // waits — so lifecycle teardown never blocks behind a synthesis parked in
     // native code for up to HANG_TIMEOUT_S.
     private val engineRefLock = Any()
+    @Volatile private var warmGen: Long = 0L // generation snapshot at warmup launch; stale warmups stand down
+    private val cleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "tts-cleanup").apply { isDaemon = true } }
     private fun currentEngine(): EloquenceEngine? = synchronized(engineRefLock) { engine }
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
@@ -123,6 +129,7 @@ class VvTtsService : TextToSpeechService() {
                 LanguageDetector.DIALECT_EN_US
             }
             val warmEngine = eng
+            warmGen = generation.get()
             Thread {
                 val staleWarmup = stopping || warmGen != generation.get()
                 if (!staleWarmup) {
@@ -977,26 +984,23 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
         }
 
         private fun hold(pace: Pace) {
+            var interrupted = false
             var over = pace.aheadMs() - PACE_LEAD_MS
-            while (over > 0L && !stopping.get()) {
+            while (!interrupted && over > 0L && !stopping.get()) {
                 // Monitor-wait instead of a raw sleep: onStop()/bumpGeneration()
                 // notifyAll() so a stop interrupts the artificial pacing period
                 // immediately instead of only after the sleep interval ends.
 
-
                 synchronized(pacingMonitor) {
                     if (!stopping.get()) {
-                        var waiterHit = false
                         try {
                             (pacingMonitor as Object).wait(minOf(over, 20L))
                         } catch (ie: InterruptedException) {
-                            waiterHit = true
+                            // Kotlin rejects break inside synchronized() (an inline lambda):
+                            // flag instead; the while re-checks and exits.
+
+                            interrupted = true
                         }
-                        // break/continue inside synchronized() (an inline lambda) is
-                        // experimental in Kotlin 1.9and errors out; re-check in plain scope.
-
-
-                        if (waiterHit) { break }
                     }
                 }
                 over = pace.aheadMs() - PACE_LEAD_MS

@@ -64,6 +64,9 @@ class EloquenceEngine(context: Context) {
             Thread(r, "elq-synth").apply { isDaemon = true }
         }
     }
+    // Completion markers for every in-flight synthesis, drained by awaitActiveSynthesis()
+    // so service stop can wait for active utterances to settle before tearing down.
+    @Volatile private val activeSynthesis = ConcurrentHashMap.newKeySet<CountDownLatch>()
     // Long native retires ( ~2s settlement waits( run here so they never stall the single synth thread
     @Volatile private var retireExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "elq-retire").apply { isDaemon = true }
@@ -752,9 +755,9 @@ class EloquenceEngine(context: Context) {
             if (pcm != null && pcm.isEmpty()) {
                 // Native retirement is permanent. The next utterance opens a
                 // fresh session and must reapply its voice and parameters.
-                if (coreHandles.remove(dialect, handle)) {
-                pendingEciVoiceByDialect.remove(dialect)
-                lastParamSig = null
+                if (worker.handles.remove(dialect, handle)) {
+                worker.pendingEciVoiceByDialect.remove(dialect)
+                worker.lastParamSig = null
                 retireExecutor.execute { VvttsCore.shutdown(handle) }
                 }
                 return@synthWithTimeout null
@@ -930,10 +933,10 @@ class EloquenceEngine(context: Context) {
                         for (h in worker.handles.values) VvttsCore.shutdown(h)
                         worker.handles.clear()
                                             }
-                                        }
-                                        r
-                                    }
-            }
+                                r
+                            }
+                        }
+                    }
         } catch (e: RejectedExecutionException) {
             future.cancel(false) // Never started; release its completion marker.
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)

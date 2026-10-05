@@ -166,10 +166,10 @@ object ElqUpdateChecker {
     private data class SemVer(val major: Int, val minor: Int, val patch: Int): Comparable<SemVer> {
         override fun compareTo(other: SemVer): Int =
 when {
-    major != other.major -> major.compareTo(other.major
-    minor != other.minor -> minor.compareTo(other.minor
-    else -> patch.compareTo(other.patch
-}
+            major != other.major -> major.compareTo(other.major)
+            minor != other.minor -> minor.compareTo(other.minor)
+            else -> patch.compareTo(other.patch)
+        }
         fun packed(): Int = major * 1_000_000 + minor * 1_000 + patch
     }
 
