@@ -350,12 +350,15 @@ class VvTtsService : TextToSpeechService() {
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
-        val lang = langPrefix(language)
-        val c = countryCode(country)
-        if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
+        val lang = normalizeLanguage(language)
+        val c = (country ?: "").uppercase(Locale.ROOT)
+        // #18: refuse to map languages with no shipped voice —the registry is the
+        // single source of truth (default en-US matches the pre-existing fallback).
+        if (CAPABLE_VOICES.none { it.locale.language.equals(lang, ignoreCase = true) }) return "en-US"
+        if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
-        if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return when (c) { "US" -> "es-US"; "MX" -> "es-MX"; else -> "es-ES" }
+        if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
+        if (lang.startsWith("es")) return when (c) { "US", "USA" -> "es-US"; "MX", "MEX" -> "es-MX"; else -> "es-ES" }
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
@@ -366,35 +369,57 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    private data class CapableVoice(val voiceName: String, val locale: Locale, val dialect: Int)
+    private val CAPABLE_VOICES = listOf(
+        CapableVoice("en-US", Locale.US, EloquenceEngine.DIALECT_EN_US),
+        CapableVoice("en-GB", Locale.UK, EloquenceEngine.DIALECT_EN_GB),
+        CapableVoice("de-DE", Locale.GERMANY, EloquenceEngine.DIALECT_DE_DE),
+        CapableVoice("fr-FR", Locale.FRANCE, EloquenceEngine.DIALECT_FR_FR),
+        CapableVoice("fr-CA", Locale.CANADA_FRENCH, EloquenceEngine.DIALECT_FR_CA),
+        CapableVoice("es-ES", Locale("es", "ES"), EloquenceEngine.DIALECT_ES_ES),
+        CapableVoice("es-US", Locale("es", "US"), EloquenceEngine.DIALECT_ES_US),   // [2.1] esus
+        CapableVoice("es-MX", Locale("es", "MX"), EloquenceEngine.DIALECT_ES_MX),
+        CapableVoice("it-IT", Locale.ITALY, EloquenceEngine.DIALECT_IT_IT),
+        CapableVoice("ja-JP", Locale.JAPAN, EloquenceEngine.DIALECT_JA_JP),
+        CapableVoice("pl-PL", Locale("pl", "PL"), EloquenceEngine.DIALECT_PL_PL),   // [11.0] plpl
+        CapableVoice("pt-BR", Locale("pt", "BR"), EloquenceEngine.DIALECT_PT_BR),
+        CapableVoice("fi-FI", Locale("fi", "FI"), EloquenceEngine.DIALECT_FI_FI),
+        CapableVoice("zh-CN", Locale("zh", "CN"), EloquenceEngine.DIALECT_ZH_CN)
+    )
+
+    /** Normalizes ISO-639-2/T requests to the voice registry's two-letter language codes. */
+    private fun normalizeLanguage(language: String?): String {
+        val lang = (language ?: "").lowercase(Locale.ROOT)
+        return CAPABLE_VOICES.firstOrNull { it.locale.getISO3Language().lowercase(Locale.ROOT) == lang }?.locale?.language ?: lang
+    }
+
+    /** Runs a voice query and logs any thrown failure before returning [fallback]. */
+    private inline fun <T> voiceSafe(fallback: T, block: () -> T): T {
+        return try { block() } catch (t: Throwable) {
+            Log.w(TAG, "voice query failed;returning safe fallback", t)
+            fallback
+        }
+    }
+    /** Returns the active language, country and variant, falling back to English if the query fails. */
+    override fun onGetLanguage(): Array<String> {
+        return voiceSafe(arrayOf("en", "US", "")) {
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
-        // Dependency-free catalog with NON-NULL features: Voice.parceling converts
-        // features to ArrayList, and null features have been observed corrupting
-        // the binder reply on Android 15+ (Settings/TalkBack then die decoding a
-        // poisoned parcel: NPE Collection.toArray() in Parcel.createExceptionOrNull).
-        return voiceSafe(emptyList<Voice>()) {
-            // Voice names use BCP-47; Locale matches the dialect. The feature set
-            // MUST be non-null: Voice.writeToParcel builds "new ArrayList<>(features)"
-            // and NPEs on null, which poisons the getVoices() AIDL reply parcel and
-            // crashes the Settings picker / TalkBack TTS init (the "settings won't
-            // open when eloquence is the default engine" regression).
-            val voices = ArrayList<Voice>(14)
-            voices.add(Voice("en-US", Locale.US, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("en-GB", Locale.UK, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("de-DE", Locale.GERMANY, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("fr-FR", Locale.FRANCE, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("fr-CA", Locale.CANADA_FRENCH, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("es-ES", Locale("es", "ES"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("es-US", Locale("es", "US"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("es-MX", Locale("es", "MX"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("it-IT", Locale.ITALY, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("ja-JP", Locale.JAPAN, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("pl-PL", Locale("pl", "PL"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("pt-BR", Locale("pt", "BR"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("fi-FI", Locale("fi", "FI"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("zh-CN", Locale("zh", "CN"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            // Only advertise dialects actually linked in this build (build_native.sh LANGS)
-            return voices
+        return voiceSafe(emptyList()) {
+            // #18: catalog derives from the single voice registry — every advertised voice
+            // is by constructiona shipped native dialect (no advertise-only entries —the
+            // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
+            // Features are non-null (emptySet()* because Voice.parceling converts features
+            // to ArrayList,and null features have been observed corrupting the binder reply
+            // on Android 15+ (Settings/TalkBack die decodinga poisoned parcel:
+            // NPE Collection.toArray() in Parcel.createExceptionOrNull()).
+
+            val voices = ArrayList<Voice>(CAPABLE_VOICES.size)
+            for (v in CAPABLE_VOICES) {
+                voices.add(Voice(v.voiceName, v.locale,
+                    Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            }
+            voices
         }
     }
 
@@ -402,19 +427,33 @@ class VvTtsService : TextToSpeechService() {
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
-        val lang = langPrefix(language)
-        val supported = lang.startsWith("en") || lang.startsWith("de")
-                || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
-                || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
-                || lang.startsWith("zh")
-        if (lang.startsWith("zh") && countryCode(country) == "TW") return TextToSpeech.LANG_NOT_SUPPORTED
+        val lang = normalizeLanguage(language)
+        // #18: availability derives from the voice registry —the same single source
+        // that drives the catalog;the engine's shipped whitelist remains the ground
+        // truth for what can synthesize,so availability can never advertise a
+        // language its native modules cannot speak.
+
+
+        val supported = CAPABLE_VOICES.any { it.locale.language.equals(lang, ignoreCase = true) }
+        if (lang.startsWith("zh") && (country.equals("TW", ignoreCase = true) || country.equals("TWN", ignoreCase = true))) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
         val hasVariant = variant != null && variant.isNotEmpty()
-        if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
-        if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
+        if (hasCountry) {
+            // #18: the registry is the single source of truth for countries, too:
+            // requesting ("spa","ARG") must not claim LANG_COUNTRY_AVAILABLE
+            // when the shipped Spanish voices cover only ES/US/MX.
+            val countryShipped = CAPABLE_VOICES.any {
+                it.locale.language.equals(lang, ignoreCase = true) &&
+                    (it.locale.country.equals(country, ignoreCase = true) || it.locale.getISO3Country().equals(country, ignoreCase = true))
+            }
+            if (countryShipped) {
+                return if (hasVariant) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE else TextToSpeech.LANG_COUNTRY_AVAILABLE
+            }
+            return TextToSpeech.LANG_AVAILABLE
+        }
         return TextToSpeech.LANG_AVAILABLE
         }
     }
