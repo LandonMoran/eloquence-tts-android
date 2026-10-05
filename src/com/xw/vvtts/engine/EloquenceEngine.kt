@@ -938,7 +938,8 @@ class EloquenceEngine(context: Context) {
             }
         }
 } catch (e: RejectedExecutionException) {
-            future.cancel(false) // Never started; release its completion marker.
+            // A rejected submit never created the future, so there's nothing to cancel.
+
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
