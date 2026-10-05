@@ -1,5 +1,9 @@
 package com.xw.vvtts.services
 
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
@@ -39,6 +43,8 @@ class VvTtsService : TextToSpeechService() {
     // waits — so lifecycle teardown never blocks behind a synthesis parked in
     // native code for up to HANG_TIMEOUT_S.
     private val engineRefLock = Any()
+    @Volatile private var warmGen: Long = 0L // generation snapshot at warmup launch; stale warmups stand down
+    private val cleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "tts-cleanup").apply { isDaemon = true } }
     private fun currentEngine(): EloquenceEngine? = synchronized(engineRefLock) { engine }
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
@@ -123,11 +129,19 @@ class VvTtsService : TextToSpeechService() {
                 LanguageDetector.DIALECT_EN_US
             }
             val warmEngine = eng
+            warmGen = generation.get()
             Thread {
-                try {
-                    synchronized(engineCallLock) { warmEngine.warmupDialect(warmDialect)
-                } catch (t: Throwable) {
-                    Log.w(TAG, "background warmup failed", t)
+                val staleWarmup = stopping || warmGen != generation.get()
+                if (!staleWarmup) {
+                    try {
+                        synchronized(engineCallLock) {
+                            if (!stopping && warmGen == generation.get()) {
+                                warmEngine.warmupDialect(warmDialect)
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "background warmup failed", t)
+                    }
                 }
             }.apply { isDaemon = true }.start()
         }
@@ -160,16 +174,18 @@ class VvTtsService : TextToSpeechService() {
             synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
         } catch (ignore: Throwable) {
         }
+        cleanupExecutor.shutdown()
         super.onDestroy()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        // Engine hot-swap ( switching TTS engines in Settings/at lock/unlock(
-        // unbinds the old engine without calling onStop(;drop every queued
-        // utterance so nothing flushes seconds later when the user is already
-        // elsewhere (the "two voices overlapping" and "late 1-10s speech"
-        // reports(.
         bumpGeneration()
+        // Hot-swap unbind: drop queued AND active speech. The ACTIVE utterance
+        // matters — without stop()the delivery thread stays parked up to
+        // HANG_TIMEOUT_S in native synthesis while the user has already moved on (and,
+        // sincethe engine is process-shared, that saturated worker blocks other
+        // binds' first speech too(.
+        try { engine?.stop() } catch (ignore: Throwable) {}
         return super.onUnbind(intent)
     }
 
@@ -315,28 +331,42 @@ class VvTtsService : TextToSpeechService() {
     }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
-        return voiceSafe(arrayOf("en", "US", "")) {
-            // Framework contract: exactly 3 elements [language, country, variant].
-            // Static answer on purpose: binder language queries can arrive before
-            // or while onCreate initializes, and Android 15+ Settings/TalkBack
-            // decode ANY thrown exception-status from getLanguage/getVoices as a
-            // fatal parcel NPE. The spoken voice is set per-utterance in
-            // runSynthesis, so the init-time answer stays constant en-US.
-            arrayOf("en", "US", "")
+        return voiceSafe(arrayOf("eng", "USA", "")) {
+        // Framework contract: exactly 3 elements - [language, country, variant]
+        // with ISO-3 language and ISO-3 country codes (TextToSpeechService
+        // contract): country/variant may be ""; variant must be "" when country is.
+        // NOT a catalog: the picker reads indices 0..2, so a 10-element list
+        // yields garbage locales. Truth = the active voice (BCP-47, defaults
+        // "en-US"); ISO-3 mapping via Locale.getISO3* (eng/USA for en-US).
+        // getISO3* throws MissingResourceException for unknown codes, so both
+        // lookups are defensive: a malformed stored voice must never crash
+        // the framework's onGetLanguage query.
+        val activeVoice = voiceConfig?.voice ?: "en-US"
+        val dash = activeVoice.indexOf('-')
+        val lang = if (dash > 0) activeVoice.substring(0, dash) else activeVoice
+        val countryStr = if (dash > 0) activeVoice.substring(dash + 1).substringBefore('-') else ""
+        val loc = Locale(lang.lowercase(), countryStr.takeIf { it.isNotEmpty() } ?: "")
+        arrayOf(
+            runCatching { loc.getISO3Language() }.getOrElse { "eng" },
+            runCatching { loc.getISO3Country() }.getOrElse { "USA" }.takeIf { it.isNotEmpty() } ?: "",
+            ""
+        )
         }
     }
-
 
 
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
-        val lang = langPrefix(language)
-        val c = countryCode(country)
-        if (lang.startsWith("en")) return if ("GB" == c) "en-GB" else "en-US"
+        val lang = normalizeLanguage(language)
+        val c = (country ?: "").uppercase(Locale.ROOT)
+        // #18: refuse to map languages with no shipped voice —the registry is the
+        // single source of truth (default en-US matches the pre-existing fallback).
+        if (CAPABLE_VOICES.none { it.locale.language.equals(lang, ignoreCase = true) }) return "en-US"
+        if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
-        if (lang.startsWith("fr")) return if ("CA" == c) "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return when (c) { "US" -> "es-US"; "MX" -> "es-MX"; else -> "es-ES" }
+        if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
+        if (lang.startsWith("es")) return when (c) { "US", "USA" -> "es-US"; "MX", "MEX" -> "es-MX"; else -> "es-ES" }
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
@@ -347,35 +377,47 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
+    private data class CapableVoice(val voiceName: String, val locale: Locale, val dialect: Int)
+    private val CAPABLE_VOICES = listOf(
+        CapableVoice("en-US", Locale.US, EloquenceEngine.DIALECT_EN_US),
+        CapableVoice("en-GB", Locale.UK, EloquenceEngine.DIALECT_EN_GB),
+        CapableVoice("de-DE", Locale.GERMANY, EloquenceEngine.DIALECT_DE_DE),
+        CapableVoice("fr-FR", Locale.FRANCE, EloquenceEngine.DIALECT_FR_FR),
+        CapableVoice("fr-CA", Locale.CANADA_FRENCH, EloquenceEngine.DIALECT_FR_CA),
+        CapableVoice("es-ES", Locale("es", "ES"), EloquenceEngine.DIALECT_ES_ES),
+        CapableVoice("es-US", Locale("es", "US"), EloquenceEngine.DIALECT_ES_US),   // [2.1] esus
+        CapableVoice("es-MX", Locale("es", "MX"), EloquenceEngine.DIALECT_ES_MX),
+        CapableVoice("it-IT", Locale.ITALY, EloquenceEngine.DIALECT_IT_IT),
+        CapableVoice("ja-JP", Locale.JAPAN, EloquenceEngine.DIALECT_JA_JP),
+        CapableVoice("pl-PL", Locale("pl", "PL"), EloquenceEngine.DIALECT_PL_PL),   // [11.0] plpl
+        CapableVoice("pt-BR", Locale("pt", "BR"), EloquenceEngine.DIALECT_PT_BR),
+        CapableVoice("fi-FI", Locale("fi", "FI"), EloquenceEngine.DIALECT_FI_FI),
+        CapableVoice("zh-CN", Locale("zh", "CN"), EloquenceEngine.DIALECT_ZH_CN)
+    )
+
+    /** Normalizes ISO-639-2/T requests to the voice registry's two-letter language codes. */
+    private fun normalizeLanguage(language: String?): String {
+        val lang = (language ?: "").lowercase(Locale.ROOT)
+        return CAPABLE_VOICES.firstOrNull { it.locale.getISO3Language().lowercase(Locale.ROOT) == lang }?.locale?.language ?: lang
+    }
+
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
-        // Dependency-free catalog with NON-NULL features: Voice.parceling converts
-        // features to ArrayList, and null features have been observed corrupting
-        // the binder reply on Android 15+ (Settings/TalkBack then die decoding a
-        // poisoned parcel: NPE Collection.toArray() in Parcel.createExceptionOrNull).
-        return voiceSafe(emptyList<Voice>()) {
-            // Voice names use BCP-47; Locale matches the dialect. The feature set
-            // MUST be non-null: Voice.writeToParcel builds "new ArrayList<>(features)"
-            // and NPEs on null, which poisons the getVoices() AIDL reply parcel and
-            // crashes the Settings picker / TalkBack TTS init (the "settings won't
-            // open when eloquence is the default engine" regression).
-            val voices = ArrayList<Voice>(14)
-            voices.add(Voice("en-US", Locale.US, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("en-GB", Locale.UK, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("de-DE", Locale.GERMANY, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("fr-FR", Locale.FRANCE, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("fr-CA", Locale.CANADA_FRENCH, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("es-ES", Locale("es", "ES"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("es-US", Locale("es", "US"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("es-MX", Locale("es", "MX"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("it-IT", Locale.ITALY, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("ja-JP", Locale.JAPAN, Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("pl-PL", Locale("pl", "PL"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("pt-BR", Locale("pt", "BR"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("fi-FI", Locale("fi", "FI"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            voices.add(Voice("zh-CN", Locale("zh", "CN"), Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
-            // Only advertise dialects actually linked in this build (build_native.sh LANGS)
-            return voices
+        return voiceSafe(emptyList()) {
+            // #18: catalog derives from the single voice registry — every advertised voice
+            // is by constructiona shipped native dialect (no advertise-only entries —the
+            // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
+            // Features are non-null (emptySet()* because Voice.parceling converts features
+            // to ArrayList,and null features have been observed corrupting the binder reply
+            // on Android 15+ (Settings/TalkBack die decodinga poisoned parcel:
+            // NPE Collection.toArray() in Parcel.createExceptionOrNull()).
+
+            val voices = ArrayList<Voice>(CAPABLE_VOICES.size)
+            for (v in CAPABLE_VOICES) {
+                voices.add(Voice(v.voiceName, v.locale,
+                    Voice.QUALITY_HIGH, Voice.LATENCY_HIGH, false, emptySet()))
+            }
+            voices
         }
     }
 
@@ -383,19 +425,33 @@ class VvTtsService : TextToSpeechService() {
     override fun onIsLanguageAvailable(language: String?, country: String?, variant: String?): Int {
         return voiceSafe(TextToSpeech.LANG_NOT_SUPPORTED) {
         if (language == null) return TextToSpeech.LANG_NOT_SUPPORTED
-        val lang = langPrefix(language)
-        val supported = lang.startsWith("en") || lang.startsWith("de")
-                || lang.startsWith("fr") || lang.startsWith("es") || lang.startsWith("it")
-                || lang.startsWith("ja") || lang.startsWith("pl") || lang.startsWith("pt") || lang.startsWith("fi")
-                || lang.startsWith("zh")
-        if (lang.startsWith("zh") && countryCode(country) == "TW") return TextToSpeech.LANG_NOT_SUPPORTED
+        val lang = normalizeLanguage(language)
+        // #18: availability derives from the voice registry —the same single source
+        // that drives the catalog;the engine's shipped whitelist remains the ground
+        // truth for what can synthesize,so availability can never advertise a
+        // language its native modules cannot speak.
+
+
+        val supported = CAPABLE_VOICES.any { it.locale.language.equals(lang, ignoreCase = true) }
+        if (lang.startsWith("zh") && (country.equals("TW", ignoreCase = true) || country.equals("TWN", ignoreCase = true))) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
         val hasVariant = variant != null && variant.isNotEmpty()
-        if (hasCountry && hasVariant) return TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
-        if (hasCountry) return TextToSpeech.LANG_COUNTRY_AVAILABLE
+        if (hasCountry) {
+            // #18: the registry is the single source of truth for countries, too:
+            // requesting ("spa","ARG") must not claim LANG_COUNTRY_AVAILABLE
+            // when the shipped Spanish voices cover only ES/US/MX.
+            val countryShipped = CAPABLE_VOICES.any {
+                it.locale.language.equals(lang, ignoreCase = true) &&
+                    (it.locale.country.equals(country, ignoreCase = true) || it.locale.getISO3Country().equals(country, ignoreCase = true))
+            }
+            if (countryShipped) {
+                return if (hasVariant) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE else TextToSpeech.LANG_COUNTRY_AVAILABLE
+            }
+            return TextToSpeech.LANG_AVAILABLE
+        }
         return TextToSpeech.LANG_AVAILABLE
         }
     }
@@ -461,7 +517,6 @@ class VvTtsService : TextToSpeechService() {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
         synchronized(cancellationLock) {
-        var text: String? = request.charSequenceText?.toString()
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
         // speech after cancellation) and must not clear the stopping flag.
@@ -581,6 +636,7 @@ synchronized(engineCallLock) {
         var pipeEnded = false
         var synthFailedOrTruncated = false
         try {
+            var text: String? = request.charSequenceText?.toString()
             if (text == null || text.isEmpty()) {
                 return  // finally emits the start+error pair for an empty utterance
             }
@@ -694,7 +750,7 @@ synchronized(engineCallLock) {
                         if (max > 0) {
                             var offset = 0
                             while (offset < bytes.size) {
-                                if (stopping.get() || pipeEnded) break
+                                if (stopping || pipeEnded) break
                                 val len = Math.min(max, bytes.size - offset)
                                 val verdict = callback.audioAvailable(bytes, offset, len)
                                 if (verdict != TextToSpeech.SUCCESS) {
@@ -735,7 +791,7 @@ synchronized(engineCallLock) {
 
 
         }
-                    if (!started && !stopping.get() && gen == generation.get()) {
+                    if (!started && !stopping && gen == generation.get()) {
                         // Playback contract: start() must precede done(), the framework
                         // throws otherwise. Silent/empty/early returns get the pair
                         // unless canceled, which terminates with error() below.
@@ -757,7 +813,7 @@ synchronized(engineCallLock) {
                             return
                         }
                     }
-                    if (stopping.get() || gen != generation.get()) {
+                    if (stopping || gen != generation.get()) {
                         try {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (ignore: Throwable) {
@@ -765,7 +821,6 @@ synchronized(engineCallLock) {
                         return
                     }
                     if (synthFailedOrTruncated) {
-
 
 
                         // A truncated/failed synthesis must not be reported as a success:the
@@ -795,21 +850,6 @@ synchronized(engineCallLock) {
         }
     }
 
-    /** Terminate a superseded utterance silently:the framework converts
-     *  start+done into silent playback, avoiding error() which a screen
-     *  reader treats as a failed focus ( re-announce/stall(.
-     */
-    private fun silentComplete(callback: SynthesisCallback) {
-        try {
-            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
-            callback.done()
-        } catch (t: Throwable) {
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {
-            }
-        }
-    }
 
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
         return if (v < lo) lo else Math.min(v, hi)
@@ -856,7 +896,6 @@ synchronized(engineCallLock) {
             // stop() queues native work on the engine worker. Generation invalidation
             // stays synchronous,and this callback never waits for native synthesis.
 try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
-        }
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected
@@ -945,28 +984,24 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
         }
 
         private fun hold(pace: Pace) {
+            var interrupted = false
             var over = pace.aheadMs() - PACE_LEAD_MS
-            while (over > 0L && !stopping.get()) {
+            while (!interrupted && over > 0L && !stopping) {
                 // Monitor-wait instead of a raw sleep: onStop()/bumpGeneration()
                 // notifyAll() so a stop interrupts the artificial pacing period
                 // immediately instead of only after the sleep interval ends.
 
-
                 synchronized(pacingMonitor) {
-                    if (!stopping.get()) {
-                        var waiterHit = false
+                    if (!stopping) {
                         try {
                             (pacingMonitor as Object).wait(minOf(over, 20L))
                         } catch (ie: InterruptedException) {
-                            waiterHit = true
+                            // Kotlin rejects break inside synchronized() (an inline lambda):
+                            // flag instead; the while re-checks and exits.
+
+                            interrupted = true
                         }
-                        // break/continue inside synchronized() (an inline lambda) is
-                        // experimental in Kotlin 1.9and errors out; re-check in plain scope.
-
-
-                        if (waiterHit) { break }
                     }
-                }
                 }
                 over = pace.aheadMs() - PACE_LEAD_MS
             }
@@ -1123,4 +1158,4 @@ val minCut = start + MIN_CHUNK_SENTENCE
                 return chunks
             }
         }
-    }
+}

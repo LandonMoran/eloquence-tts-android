@@ -62,10 +62,9 @@ object ElqUpdateInstaller {
                 // Ignore broadcasts that are not delivered through this app's own
                 // package-scoped PendingIntent: a spoofed channel must not move state.
                 if (intent.`package` != appContext.packageName) return
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val sender = intent.getCreatorPackage()
-                    if (sender == null || sender != appContext.packageName) return
-                }
+                // Intent.getCreator() is @SystemApi and absent from the public SDK jar;
+                // the package-scoped PendingIntent gate above already rejects any
+                // broadcast the framework did not route through this app's own token.
                 if (intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != sessionId) return
 
                 val status = intent.getIntExtra(

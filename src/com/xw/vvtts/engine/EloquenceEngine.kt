@@ -16,11 +16,14 @@ import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
+import java.util.concurrent.FutureTask
+import java.util.concurrent.Callable
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -60,6 +63,13 @@ class EloquenceEngine(context: Context) {
         val executor: ExecutorService = Executors.newSingleThreadExecutor { r ->
             Thread(r, "elq-synth").apply { isDaemon = true }
         }
+    }
+    // Completion markers for every in-flight synthesis, drained by awaitActiveSynthesis()
+    // so service stop can wait for active utterances to settle before tearing down.
+    private val activeSynthesis = ConcurrentHashMap.newKeySet<CountDownLatch>()
+    // Long native retires ( ~2s settlement waits( run here so they never stall the single synth thread
+    @Volatile private var retireExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "elq-retire").apply { isDaemon = true }
     }
     @Volatile private var synthWorker = SynthWorker()
     @Volatile private var hangDetected = false
@@ -206,7 +216,9 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
         const val DIALECT_EN_GB = 0x10001    // [1.1] eng
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
-        const val DIALECT_ES_MX = 0x20002    // [2.2] esmx (real Mexican Spanish module
+        const val DIALECT_ES_MX =                          0x20002    // [2.2] esmx (real Mexican Spanish module
+        const val DIALECT_ES_US =                          0x20001    // [2.1] esus — US Spanish (#18: no const existed; shipped module esus
+        const val DIALECT_PL_PL =                         0x110000    // [11.0] plpl — Polish (#18: shipped module plpl; segment not in buildEloquenceConfig — known gap
         const val DIALECT_FR_FR = 0x30000    // [3.0] fra
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
@@ -432,6 +444,22 @@ class EloquenceEngine(context: Context) {
             for (h in worker.handles.values) VvttsCore.stop(h)
         }
 
+    /** Call after delivery has drained, so no more synthesis from that service can start. */
+    fun awaitActiveSynthesis() {
+        var interrupted = false
+        for (completion in activeSynthesis.toList()) {
+            while (true) {
+                try {
+                    completion.await()
+                    break
+                } catch (e: InterruptedException) {
+                    interrupted = true
+                }
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
+    }
+
     @Synchronized
     fun shutdown() {
         engineEpoch++
@@ -442,7 +470,7 @@ class EloquenceEngine(context: Context) {
                 // handles on their owning thread only after the native call returns.
 
 
-                for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                for (h in worker.handles.values) VvttsCore.shutdown(h)
                 worker.handles.clear()
             }
         } catch (ignore: RejectedExecutionException) {
@@ -468,7 +496,7 @@ class EloquenceEngine(context: Context) {
 
 
         try {
-            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS))) {
+            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS)) {
 
                 worker.executor.shutdownNow()
                 worker.executor.awaitTermination(100, TimeUnit.MILLISECONDS)
@@ -725,11 +753,12 @@ class EloquenceEngine(context: Context) {
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             runCatching { outFile.delete() }
             if (pcm != null && pcm.isEmpty()) {
-                // Remove only the failed handle; a rotated worker may have cached a replacement.
-                if (coreHandles.remove(dialect, handle)) {
-                    pendingEciVoiceByDialect.remove(dialect)
-                    lastParamSig = null
-                    VvttsCore.shutdown(handle)
+                // Native retirement is permanent. The next utterance opens a
+                // fresh session and must reapply its voice and parameters.
+                if (worker.handles.remove(dialect, handle)) {
+                worker.pendingEciVoiceByDialect.remove(dialect)
+                worker.lastParamSig = null
+                retireExecutor.execute { VvttsCore.shutdown(handle) }
                 }
                 return@synthWithTimeout null
             }
@@ -906,10 +935,11 @@ class EloquenceEngine(context: Context) {
                     }
                 }
                 r
-                }
             }
-            }
-        } catch (e: RejectedExecutionException) {
+        }
+} catch (e: RejectedExecutionException) {
+            // A rejected submit never created the future, so there's nothing to cancel.
+
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
@@ -939,7 +969,8 @@ class EloquenceEngine(context: Context) {
         }
     }
 
-    // The single worker froze (can't interrupt native code(: retire it, start a fresh
+    
+// The single worker froze (can't interrupt native code(: retire it, start a fresh
     // executor + fresh native handles so subsequent requests work again immediatel
     private fun rotateEngine() {
         try {
@@ -956,3 +987,4 @@ class EloquenceEngine(context: Context) {
         synthWorker = SynthWorker()
         hangDetected = true
     }
+}
