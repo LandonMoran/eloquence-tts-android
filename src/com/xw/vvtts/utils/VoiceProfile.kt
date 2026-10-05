@@ -13,14 +13,19 @@ import java.io.FileInputStream
  * Defaults come from KonaVoice (KonaVoicePresets.csv is the source of truth),
  * user custom values live in SharedPreferences; reset removes the overrides.
  */
-class VoiceProfile(context: Context) {
+class VoiceProfile(private val context: Context) {
+    // Only for XML file probing in readMap() (its credential accesses are
+    // try/catch-guarded). NEVER build prefs from it: on a device-protected
+    // context, getApplicationContext() resolves to the credential-encrypted
+    // Application, whose getSharedPreferences() throws IllegalStateException
+    // before the first user unlock, killing service onCreate on the lock screen.
     private val appContext: Context = context.applicationContext ?: context
     private val prefs: SharedPreferences =
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         // Disk-backed XML reads (mtime-guarded): SharedPreferences caches are
         // per-process, so the settings UI's edits never reach this long-lived service
     private val devicePrefs: SharedPreferences =
-        appContext.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     @Volatile private var cachedMap: Map<String, String>? = null
     @Volatile private var cachedMtime: Long = -1L
     /**
