@@ -890,7 +890,6 @@ synchronized(engineCallLock) {
             // stays synchronous,and this callback never waits for native synthesis.
 try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
         }
-        }
 
         // Restore language-detection settings from SharedPreferences (device-protected
         // storage when the user is locked; mirrored copy otherwise(.
@@ -1155,3 +1154,4 @@ val minCut = start + MIN_CHUNK_SENTENCE
                 return chunks
             }
         }
+}
