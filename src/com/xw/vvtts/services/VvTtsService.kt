@@ -1109,7 +1109,8 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                     // First piece extends only by CHUNK_FIRST, so first audio still lands fast.
                     // Later pieces may stretch further to keep a sentence whole; fewer hard cuts
                     // mean smoother phrasing at chunk boundaries.
-                    var i = Math.min(n, end + (if (chunks.isEmpty()) CHUNK_FIRST else CHUNK_SENTENCE_GRACE))
+                    val searchEnd = if (chunks.isEmpty()) end else end + CHUNK_SENTENCE_GRACE
+                    var i = Math.min(n, searchEnd)
                     while (i > start + MIN_CHUNK_SENTENCE) {
                         val c = text[i - 1]
                         val prev = if (i >= 2) text[i - 2] else ' '
