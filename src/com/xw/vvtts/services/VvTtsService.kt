@@ -348,7 +348,6 @@ class VvTtsService : TextToSpeechService() {
     }
 
 
-
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
@@ -817,7 +816,6 @@ synchronized(engineCallLock) {
                     if (synthFailedOrTruncated) {
 
 
-
                         // A truncated/failed synthesis must not be reported as a success:the
                         // framework listener needs error() so it can retry/announce failure.
 
@@ -845,21 +843,6 @@ synchronized(engineCallLock) {
         }
     }
 
-    /** Terminate a superseded utterance silently:the framework converts
-     *  start+done into silent playback, avoiding error() which a screen
-     *  reader treats as a failed focus ( re-announce/stall(.
-     */
-    private fun silentComplete(callback: SynthesisCallback) {
-        try {
-            callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
-            callback.done()
-        } catch (t: Throwable) {
-            try {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } catch (ignore: Throwable) {
-            }
-        }
-    }
 
     private fun clamp(v: Int, lo: Int, hi: Int): Int {
         return if (v < lo) lo else Math.min(v, hi)
