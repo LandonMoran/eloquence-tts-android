@@ -620,7 +620,7 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
         JNIEnv *env, jclass cls, jlong handle, jint param, jint value) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
+    if (!s || !s->hECI || s->retired) return -1;
     /* #73: never hand raw values to the engine. Reject unknown param ids and
      * clamp ranges exactly like the voice-param path. */
     if (param < 0 || param >= eciNumVoiceParams) return -1;

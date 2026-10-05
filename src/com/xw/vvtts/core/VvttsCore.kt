@@ -40,7 +40,8 @@ class VvttsCore {
             }
         }
 
-       /** Pre-encoded text. Returns PCM, null for no audio, or an empty array for a failed session. */
+       /** Pre-encoded text to PCM; null means no audio/cancelled, empty means
+        * the session is retired and must be evicted and shut down. */
         @JvmStatic
         fun synth(handle: Long, dialect: Int, text: ByteArray, charsetId: Int, outPath: String?): ShortArray? {
             return try {

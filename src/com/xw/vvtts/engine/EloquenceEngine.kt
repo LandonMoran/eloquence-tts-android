@@ -61,6 +61,10 @@ class EloquenceEngine(context: Context) {
             Thread(r, "elq-synth").apply { isDaemon = true }
         }
     }
+    // Long native retires ( ~2s settlement waits( run here so they never stall the single synth thread
+    @Volatile private var retireExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "elq-retire").apply { isDaemon = true }
+    }
     @Volatile private var synthWorker = SynthWorker()
     @Volatile private var hangDetected = false
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
@@ -727,11 +731,12 @@ class EloquenceEngine(context: Context) {
             // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
             runCatching { outFile.delete() }
             if (pcm != null && pcm.isEmpty()) {
-                // Remove only the failed handle; a rotated worker may have cached a replacement.
+                // Native retirement is permanent. The next utterance opens a
+                // fresh session and must reapply its voice and parameters.
                 if (coreHandles.remove(dialect, handle)) {
-                    pendingEciVoiceByDialect.remove(dialect)
-                    lastParamSig = null
-                    VvttsCore.shutdown(handle)
+                pendingEciVoiceByDialect.remove(dialect)
+                lastParamSig = null
+                retireExecutor.execute { VvttsCore.shutdown(handle) }
                 }
                 return@synthWithTimeout null
             }
