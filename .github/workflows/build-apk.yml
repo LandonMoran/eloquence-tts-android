@@ -86,7 +86,7 @@ jobs:
           export ANDROID_SDK="$HOME/android-sdk"
           bash build.sh
         env:
-          KEYSTORE: vvtts.jks
+          KEYSTORE: vvttts.jks
           KS_PASS: ${{ env.KS_PASS }}
           KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
