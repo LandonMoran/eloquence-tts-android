@@ -96,7 +96,6 @@ jobs:
 
       - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
         run: |
-          pwd; ls -la vvttts.jks 2>/dev/null || echo KEYSSTORE_ABSENT_AT_BUILD_START
           rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk
           echo "=== Build arm64-v8a (phones) ==="
           ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvtts-arm64-v8a.apk
@@ -121,7 +120,7 @@ jobs:
           ls -lh vvtts-*.apk
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
-          KEYSTORE: vvtts.jks
+          KEYSTORE: vvttts.jks
           KS_PASS: ${{ env.KS_PASS }}
           KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
