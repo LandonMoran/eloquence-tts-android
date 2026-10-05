@@ -140,6 +140,7 @@ cd tmp_apk && zip -9 -r ../vvtts_unsigned.apk classes*.dex language-models lib >
 
 # 4. Sign
 "$ZIPALIGN" -f 4 vvtts_unsigned.apk vvtts_aligned.apk
+          echo "KSV=\${KEYSTORE:-<unset>}" && pwd && ls -la vvttts.jks 2>/dev/null || echo NO_KEYSTORE_LITERAL_CWD
           pwd; ls -la "$KEYSTORE" || echo NO_KEYSTORE_AT_SIGN_CWD
 "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$KS_PASS" --key-pass "pass:$KEY_PASS" --out vvtts_signed.apk vvtts_aligned.apk
 "$APKSIGNER" verify vvtts_signed.apk 2>&1 | head -3
