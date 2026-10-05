@@ -39,7 +39,10 @@ class EloquenceEngine(context: Context) {
      *  builtin spoken-exception tables so user overrides win ( mirrors the factory
      *  native loadUserDictionary hook; our ECI build has no dict API, so the substitution
      *  pass is the Kotlin-side equivalent. Fresh read per utterance, so edits apply immediately. */
-    private val userDictionary by lazy { VoiceConfig(appContext) }
+    // Direct Boot: user-dictionary prefs must stay in device-protected storage.
+    // Credential-encrypted getSharedPreferences throws IllegalStateException, so a
+    // locked start would break every synthesis until the first user unlock. See #235.
+    private val userDictionary by lazy { VoiceConfig(storageContext) }
     @Volatile private var core: VvttsCore? = null          // In-house bridge (multi-language
     private var coreHandle: Long = 0
     private var nativeHandle: Long = 0L
