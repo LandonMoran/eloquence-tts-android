@@ -1028,8 +1028,8 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                         // which now lands within one bounded native call instead of a
                         // whole segment.
                         private const val CHUNK_FIRST =  70
-                        private const val CHUNK_MAX = 110
-                        private const val CHUNK_SENTENCE_GRACE = 120
+                        private const val CHUNK_MAX = 130
+                        private const val CHUNK_SENTENCE_GRACE = 160
                         private const val MIN_CHUNK_SENTENCE =  40
                         // Sentence-ending punctuation: ASCII + full-width/Unicode
                         // variants, so localized text splits on the same boundaries..
@@ -1106,7 +1106,10 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                     // sentence end (never beyond CHUNK_SENTENCE_GRACE extra chars(, so
                     // phrasing/intonation survive instead of hard mid-sentence cuts. Only
                     // hunt after a minimum length, so short texts still land fast..
-                    var i = Math.min(n, end + CHUNK_SENTENCE_GRACE)
+                    // First piece hunts within its own cap only, so first audio still lands fast.
+                    // Later pieces may stretch further to keep a sentence whole; fewer hard cuts
+                    // mean smoother phrasing at chunk boundaries.
+                    var i = Math.min(n, end + ((if (chunks.isEmpty()) CHUNK_FIRST else CHUNK_SENTENCE_GRACE)))
                     while (i > start + MIN_CHUNK_SENTENCE) {
                         val c = text[i - 1]
                         val prev = if (i >= 2) text[i - 2] else ' '
