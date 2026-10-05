@@ -322,14 +322,26 @@ class VvTtsService : TextToSpeechService() {
     }
     /** Returns the active language, country and variant, falling back to English if the query fails. */
     override fun onGetLanguage(): Array<String> {
-        return voiceSafe(arrayOf("en", "US", "")) {
-            // Framework contract: exactly 3 elements [language, country, variant].
-            // Static answer on purpose: binder language queries can arrive before
-            // or while onCreate initializes, and Android 15+ Settings/TalkBack
-            // decode ANY thrown exception-status from getLanguage/getVoices as a
-            // fatal parcel NPE. The spoken voice is set per-utterance in
-            // runSynthesis, so the init-time answer stays constant en-US.
-            arrayOf("en", "US", "")
+        return voiceSafe(arrayOf("eng", "USA", "")) {
+        // Framework contract: exactly 3 elements - [language, country, variant]
+        // with ISO-3 language and ISO-3 country codes (TextToSpeechService
+        // contract): country/variant may be ""; variant must be "" when country is.
+        // NOT a catalog: the picker reads indices 0..2, so a 10-element list
+        // yields garbage locales. Truth = the active voice (BCP-47, defaults
+        // "en-US"); ISO-3 mapping via Locale.getISO3* (eng/USA for en-US).
+        // getISO3* throws MissingResourceException for unknown codes, so both
+        // lookups are defensive: a malformed stored voice must never crash
+        // the framework's onGetLanguage query.
+        val activeVoice = voiceConfig?.voice ?: "en-US"
+        val dash = activeVoice.indexOf('-')
+        val lang = if (dash > 0) activeVoice.substring(0, dash) else activeVoice
+        val countryStr = if (dash > 0) activeVoice.substring(dash + 1).substringBefore('-') else ""
+        val loc = Locale(lang.lowercase(), countryStr.takeIf { it.isNotEmpty() } ?: "")
+        arrayOf(
+            runCatching { loc.getISO3Language() }.getOrElse { "eng" },
+            runCatching { loc.getISO3Country() }.getOrElse { "USA" }.takeIf { it.isNotEmpty() } ?: "",
+            ""
+        )
         }
     }
 
