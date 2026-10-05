@@ -517,7 +517,6 @@ class VvTtsService : TextToSpeechService() {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
         synchronized(cancellationLock) {
-        var text: String? = request.charSequenceText?.toString()
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
         // speech after cancellation) and must not clear the stopping flag.
@@ -637,6 +636,7 @@ synchronized(engineCallLock) {
         var pipeEnded = false
         var synthFailedOrTruncated = false
         try {
+            var text: String? = request.charSequenceText?.toString()
             if (text == null || text.isEmpty()) {
                 return  // finally emits the start+error pair for an empty utterance
             }
@@ -750,7 +750,7 @@ synchronized(engineCallLock) {
                         if (max > 0) {
                             var offset = 0
                             while (offset < bytes.size) {
-                                if (stopping.get() || pipeEnded) break
+                                if (stopping || pipeEnded) break
                                 val len = Math.min(max, bytes.size - offset)
                                 val verdict = callback.audioAvailable(bytes, offset, len)
                                 if (verdict != TextToSpeech.SUCCESS) {
@@ -791,7 +791,7 @@ synchronized(engineCallLock) {
 
 
         }
-                    if (!started && !stopping.get() && gen == generation.get()) {
+                    if (!started && !stopping && gen == generation.get()) {
                         // Playback contract: start() must precede done(), the framework
                         // throws otherwise. Silent/empty/early returns get the pair
                         // unless canceled, which terminates with error() below.
@@ -813,7 +813,7 @@ synchronized(engineCallLock) {
                             return
                         }
                     }
-                    if (stopping.get() || gen != generation.get()) {
+                    if (stopping || gen != generation.get()) {
                         try {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (ignore: Throwable) {
@@ -986,13 +986,13 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
         private fun hold(pace: Pace) {
             var interrupted = false
             var over = pace.aheadMs() - PACE_LEAD_MS
-            while (!interrupted && over > 0L && !stopping.get()) {
+            while (!interrupted && over > 0L && !stopping) {
                 // Monitor-wait instead of a raw sleep: onStop()/bumpGeneration()
                 // notifyAll() so a stop interrupts the artificial pacing period
                 // immediately instead of only after the sleep interval ends.
 
                 synchronized(pacingMonitor) {
-                    if (!stopping.get()) {
+                    if (!stopping) {
                         try {
                             (pacingMonitor as Object).wait(minOf(over, 20L))
                         } catch (ie: InterruptedException) {
