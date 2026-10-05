@@ -271,7 +271,8 @@ static int vv_settle(VvtsSession *s) {
 
 /* The engine emits short lead-in/trailing silence around every utterance;
  * for short TalkBack labels those fixed pauses dominate the perceived swipe
- * latency, so trim them before resampling.  A >-33 dBFS sample stops the
+ * latency, so trim them before resampling, then fade the fresh cut edges
+ * so no step discontinuity reaches the resampler (#239).  A >-33 dBFS sample stops the
  * scan, so real speech is never eaten; near-empty blips are left alone. */
 static void vv_trim_silence(short *pcm, size_t *pn) {
     size_t n = *pn;
@@ -285,8 +286,29 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
     while (tail < n - 1 && tail < cap && pcm[n - 1 - tail] > -TH && pcm[n - 1 - tail] < TH) tail++;
     size_t keep = n - lead - tail;
     if (keep < 16) return;
-    for (size_t k = 0; k < keep; k++) pcm[k] = pcm[lead + k];
-    *pn = keep;
+    for (size_t k =0; k < keep; k++) pcm[k] = pcm[lead + k];
+        /* Short linear fades on the fresh cut edges: the hard trim leaves a
+         * non-zero first (last( sample that would otherwise reach the resampler as
+         * a step discontinuity and click at the utterance boundary (#239).  Fading
+         * back to zero also softens any waveform-phase mismatch where this audio
+         * buffer's edge sits inside a signal.  16 engine-rate samples ~ 1.5 ms
+         * at 44.1 kHz playback, far under the latency budget this trim exists
+         * to win back. */
+        const size_t FD = 16;
+        if (keep > FD) {
+            for (size_t k =0; k < FD; k++) {
+                pcm[k] =(short)((float)pcm[k] *(float)k / (float)FD);
+                pcm[keep -1 -k] =(short)((float)pcm[keep -1 -k] *(float)(FD -k) / (float)FD);
+            }
+        } else {
+            /* Buffer not longer than one fade: ramp the whole buffer (parabolic,
+             * zero at both ends( instead of clicking. */
+            for (size_t k =0; k < keep; k++) {
+                float g =(keep >1) ? (float)k / (float)(keep -1) : 1.0f;
+                pcm[k] =(short)((float)pcm[k] * g * (1.0f - g));
+            }
+        }
+        *pn = keep;
 }
 
 static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
