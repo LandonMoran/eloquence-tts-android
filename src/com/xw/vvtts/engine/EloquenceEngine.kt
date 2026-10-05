@@ -442,7 +442,7 @@ class EloquenceEngine(context: Context) {
                 // handles on their owning thread only after the native call returns.
 
 
-                for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                for (h in worker.handles.values) VvttsCore.shutdown(h)
                 worker.handles.clear()
             }
         } catch (ignore: RejectedExecutionException) {
@@ -726,9 +726,9 @@ class EloquenceEngine(context: Context) {
             runCatching { outFile.delete() }
             if (pcm != null && pcm.isEmpty()) {
                 // Remove only the failed handle; a rotated worker may have cached a replacement.
-                if (coreHandles.remove(dialect, handle)) {
-                    pendingEciVoiceByDialect.remove(dialect)
-                    lastParamSig = null
+                if (worker.coreHandles.remove(dialect, handle)) {
+                    worker.pendingEciVoiceByDialect.remove(dialect)
+                    worker.lastParamSig = null
                     VvttsCore.shutdown(handle)
                 }
                 return@synthWithTimeout null

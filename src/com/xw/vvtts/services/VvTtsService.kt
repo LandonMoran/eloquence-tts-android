@@ -125,7 +125,9 @@ class VvTtsService : TextToSpeechService() {
             val warmEngine = eng
             Thread {
                 try {
-                    synchronized(engineCallLock) { warmEngine.warmupDialect(warmDialect)
+                    synchronized(engineCallLock) {
+                        warmEngine.warmupDialect(warmDialect(
+                    })
                 } catch (t: Throwable) {
                     Log.w(TAG, "background warmup failed", t)
                 }
@@ -976,7 +978,6 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
 
                         if (waiterHit) { break }
                     }
-                }
                 }
                 over = pace.aheadMs() - PACE_LEAD_MS
             }
