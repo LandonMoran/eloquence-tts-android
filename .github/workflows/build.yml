@@ -78,6 +78,8 @@ jobs:
             echo "KS_PASS=${KS_PASS}" >> "$GITHUB_ENV"
             echo "KEY_PASS=${KS_PASS}" >> "$GITHUB_ENV"
           fi
+          ls -la vvttts.jks 2>/dev/null || echo "KEYSSTORE_ABSENT_AFTER_PREPARE"
+          file vvttts.jks 2>/dev/null || true
           echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
         env:
           RELEASE_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
