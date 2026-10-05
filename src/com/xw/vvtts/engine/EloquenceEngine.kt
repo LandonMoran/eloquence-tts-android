@@ -937,7 +937,6 @@ class EloquenceEngine(context: Context) {
                 r
             }
         }
-    }
 } catch (e: RejectedExecutionException) {
             future.cancel(false) // Never started; release its completion marker.
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
