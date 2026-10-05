@@ -903,10 +903,10 @@ class EloquenceEngine(context: Context) {
                     if (synthWorker !== worker) {
                         for (h in worker.handles.values) VvttsCore.shutdown(h)
                         worker.handles.clear()
-                    }
-                }
-                }
-            }
+                                            }
+                                        }
+                                        r
+                                    }
             }
         } catch (e: RejectedExecutionException) {
             Log.e(TAG, "TTS_HANG: worker rejected — rotating", e)
@@ -955,3 +955,4 @@ class EloquenceEngine(context: Context) {
         synthWorker = SynthWorker()
         hangDetected = true
     }
+}
