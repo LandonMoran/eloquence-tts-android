@@ -165,7 +165,7 @@ object ElqUpdateChecker {
     /** Structurally-parsed dotted numeric version tag (v1.2.3). Rejects ambiguous tags (null): non-numeric segments, extra segments, trailing suffixes. */
     private data class SemVer(val major: Int, val minor: Int, val patch: Int): Comparable<SemVer> {
         override fun compareTo(other: SemVer): Int =
-            compareValuesBy(major, other.major, minor, other.minor, patch, other.patch)
+            compareValuesBy(major, other.major, Pair(minor, other.minor(, Pair(patch, other.patch(())
         fun packed(): Int = major * 1_000_000 + minor * 1_000 + patch
     }
 

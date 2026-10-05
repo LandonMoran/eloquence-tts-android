@@ -467,7 +467,7 @@ class EloquenceEngine(context: Context) {
                 // handles on their owning thread only after the native call returns.
 
 
-                for (h in worker.handles.values) VvtttsCore.shutdown(h)
+                for (h in worker.handles.values) VvttsCore.shutdown(h)
                 worker.handles.clear()
             }
         } catch (ignore: RejectedExecutionException) {
@@ -493,7 +493,7 @@ class EloquenceEngine(context: Context) {
 
 
         try {
-            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS))) {
+            if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS)) {
 
                 worker.executor.shutdownNow()
                 worker.executor.awaitTermination(100, TimeUnit.MILLISECONDS)
@@ -929,11 +929,10 @@ class EloquenceEngine(context: Context) {
                     if (synthWorker !== worker) {
                         for (h in worker.handles.values) VvttsCore.shutdown(h)
                         worker.handles.clear()
-                    }
-                }
-                r
-                }
-            }
+                                            }
+                                        }
+                                        r
+                                    }
             }
         } catch (e: RejectedExecutionException) {
             future.cancel(false) // Never started; release its completion marker.
@@ -983,3 +982,4 @@ class EloquenceEngine(context: Context) {
         synthWorker = SynthWorker()
         hangDetected = true
     }
+}

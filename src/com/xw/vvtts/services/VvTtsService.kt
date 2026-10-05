@@ -395,16 +395,6 @@ class VvTtsService : TextToSpeechService() {
         return CAPABLE_VOICES.firstOrNull { it.locale.getISO3Language().lowercase(Locale.ROOT) == lang }?.locale?.language ?: lang
     }
 
-    /** Runs a voice query and logs any thrown failure before returning [fallback]. */
-    private inline fun <T> voiceSafe(fallback: T, block: () -> T): T {
-        return try { block() } catch (t: Throwable) {
-            Log.w(TAG, "voice query failed;returning safe fallback", t)
-            fallback
-        }
-    }
-    /** Returns the active language, country and variant, falling back to English if the query fails. */
-    override fun onGetLanguage(): Array<String> {
-        return voiceSafe(arrayOf("en", "US", "")) {
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
         return voiceSafe(emptyList()) {
@@ -1027,7 +1017,6 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                         if (waiterHit) { break }
                     }
                 }
-                }
                 over = pace.aheadMs() - PACE_LEAD_MS
             }
         }
@@ -1183,4 +1172,3 @@ val minCut = start + MIN_CHUNK_SENTENCE
                 return chunks
             }
         }
-    }

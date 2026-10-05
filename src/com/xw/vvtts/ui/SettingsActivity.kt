@@ -68,13 +68,29 @@ class SettingsActivity : Activity() {
         val autotest = if (debuggable) intent?.getStringExtra("autotest") else null  // #198: never honor external autotest hooks in non-debuggable (release( builds
         EloquenceEngine.skipWarmupForAutotest = ("chinese" == autotest)
         var e = processEngine
-        if (e == null) {
-            e = EloquenceEngine(applicationContext)
-            e.initialize()
-            processEngine = e
+        if (e == null || !e.isInitialized()) {
+            val fresh = EloquenceEngine(applicationContext)
+            var initOk = false
+            try {
+                initOk = fresh.initialize() && fresh.isInitialized()
+            } catch (t: Throwable) {
+                Log.e("SettingsActivity", "engine initialize() failed", t)
+            }
+            if (initOk) {
+                e = fresh
+                processEngine = fresh
+            } else {
+                // Never FC the settings screen because the native engine is
+                // unhealthy: toast and continue; the test button surfaces the
+                // engine error for diagnosis.
+                Toast.makeText(this, "TTS engine failed to initialize", Toast.LENGTH_LONG).show()
+            }
         }
         engine = e
-        engine!!.setVoiceProfile(voiceProfile)
+        if (engine != null) {
+            runCatching { engine!!.setVoiceProfile(voiceProfile) }
+                    .onFailure { Log.e("SettingsActivity", "setVoiceProfile failed on unhealthy engine", it) }
+        }
         // Preload the Lingua detector (background thread; avoids first-synthesis jank)
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
