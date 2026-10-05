@@ -12,11 +12,11 @@ cd "$GITHUB_WORKSPACE"
 # --- Prefer the APK built in-job by the smoke lane itself (no cross-workflow
 # --- race; this is the normal path). Fall back to fetching a previously
 # --- succeeded x86_64 test APK only when the in-job build is absent. ---
-if [ -f "${SMOKE_APK:-$GITHUB_WORKSPACE/vvttts_signed.apk}" ]; then
-  APK="${SMOKE_APK:-$GITHUB_WORKSPACE/vvttts_signed.apk}"
+if [ -f "${SMOKE_APK:-$GITHUB_WORKSPACE/vvtts_signed.apk}" ]; then
+  APK="${SMOKE_APK:-$GITHUB_WORKSPACE/vvtts_signed.apk}"
   echo "using in-job APK: $APK"
-elif [ -f "${SMOKE_APK:-/github/workspace/vvttts_signed.apk}" ]; then
-  APK="${SMOKE_APK:-/github/workspace/vvttts_signed.apk}"
+elif [ -f "${SMOKE_APK:-/github/workspace/vvtts_signed.apk}" ]; then
+  APK="${SMOKE_APK:-/github/workspace/vvtts_signed.apk}"
 else
   echo "no in-job APK; falling back to artifact fetch"
   mkdir -p /tmp/apk && cd /tmp/apk
@@ -41,7 +41,7 @@ else
     [ -n "$A" ] && break
     sleep 10
   done
-  [ -n "$A" ] || { echo "no vvttts-test-x86_64-apk artifact on run $R"; exit 1; }
+  [ -n "$A" ] || { echo "no vvtts-test-x86_64-apk artifact on run $R"; exit 1; }
   echo "artifact id: $A"
   gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/actions/artifacts/$A/zip" > art.zip
   unzip -q -o art.zip
