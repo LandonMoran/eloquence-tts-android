@@ -676,7 +676,11 @@ synchronized(engineCallLock) {
                         val volume = cfgVolume
 
             val pace = Pace(engine!!.getCoreSampleRate())
-                        val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
+            // #242: the 12 s budget must cap native synthesis WORK, not wall-clock
+            // time. Paced playback holds (and language detection) legitimately span
+            // a whole long utterance; charging them against the budget blew it
+            // mid-sentence, leaving audio dead in the middle of a long read.
+            var synthWorkMs = 0L
             // Start the framework's audio pipe BEFORE synthesis: first-audio
             // latency must not include the first segment's native synth time.
             // The finally block terminates normal or canceled synthesis.
@@ -695,9 +699,9 @@ synchronized(engineCallLock) {
                             // cannot abandon an in-flight synthesis, so a new utterance
                             // must never cut this one mid-stream.
                             if (stopping) break
-                            if (SystemClock.elapsedRealtime() > uttDeadline) {
+                            if (synthWorkMs > UTT_BUDGET_MS) {
 
-                                Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
+                                Log.e(TAG, "utterance truncated: synthesis-work budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
                                 synthFailedOrTruncated = true   // truncated: error(), not done()
                                 break
                             }
@@ -720,7 +724,7 @@ synchronized(engineCallLock) {
                 for (chunkText in splitSynthChunks(segText)) {
                     // stop() only, same rule as the segment loop above.
                     if (stopping) break
-                    if (SystemClock.elapsedRealtime() > uttDeadline) {
+                    if (synthWorkMs > UTT_BUDGET_MS) {
                         synthFailedOrTruncated = true   // truncated: error(), not done()
                         break
                     }
@@ -735,6 +739,7 @@ synchronized(engineCallLock) {
                     }
                     val t3 = SystemClock.elapsedRealtime()
                     val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    synthWorkMs += SystemClock.elapsedRealtime() - t3
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
