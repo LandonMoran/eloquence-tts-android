@@ -13,6 +13,8 @@ import android.util.Log
 class VvttsCore {
 
     companion object {
+        // ECIParam in native/openevv/include/eci.h; distinct from ECIVoiceParam.
+        const val ECI_SAMPLE_RATE = 5
         const val CHARSET_1252 = 0   // Windows-1252 (Western
         const val CHARSET_GBK = 6    // Chinese GB18030
 
@@ -71,7 +73,8 @@ class VvttsCore {
             }
         }
 
-       /** Engine params(2=pitch 5=volume 7=speed) */
+       /** Engine ECIParam IDs: 2=text mode, 5=sample rate, 7=phoneme indices.
+        * Pitch, speed and volume use setVoiceParam; see native/openevv/include/eci.h. */
         @JvmStatic
         fun setParam(handle: Long, param: Int, value: Int): Int {
             return try {
@@ -91,6 +94,9 @@ class VvttsCore {
             }
         }
 
+        /** Transfers ownership to native cleanup. The public ID is revoked;
+         * active calls retain it until return and refused ECI deletes are retried
+         * by the process cleanup queue, even after this Kotlin owner is gone. */
         @JvmStatic
         fun shutdown(handle: Long) {
             try {

@@ -1,16 +1,10 @@
 package com.xw.vvtts.ui
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.os.Build
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.TextView
 import kotlin.math.roundToInt
 import android.widget.Toast

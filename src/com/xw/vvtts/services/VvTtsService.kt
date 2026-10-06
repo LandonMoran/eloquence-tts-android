@@ -3,9 +3,7 @@ package com.xw.vvtts.services
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -19,6 +17,8 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
 import com.xw.vvtts.engine.EloquenceEngine
+import com.xw.vvtts.engine.VoiceRegistry
+import com.xw.vvtts.utils.MirroredPreferences
 import com.xw.vvtts.utils.EmojiExpander
 import com.xw.vvtts.utils.EmojiExpanderZhHans
 import com.xw.vvtts.utils.EmojiExpanderZhHant
@@ -38,6 +38,7 @@ import java.util.Locale
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
+    private val synthesisLock = Any()
     private val engineCallLock = Any()          // guards lifecycle stop/warmup dispatch
     // #12: engineRefLock guards only the engine *reference* — never the long native
     // waits — so lifecycle teardown never blocks behind a synthesis parked in
@@ -52,16 +53,13 @@ class VvTtsService : TextToSpeechService() {
 /** Loader thread for the n-gram tables; owned so teardown can interrupt backoff waits. */
     @Volatile private var ngramLoadThread: Thread? = null
     // BCP-47 tags advertised by onGetVoices; onLoadVoice accepts exactly these.
-    private val shippedVoiceTags: List<String> = listOf(
-        "en-US", "en-GB", "de-DE", "fr-FR", "fr-CA", "es-ES", "es-US", "es-MX",
-        "it-IT", "ja-JP", "pl-PL", "pt-BR", "fi-FI", "zh-CN",
-    )
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
         // which could drop a per-utterance zh pin on EVERY TalkBack swipe; the
         // dirty gate removes that whole per-swipe cost.
     @Volatile private var settingsDirty = true
+    private val registeredPrefs = mutableSetOf<SharedPreferences>()
     private val onPrefsChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> settingsDirty = true }
 
     // The dirty gate only re-reads when a relevant prefs file actually changed.
@@ -77,7 +75,8 @@ class VvTtsService : TextToSpeechService() {
         val names = arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)
         for (n in names) {
             try {
-                ctx.getSharedPreferences(n, Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(onPrefsChanged)
+                val prefs = ctx.getSharedPreferences(n, Context.MODE_PRIVATE)
+                if (registeredPrefs.add(prefs)) prefs.registerOnSharedPreferenceChangeListener(onPrefsChanged)
             } catch (ignore: Throwable) {
             }
         }
@@ -103,7 +102,7 @@ class VvTtsService : TextToSpeechService() {
         eng?.setVoiceProfile(voiceProfile)
         val ok = eng != null && eng.isInitialized()
         // Restore the language-detection settings from device-protected storage
-        restoreLanguageSettings(device.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+        restoreLanguageSettings(MirroredPreferences(device, PREFS_NAME))
         // Preload Lingua (background thread(
         LanguageDetector.preloadLingua()
         // Preload the in-RAM n-gram tables (66KB asset,milliseconds(--primary detector
@@ -165,16 +164,12 @@ class VvTtsService : TextToSpeechService() {
         } catch (ignore: Throwable) {
         }
         ngramLoadThread = null
-        // No aggressive shutdown: TextToSpeechService gets created/destroyed,
-        // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
-        // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
-        // No executor anymore: synthesis is synchronous within onSynthesizeText(),
-        // so teardown just drops queued work via the generation bump above.
-        try {
-            synchronized(engineCallLock) { if (engine != null) engine!!.stop() }
-        } catch (ignore: Throwable) {
-        }
+        val retiringEngine = synchronized(engineRefLock) { engine.also { engine = null } }
+        if (retiringEngine != null) releaseProcessEngine(retiringEngine)
         cleanupExecutor.shutdown()
+        registeredPrefs.forEach { it.unregisterOnSharedPreferenceChangeListener(onPrefsChanged) }
+        registeredPrefs.clear()
+        LanguageDetector.cancelPreload()
         super.onDestroy()
     }
 
@@ -218,7 +213,7 @@ class VvTtsService : TextToSpeechService() {
             // land as a change(.
             for (name in prefsFiles) {
                 val pf = File(dir, "$name.xml")
-                val pm = pf.lastModified()
+                val pm = "${pf.lastModified()}|${pf.length()}|${runCatching { android.system.Os.stat(pf.path).st_ino }.getOrDefault(-1L)}"
                 val key = "$dir|$name"
                 val pprev = prefsFileMtimes[key]
                 if (pprev == null) { prefsFileMtimes[key] = pm; changed = true } else if (pm != pprev) { prefsFileMtimes[key] = pm; changed = true }
@@ -230,7 +225,7 @@ class VvTtsService : TextToSpeechService() {
     private val prefsDirLock = Any()
     private var lastLockState: Boolean? = null
     private val prefsDirMtimes = HashMap<String, Long>()
-    private val prefsFileMtimes = HashMap<String, Long>()
+    private val prefsFileMtimes = HashMap<String, String>()
 
     private fun refreshSettings() { synchronized(prefsDirLock) {
         if (!settingsDirty && !prefsDirsChanged()) return
@@ -247,7 +242,7 @@ class VvTtsService : TextToSpeechService() {
             } ?: return
             voiceConfig = VoiceConfig(active)
             voiceProfile = VoiceProfile(active)
-            restoreLanguageSettings(active.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+            restoreLanguageSettings(MirroredPreferences(active, PREFS_NAME))
             val profile = voiceProfile
             if (profile != null) engine?.setVoiceProfile(profile) else {}
         } catch (t: Throwable) {
@@ -268,49 +263,6 @@ class VvTtsService : TextToSpeechService() {
         return try { block() } catch (t: Throwable) {
             Log.w(TAG, "voice query failed;returning safe fallback", t)
             fallback
-        }
-    }
-
-    /** Maps an incoming language tag to the two-letter prefix the dialect matchers
-     *  expect: the framework probes with ISO-639-2/T three-letter codes
-     *  (getISO3Language: eng, spa, jpn, ...) as well as ISO-639-1 two-letter ones.
-     *  Without this, "spa" never matches startsWith("es") and non-English
-     *  locales silently fall back to en-US. Passes 2-letter tags through. */
-    private fun langPrefix(tag: String?): String {
-        return when ((tag ?: "").lowercase()) {
-            "eng" -> "en"
-            "deu", "ger" -> "de"
-            "fra", "fre" -> "fr"
-            "spa" -> "es"
-            "ita" -> "it"
-            "jpn" -> "ja"
-            "pol" -> "pl"
-            "por" -> "pt"
-            "fin" -> "fi"
-            "zho", "chi" -> "zh"
-            else -> (tag ?: "").lowercase()
-        }
-    }
-
-    /** Maps a three-letter ISO-3166 country code (getISO3Country: USA, GBR, ...)
-     *  to its two-letter form for comparisons; passes 2-letter codes through. */
-    private fun countryCode(tag: String?): String {
-        return when ((tag ?: "").uppercase()) {
-            "USA" -> "US"
-            "GBR" -> "GB"
-            "DEU" -> "DE"
-            "FRA" -> "FR"
-            "CAN" -> "CA"
-            "ESP" -> "ES"
-            "MEX" -> "MX"
-            "ITA" -> "IT"
-            "JPN" -> "JP"
-            "POL" -> "PL"
-            "BRA" -> "BR"
-            "FIN" -> "FI"
-            "CHN" -> "CN"
-            "TWN" -> "TW"
-            else -> (tag ?: "").uppercase()
         }
     }
 
@@ -377,29 +329,8 @@ class VvTtsService : TextToSpeechService() {
         }
     }
 
-    private data class CapableVoice(val voiceName: String, val locale: Locale, val dialect: Int)
-    private val CAPABLE_VOICES = listOf(
-        CapableVoice("en-US", Locale.US, EloquenceEngine.DIALECT_EN_US),
-        CapableVoice("en-GB", Locale.UK, EloquenceEngine.DIALECT_EN_GB),
-        CapableVoice("de-DE", Locale.GERMANY, EloquenceEngine.DIALECT_DE_DE),
-        CapableVoice("fr-FR", Locale.FRANCE, EloquenceEngine.DIALECT_FR_FR),
-        CapableVoice("fr-CA", Locale.CANADA_FRENCH, EloquenceEngine.DIALECT_FR_CA),
-        CapableVoice("es-ES", Locale("es", "ES"), EloquenceEngine.DIALECT_ES_ES),
-        CapableVoice("es-US", Locale("es", "US"), EloquenceEngine.DIALECT_ES_US),   // [2.1] esus
-        CapableVoice("es-MX", Locale("es", "MX"), EloquenceEngine.DIALECT_ES_MX),
-        CapableVoice("it-IT", Locale.ITALY, EloquenceEngine.DIALECT_IT_IT),
-        CapableVoice("ja-JP", Locale.JAPAN, EloquenceEngine.DIALECT_JA_JP),
-        CapableVoice("pl-PL", Locale("pl", "PL"), EloquenceEngine.DIALECT_PL_PL),   // [11.0] plpl
-        CapableVoice("pt-BR", Locale("pt", "BR"), EloquenceEngine.DIALECT_PT_BR),
-        CapableVoice("fi-FI", Locale("fi", "FI"), EloquenceEngine.DIALECT_FI_FI),
-        CapableVoice("zh-CN", Locale("zh", "CN"), EloquenceEngine.DIALECT_ZH_CN)
-    )
-
-    /** Normalizes ISO-639-2/T requests to the voice registry's two-letter language codes. */
-    private fun normalizeLanguage(language: String?): String {
-        val lang = (language ?: "").lowercase(Locale.ROOT)
-        return CAPABLE_VOICES.firstOrNull { it.locale.getISO3Language().lowercase(Locale.ROOT) == lang }?.locale?.language ?: lang
-    }
+    private val CAPABLE_VOICES get() = VoiceRegistry.voices
+    private fun normalizeLanguage(language: String?) = VoiceRegistry.normalizeLanguage(language)
 
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
     override fun onGetVoices(): List<Voice> {
@@ -438,7 +369,6 @@ class VvTtsService : TextToSpeechService() {
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
         val hasCountry = country != null && country.isNotEmpty()
-        val hasVariant = variant != null && variant.isNotEmpty()
         if (hasCountry) {
             // #18: the registry is the single source of truth for countries, too:
             // requesting ("spa","ARG") must not claim LANG_COUNTRY_AVAILABLE
@@ -448,7 +378,7 @@ class VvTtsService : TextToSpeechService() {
                     (it.locale.country.equals(country, ignoreCase = true) || it.locale.getISO3Country().equals(country, ignoreCase = true))
             }
             if (countryShipped) {
-                return if (hasVariant) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE else TextToSpeech.LANG_COUNTRY_AVAILABLE
+                return TextToSpeech.LANG_COUNTRY_AVAILABLE // No named variants are shipped.
             }
             return TextToSpeech.LANG_AVAILABLE
         }
@@ -463,20 +393,7 @@ class VvTtsService : TextToSpeechService() {
         if (avail != TextToSpeech.LANG_NOT_SUPPORTED && language != null) {
             // Warm the engine for the dialect family that owns this language, so the
             // first utterance doesn't pay the native LPC table load on the hot path.
-            val lang = language.lowercase()
-            val dialect: Int? = when {
-                lang.startsWith("en") -> LanguageDetector.getEnglishDialect()
-                lang.startsWith("es") -> LanguageDetector.getSpanishDialect()
-                lang.startsWith("fr") -> LanguageDetector.getFrenchDialect()
-                lang.startsWith("zh") -> LanguageDetector.getChineseDialect()
-                lang.startsWith("de") -> LanguageDetector.DIALECT_DE_DE
-                lang.startsWith("it") -> LanguageDetector.DIALECT_IT_IT
-                lang.startsWith("ja") -> LanguageDetector.DIALECT_JA_JP
-                lang.startsWith("pl") -> LanguageDetector.DIALECT_PL_PL
-                lang.startsWith("pt") -> LanguageDetector.DIALECT_PT_BR
-                lang.startsWith("fi") -> LanguageDetector.DIALECT_FI_FI
-                else -> null
-            }
+            val dialect = VoiceRegistry.find(language, country)?.dialect
             if (dialect != null) synchronized(engineCallLock) {
                 engine?.warmupDialect(dialect)
             }
@@ -578,7 +495,7 @@ class VvTtsService : TextToSpeechService() {
         stopping = false
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
-                if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+                if (voiceConfig?.extraLogging == true) {
                     Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
                 }
 
@@ -587,7 +504,7 @@ class VvTtsService : TextToSpeechService() {
         // A zh picker row iso honored per-utterance (and reverted in finally):the
                 // engine speaks zh via its oracle bank, so a zh voice must be pinned for
                 // that utterance;the app's own detection/default stays untouched
-synchronized(engineCallLock) {
+synchronized(synthesisLock) {
         refreshSettings()
         synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
@@ -676,7 +593,7 @@ synchronized(engineCallLock) {
                         val volume = cfgVolume
 
             val pace = Pace(engine!!.getCoreSampleRate())
-                        val uttDeadline = SystemClock.elapsedRealtime() + UTT_BUDGET_MS
+                        val synthBudget = SynthesisBudget(UTT_BUDGET_MS)
             // Start the framework's audio pipe BEFORE synthesis: first-audio
             // latency must not include the first segment's native synth time.
             // The finally block terminates normal or canceled synthesis.
@@ -695,16 +612,16 @@ synchronized(engineCallLock) {
                             // cannot abandon an in-flight synthesis, so a new utterance
                             // must never cut this one mid-stream.
                             if (stopping) break
-                            if (SystemClock.elapsedRealtime() > uttDeadline) {
+                            if (synthBudget.exhausted) {
 
-                                Log.e(TAG, "utterance truncated: time budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
+                                Log.e(TAG, "utterance truncated: synthesis-work budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
                                 synthFailedOrTruncated = true   // truncated: error(), not done()
                                 break
                             }
                 if (seg.text == null || seg.text!!.trim().isEmpty()) continue
                 var segText: String = seg.text!!
                 Log.d("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " len=" + segText.length)
-        if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+        if (voiceConfig?.extraLogging == true) {
             Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
         }
                 // CJK normalization (width + number + symbol readings) happens once,
@@ -720,7 +637,7 @@ synchronized(engineCallLock) {
                 for (chunkText in splitSynthChunks(segText)) {
                     // stop() only, same rule as the segment loop above.
                     if (stopping) break
-                    if (SystemClock.elapsedRealtime() > uttDeadline) {
+                    if (synthBudget.exhausted) {
                         synthFailedOrTruncated = true   // truncated: error(), not done()
                         break
                     }
@@ -734,9 +651,9 @@ synchronized(engineCallLock) {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    val pcm = synthBudget.measure { currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate) }
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
-                    if ((deviceCtx ?: this).getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) {
+                    if (voiceConfig?.extraLogging == true) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
                     }
                     if (pcm != null && pcm.size > 0) {
@@ -895,12 +812,12 @@ synchronized(engineCallLock) {
             }
             // stop() queues native work on the engine worker. Generation invalidation
             // stays synchronous,and this callback never waits for native synthesis.
-try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } catch (ignore: Throwable) {}
+try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         }
 
         // Restore language-detection settings from SharedPreferences (device-protected
         // storage when the user is locked; mirrored copy otherwise(.
-        private fun restoreLanguageSettings(prefs: SharedPreferences) {
+        private fun restoreLanguageSettings(prefs: MirroredPreferences) {
             LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
             LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
             LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
@@ -918,48 +835,10 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
         // credential-encrypted to device-protected storage. Called only while unlocked;
         // the device copy is what a locked start reads ( before first unlock(.
         private fun mirrorPrefsToDevice(device: Context) {
-            val names = arrayOf(
-                VOICE_CONFIG_PREFS,     // voice/rate/pitch/volume/dsp/auto-detect/punct/user dict
-                VOICE_PROFILE_PREFS,    // preset + per-preset param overrides
-                PREFS_NAME                  // LanguageDetector state
-            )
-            for (name in names) {
-                try {
-                    mirrorSharedPreferences(
-                        getSharedPreferences(name, 0),
-                        device.getSharedPreferences(name, 0)
-                    )
-                } catch (e: Exception) {
-                    Log.e(TAG, "cannot mirror prefs $name", e)
-                }
+            for (name in arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)) {
+                MirroredPreferences(device, name).update { }
             }
         }
-
-        private fun mirrorSharedPreferences(from: SharedPreferences,to: SharedPreferences) {
-                val all = from.getAll() ?: return
-                // Never mirror an empty/absent store:that would wipe the last good
-                // device snapshot with a blank one;direct-boot access must not assume
-                // the modern prefs exist yet ( first unlock may not have happened(.
-                if (all.isEmpty()) return
-                val e = to.edit()
-                e.clear()
-                for ((k, v) in all) {
-                    when (v) {
-                        is String -> e.putString(k, v)
-                                                is Boolean -> e.putBoolean(k, v)
-                                                is Int -> e.putInt(k, v)
-                                                is Long -> e.putLong(k, v)
-                                                is Float -> e.putFloat(k, v)
-                                                is Set<*> -> e.putStringSet(k, v.map { it.toString() }.toSet())
-                        else -> {}
-                    }
-                }
-                // Synchronous+atomic (temp-file write(;the async apply() kill window would
-                // leave a half-written device copy on a locked/zoned write.
-                val ok = e.commit()
-                if (!ok) Log.e(TAG, "mirror commit rejected")
-            }
-
 
         // === Pacing ===
         /** Track how much audio (in ms( has been handed to the framework versus how
@@ -1045,38 +924,38 @@ try { synchronized(engineCallLock) { if (engine != null) engine!!.stop() } } cat
                         private fun isNumericRunChar(c: Char): Boolean =
                             c.isDigit() || c == ':' || c == '/' || c == '-' || c == '.' || c == '．'
 
-            // === Process-scoped engine reuse ===
-            // TextToSpeechService is created/destroyed each time the framework binds the
-            // engine (TalkBack swipe bursts re-bind constantly(. A per-onCreate engine
-            // would tear down warm LPC handles and every re-bind would re-pay the full
-            // native eciNewEx voice-bank load — the big hover-to-speech delay after any
-            // pause. Holding one engine per process keeps all dialects warm: re-binds
-            // reuse live handles, first-swipe-after-idle latency drops to near zero.
-
+            // Rebound services may overlap. Count owners under engineLock so the
+            // last service releases native resources without closing a new owner's engine.
             private val engineLock = Any()
-            @Volatile private var processEngine: EloquenceEngine? = null
-            // #16: serialization lock for concurrent engine ops (stop/synthesizeCore/
-            // warmupDialect( must be process-scoped too — a per-instance lock would
-            // let tworebound instances race the same shared native engine (calling
-            // stop() while another instance synthesizes(.
-            private val engineCallLock = Any()
+            private var processEngine: EloquenceEngine? = null
+            private var processEngineOwners = 0
 
+            private fun acquireProcessEngine(ctx: Context): EloquenceEngine? = synchronized(engineLock) {
+                processEngine?.takeIf { it.isInitialized() }?.let {
+                    processEngineOwners++
+                    return@synchronized it
+                }
+                processEngine = null
+                processEngineOwners = 0
+                val fresh = EloquenceEngine(ctx)
+                if (fresh.initialize()) {
+                    processEngine = fresh
+                    processEngineOwners = 1
+                    fresh
+                } else {
+                    fresh.shutdown()
+                    null
+                }
+            }
 
-            private fun acquireProcessEngine(ctx: Context): EloquenceEngine? {
-                processEngine?.let { if (it.isInitialized()) return it }
-                synchronized(engineLock) {
-                    val cur = processEngine
-                    if (cur != null && cur.isInitialized()) return cur
-                    // The cached engine is dead or never initialized (e.g. a native
-                    // crash left it unusable): drop the reference BEFORE rebuilding so
-                    // a concurrent reader never hands out the stale engine.
-                    processEngine = null
-                    val fresh = EloquenceEngine(ctx)
-                    if (fresh.initialize()) {
-                        processEngine = fresh
-                        return fresh
-                    }
-                    return null
+            private fun releaseProcessEngine(owned: EloquenceEngine) {
+                val lastOwner = synchronized(engineLock) {
+                    if (processEngine !== owned) true
+                    else if (--processEngineOwners > 0) false
+                    else { processEngine = null; true }
+                }
+                if (lastOwner) {
+                    try { owned.stop() } finally { owned.shutdown() }
                 }
             }
 

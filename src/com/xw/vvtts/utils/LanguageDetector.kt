@@ -81,6 +81,8 @@ class LanguageDetector {
         // Single-flight guard for the current generation. Resetting the whitelist
         // allows a fresh preload; older workers must not update its flags.
         @Volatile private var linguaInitInFlight = false
+        @Volatile private var linguaPreloadThread: Thread? = null
+        private val linguaBuildLock = Any()
         private var linguaGeneration = 0L // Guarded by lock.
 
         // Memo of recent Lingua-decided dialects. The n-gram scan is the largest single
@@ -154,6 +156,8 @@ class LanguageDetector {
         private fun resetLingua() {
             invalidateLatinCache()
             synchronized(lock) {
+                linguaPreloadThread?.interrupt()
+                linguaPreloadThread = null
                 linguaGeneration++
                 linguaDetector = null
                 linguaInitFailed = false
@@ -202,69 +206,62 @@ class LanguageDetector {
         }
         fun getFixedDialect() = fixedDialect
 
-        /** Preload Lingua(async, single-flight: called at startup before any segment classification, so the first segment's Lingua results are reliable)) */
+        /** Owned daemon worker. Model loading is lazy, so cancellation never waits
+         * for a preload of every n-gram model inside the third-party builder. */
         fun preloadLingua() {
             synchronized(lock) {
-                // Single-flight:mark the initialization as in-flight BEFORE starting
-                // the thread,so concurrent callers (multiple TTS services, settings
-                // rebuilds( cannot spawn duplicate threads in the same generation;the
-                // built detector is published under the same lock when it lands.
-
-                // #152 reliability: any segment that needs Lingua blocks in getLingua()'s
-                // lock until the preload worker publishes it ("first segment's results are
-                // reliable"）, while startup itself doesn't stall on the model build (#161).
                 if (linguaPreloaded || linguaInitFailed || linguaInitInFlight) return
                 linguaInitInFlight = true
                 val generation = linguaGeneration
-                Thread {
+                linguaPreloadThread = Thread {
                     try {
-                        val detector = getLingua()
-                        synchronized(lock) {
-                            if (generation == linguaGeneration && detector != null) {
-                                linguaPreloaded = true
-                            }
-                        }
+                        if (!Thread.currentThread().isInterrupted) getLingua()
                     } finally {
                         synchronized(lock) {
-                            if (generation == linguaGeneration) linguaInitInFlight = false
+                            if (generation == linguaGeneration) {
+                                linguaInitInFlight = false
+                                linguaPreloaded = linguaDetector != null
+                                linguaPreloadThread = null
+                            }
                         }
                     }
-                }.start()
+                }.apply { name = "lingua-preload"; isDaemon = true; start() }
+            }
+        }
+
+        fun cancelPreload() {
+            synchronized(lock) {
+                linguaGeneration++
+                linguaPreloadThread?.interrupt()
+                linguaPreloadThread = null
+                linguaInitInFlight = false
             }
         }
 
         private fun getLingua(): com.github.pemistahl.lingua.api.LanguageDetector? {
-            val cached = linguaDetector
-            if (cached != null) return cached
-            if (linguaInitFailed) return null
-            synchronized(lock) {
-                val cached2 = linguaDetector
-                if (cached2 != null) return cached2
-                if (linguaInitFailed) return null
-                try {
-                    val t0 = System.currentTimeMillis()
+            linguaDetector?.let { return it }
+            if (linguaInitFailed || Thread.currentThread().isInterrupted) return null
+            synchronized(linguaBuildLock) {
+                linguaDetector?.let { return it }
+                val generation = synchronized(lock) { linguaGeneration }
+                if (Thread.currentThread().isInterrupted) return null
+                return try {
                     val langs = getEnabledLanguageEnums()
-                    // Lingua needs >=2 candidates. Without disabled-language fillers
-                    // (#182( the pruned set can be 0..1 — skip building (the caller handlesthe
-                    // sole-enabled-language case directly).
                     if (langs.size < 2) return null
-                    var builder = LanguageDetectorBuilder
-                        .fromLanguages(*langs.toTypedArray())
+                    var builder = LanguageDetectorBuilder.fromLanguages(*langs.toTypedArray())
                         .withMinimumRelativeDistance(0.0)
-                        .withPreloadedLanguageModels()
-                    // With the full 8-language set (the zero-config default( every n-gram
-                    // is scored against every candidate——the slowest wiring. Lingua's
-                    // low-accuracy mode scales that per-call cost back down,so swipes stay
-                    // snappy. Once the user prunes the set to <=3 languages, default
-                    // accuracy is already cheap enough that we keep full precision.
                     if (langs.size >= 4) builder = builder.withLowAccuracyMode()
-                    linguaDetector = builder.build()
-                    Log.i(TAG, "Lingua loaded in " + (System.currentTimeMillis() - t0) + "ms, langs=" + langs.size + ", lowAcc=" + (langs.size >= 4))
-                    return linguaDetector
-                } catch (e: Throwable) {
+                    val detector = builder.build()
+                    synchronized(lock) {
+                        if (generation != linguaGeneration || Thread.currentThread().isInterrupted) null
+                        else { linguaDetector = detector; detector }
+                    }
+                } catch (e: Exception) {
+                    synchronized(lock) {
+                        if (generation == linguaGeneration && !Thread.currentThread().isInterrupted) linguaInitFailed = true
+                    }
                     Log.e(TAG, "Lingua init failed", e)
-                    linguaInitFailed = true
-                    return null
+                    null
                 }
             }
         }
@@ -341,7 +338,6 @@ class LanguageDetector {
             // pass 1:Unicode run-splitting
             var current = StringBuilder()
             var currentType = -1  // 0=Chinese, 1=kana, 2=Hangul, 3=Latin,  4=separator,   5=digit
-            var lastRealType = 3  //the last non-separator type (default Latin)
             // Leading digit/date runs flush with the RUN's dialect; start from the
             // user's default language when set (e.g. zh) instead of hard English so a
             // leading timestamp doesn't get voiced in the wrong language.
@@ -385,7 +381,6 @@ class LanguageDetector {
 
                 // remember the most recent non-separator language
                 if (type in 0..3) {
-                    lastRealType = type
                     lastDialect = typeToDialect(type, lastDialect)
                 }
                 i = unitEnd
@@ -725,7 +720,7 @@ class LanguageDetector {
             // ambiguous runs back here -- only then does Lingua's heavier n-gram
             // scan run. Both paths share the same LRU cache:re-announcing a seen
             // UI string short-circuits before either scan runs.
-            if (text.length <= 256 && transientEnabled == null) {
+            if (text.length <= 256 && transientEnabled.get() == null) {
                 synchronized(latinCache) {
                     val hit = latinCache[text]
                     if (hit != null) return hit
@@ -748,7 +743,7 @@ class LanguageDetector {
                 }
                 if (dialect >=0) {
                     synchronized(latinCache) {
-                        if (text.length <= 256 && transientEnabled == null) {
+                        if (text.length <= 256 && transientEnabled.get() == null) {
                             if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
                             latinCache[text] = dialect
                         }
@@ -784,7 +779,7 @@ class LanguageDetector {
                 }
                 val detectedDialect = languageToDialect(lang)
                 synchronized(latinCache) {
-                    if (text.length <= 256 && transientEnabled == null) {
+                    if (text.length <= 256 && transientEnabled.get() == null) {
                         if (latinCache.size >= LATIN_CACHE_MAX) latinCache.remove(latinCache.keys.first())
                         latinCache[text] = detectedDialect
                     }

@@ -18,8 +18,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -218,8 +216,8 @@ class SettingsActivity : Activity() {
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
-        val extraLogSwitch = addSwitchRow(mainContainer, getString(R.string.extra_logging_row), getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).getBoolean("extra_logging", false)) { on ->
-            getSharedPreferences(VOICE_CONFIG_PREFS, MODE_PRIVATE).edit().putBoolean("extra_logging", on).apply()
+        val extraLogSwitch = addSwitchRow(mainContainer, getString(R.string.extra_logging_row), voiceConfig!!.extraLogging) { on ->
+            voiceConfig!!.setExtraLogging(on)
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
         addNoteRow(mainContainer, R.string.extra_logging_note)
@@ -579,7 +577,7 @@ class SettingsActivity : Activity() {
 
     /** Voice picker: single choice over dialects actually included in this build */
     private fun showVoiceDialog() {
-        val voices = VoiceConfig.LANGS.filter { it.eciDialect != 0L }
+        val voices = VoiceConfig.LANGS.filter { EloquenceEngine.isShippedDialect(it.eciDialect.toInt()) }
         val codes = voices.map { it.code }.toTypedArray()
         val labels = voices.map { it.name }.toTypedArray()
         val cur = voiceConfig!!.voice
@@ -764,9 +762,10 @@ class SettingsActivity : Activity() {
                     val w = wordInput.text.toString().trim()
                     val s = speakInput.text.toString().trim()
                     if (w.isNotEmpty() && s.isNotEmpty()) {
-                        if (entry != null) voiceConfig!!.removeDictEntry(entry.word)
-                        voiceConfig!!.addDictEntry(w,  s,  csBox.isChecked)
-                        Toast.makeText(this,  getString(R.string.dict_added_fmt,  w), Toast.LENGTH_SHORT).show()
+                        val saved = runCatching { voiceConfig!!.addDictEntries(listOf(DictEntry(w, s, csBox.isChecked)), entry?.word) }
+                        val message = if (saved.getOrDefault(false)) getString(R.string.dict_added_fmt, w)
+                            else getString(R.string.dict_import_failed, saved.exceptionOrNull()?.message ?: "Could not save dictionary")
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(this,  getString(R.string.dict_both_required), Toast.LENGTH_SHORT).show()
                     }
@@ -830,57 +829,27 @@ class SettingsActivity : Activity() {
                     builder.show()
                 }
 
-                /** Read a SAF file with BOM sniffing (UTF-8 / UTF-16LE / UTF-16BE, like the ETI importer. */
-    private fun readTextFromUri(uri: android.net.Uri): String {
-        val inp = contentResolver.openInputStream(uri) ?: return ""
-        val raw = inp.readBytes()
-        inp.close()
-        return when {
-            raw.size >= 3 && raw[0] == 0xEF.toByte() && raw[1] == 0xBB.toByte() && raw[2] == 0xBF.toByte() ->
-                String(raw, 3, raw.size - 3, Charsets.UTF_8)
-            raw.size >= 2 && raw[0] == 0xFF.toByte() && raw[1] == 0xFE.toByte() ->
-                String(raw, 2, raw.size - 2, Charsets.UTF_16LE)
-            raw.size >= 2 && raw[0] == 0xFE.toByte() && raw[1] == 0xFF.toByte() ->
-                String(raw, 2, raw.size - 2, Charsets.UTF_16BE)
-            else -> String(raw, Charsets.UTF_8)
-        }
-    }
-
     private fun importDictFromUri(uri: android.net.Uri) {
+        val app = applicationContext
+        val owner = java.lang.ref.WeakReference(this)
         Thread {
-            var added = 0
-            for (line in readTextFromUri(uri).split("\n")) {
-                val s = line.trim()
-                if (s.isEmpty() || s.startsWith("#")) continue
-                val sep = when {
-                    s.contains('|') -> '|'
-                    s.contains('\t') -> '\t'
-                    else -> ','
-                }
-                val idx = s.indexOf(sep)
-                if (idx <=  0 || idx >= s.length - 1) continue
-                val w = s.substring(0,  idx).trim()
-                var sp = s.substring(idx +  1).trim()
-                var cs = false
-                if (sep == '|') {
-                    val idx2 = s.indexOf('|',  idx +  1)
-                    if (idx2 >  0) {
-                        val tail = s.substring(idx2 +  1).trim()
-                        if (tail.equals("cs",  ignoreCase = true)) {
-                            cs = true
-                            sp = s.substring(idx +  1,  idx2).trim()
-                        }
-                    }
-                }
-                if (w.isEmpty() || sp.isEmpty()) continue
-                if (w.equals("word",  ignoreCase = true) && sp.equals("replacement",  ignoreCase = true)) continue
-                voiceConfig!!.addDictEntry(w,  sp,  cs)
-                added++
+            val result = runCatching {
+                val entries = ArrayList<DictEntry>()
+                val input = app.contentResolver.openInputStream(uri) ?: error("Cannot open dictionary")
+                com.xw.vvtts.utils.DictionaryImport.read(input).also { entries.addAll(it) }
+                check(VoiceConfig(app).addDictEntries(entries)) { "Could not save dictionary" }
+                entries.size
             }
-            runOnUiThread {
-                Toast.makeText(this,  getString(R.string.dict_imported,  added),  Toast.LENGTH_SHORT).show()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                val activity = owner.get()
+                if (activity != null && !activity.isDestroyed && !activity.isFinishing) {
+                    val message = result.fold(
+                        { activity.getString(R.string.dict_imported, it) },
+                        { activity.getString(R.string.dict_import_failed, it.message ?: "Invalid dictionary") })
+                    Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+                }
             }
-        }.start()
+        }.apply { isDaemon = true; name = "dictionary-import" }.start()
     }
     private fun exportDictToUri(uri: android.net.Uri) {
         Thread {
@@ -910,8 +879,7 @@ class SettingsActivity : Activity() {
 
     private fun doResetDefaults() {
         for (name in arrayOf("vvtts_prefs", "vvtts_voice_profile", "vvtts_lang_settings")) {
-            getSharedPreferences(name, MODE_PRIVATE).edit().clear().commit()
-            createDeviceProtectedStorageContext().getSharedPreferences(name, MODE_PRIVATE).edit().clear().commit()
+            com.xw.vvtts.utils.MirroredPreferences(this, name).edit { it.clear() }
         }
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
@@ -1167,8 +1135,7 @@ class SettingsActivity : Activity() {
 
     // SharedPreferences persistence
     fun saveLanguageSettings() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val e = prefs.edit()
+        com.xw.vvtts.utils.MirroredPreferences(this, PREFS_NAME).edit { e ->
         e.putBoolean("detection_enabled", LanguageDetector.isDetectionEnabled())
         e.putInt("fixed_dialect", LanguageDetector.getFixedDialect())
         e.putInt("chinese_dialect", LanguageDetector.getChineseDialect())
@@ -1182,14 +1149,11 @@ class SettingsActivity : Activity() {
         } else {
             e.remove("enabled_langs")
         }
-        e.commit()
-        val devCtx = createDeviceProtectedStorageContext()
-        java.io.File(devCtx.getDataDir(), "shared_prefs").mkdirs()
-        java.io.File(getDataDir(), "shared_prefs/$PREFS_NAME.xml").copyTo(java.io.File(devCtx.getDataDir(), "shared_prefs/$PREFS_NAME.xml"), overwrite=true)
+        }
     }
 
     fun restoreLanguageSettings() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = com.xw.vvtts.utils.MirroredPreferences(this, PREFS_NAME)
         LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
         LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
         LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))

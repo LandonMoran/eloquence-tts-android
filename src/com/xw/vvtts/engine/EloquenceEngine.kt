@@ -5,33 +5,28 @@ import android.content.pm.ApplicationInfo
 import android.os.SystemClock
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
-import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.KonaVoice
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.TextNormalizer
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
-import java.io.FileWriter
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
-import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutionException
-import java.util.concurrent.Future
-import java.util.concurrent.FutureTask
-import java.util.concurrent.Callable
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.UUID
 import com.xw.vvtts.utils.CrashCodeDefender
 
 class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
+    private val handleLock = Any()
     private val storageContext: Context = context.createDeviceProtectedStorageContext()
 
     @Volatile private var voiceProfile: VoiceProfile? = null
@@ -43,12 +38,10 @@ class EloquenceEngine(context: Context) {
     // Credential-encrypted getSharedPreferences throws IllegalStateException, so a
     // locked start would break every synthesis until the first user unlock. See #235.
     private val userDictionary by lazy { VoiceConfig(storageContext) }
-    @Volatile private var core: VvttsCore? = null          // In-house bridge (multi-language
-    private var coreHandle: Long = 0
-    private var nativeHandle: Long = 0L
-    private var initialized = false
+    @Volatile private var initialized = false
     // Keep handles with their owning worker, including after a timeout retires it.
     private class SynthWorker {
+        @Volatile var retired = false
         // handles is iterated by stop() from the caller thread, so it must stay safe
         // for concurrent reads while this worker lazily opens new sessions..
         val handles = ConcurrentHashMap<Int, Long>()
@@ -58,7 +51,6 @@ class EloquenceEngine(context: Context) {
         // the engine-default voice.  Scoped per worker so a retired worker's late
         // writes never land in a replacement worker's cache.
 
-        val pendingEciVoiceByDialect = HashMap<Int, Int>() // accessed only by this worker's executor
         // Fingerprint of the last-applied param set; repeated utterances (TalkBack
         // swipe bursts) skip the ~19-call native param re-injection entirely.  Also
         // per worker, for the same stale-write reason as the voice cache.
@@ -67,87 +59,31 @@ class EloquenceEngine(context: Context) {
             Thread(r, "elq-synth").apply { isDaemon = true }
         }
     }
-    // Completion markers for every in-flight synthesis, drained by awaitActiveSynthesis()
-    // so service stop can wait for active utterances to settle before tearing down.
-    private val activeSynthesis = ConcurrentHashMap.newKeySet<CountDownLatch>()
     // Long native retires ( ~2s settlement waits( run here so they never stall the single synth thread
     @Volatile private var retireExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "elq-retire").apply { isDaemon = true }
     }
     @Volatile private var synthWorker = SynthWorker()
-    @Volatile private var hangDetected = false
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
-    @Volatile private var engineEpoch = 0
+    private val engineEpoch = AtomicLong()
+    private val lifecycleEpoch = AtomicLong()
         @Volatile private var retireUntilMs = 0L
         private val HANG_TIMEOUT_S = 30L
         private val ZOMBIE_GRACE_MS = 12000L
     @Volatile private var stopped = false
-    @Volatile private var pendingVoice: Int? = null
-    @Volatile private var pendingSapi = ""
-    @Volatile private var pendingPitchFactor = 1.0f
-    @Volatile private var pendingPitch: Int? = null
-    @Volatile private var sampleRateSet = false
-    private var lastNativePitch = 0
-    @Volatile private var pendingSpeedFactor = 1.0f
-        @Volatile private var pendingEciDialect = DIALECT_ZH_CN
-    @Volatile private var warmedUp = false
-    @Volatile private var pendingSapiMark = ""
 
         /** Voice-profile source: custom overrides win during synthesis */
     fun setVoiceProfile(vp: VoiceProfile?) {
         this.voiceProfile = vp
     }
 
-    private fun buildEloquenceConfig(libraryDir: File): String {
-        val sb = StringBuilder()
-        // 14 languages + 4 CJK romanizers (full Apple tvOS 18.2 engine)
-        // [segment] dialect -> lib<name>.so; Path_Rom is CJK-only
-        val langs = arrayOf(
-            arrayOf("1.0", "libenu.so", null),           // en-US
-            arrayOf("1.1", "libeng.so", null),           // en-GB
-            arrayOf("2.0", "libesp.so", null),           // es-ES
-            arrayOf("2.1", "libesm.so", null),           // es-MX
-            arrayOf("3.0", "libfra.so", null),           // fr-FR
-            arrayOf("3.1", "libfrc.so", null),           // fr-CA
-            arrayOf("4.0", "libdeu.so", null),           // de-DE
-            arrayOf("5.0", "libita.so", null),           // it-IT
-            arrayOf("6.0", "libchs.so", "libchsrom.so"), // zh-CN
-            arrayOf("6.1", "libcht.so", "libchtrom.so"), // zh-TW
-            arrayOf("7.0", "libptb.so", null),           // pt-BR
-            arrayOf("8.0", "libjpn.so", "libjpnrom.so"), // ja-JP
-            arrayOf("9.0", "libfin.so", null),           // fi-FI
-            arrayOf("10.0", "libkor.so", "libkorrom.so") // ko-KR
-        )
-        for (l in langs) {
-            sb.append("[").append(l[0]).append("]\nPath=")
-            sb.append(File(libraryDir, l[1]).absolutePath)
-            sb.append("\n")
-            if (l[2] != null) {
-                sb.append("Path_Rom=")
-                sb.append(File(libraryDir, l[2]).absolutePath)
-                sb.append("\n")
-            }
-            sb.append("Version=6.1\n\n")
-        }
-
-        // Standard voice table — the Chinese library's register_voices relies on this to init voices
-        sb.append("Voice1=0 50 65 30 0 0 50 92\n")    // Reed
-        sb.append("Voice2=0 50 81 50 0 0 50 95\n")    // Shelley
-        sb.append("Voice3=0 50 93 50 0 0 22 95\n")    // Sandy
-        sb.append("Voice4=0 50 56 0 0 0 86 93\n")     // Rocko
-        sb.append("Voice5=0 50 65 30 0 0 50 92\n")    // fallback
-        sb.append("Voice6=0 50 89 40 0 0 56 95\n")    // Flo
-        sb.append("Voice7=0 50 68 40 3 0 45 90\n")    // Grandma
-        sb.append("Voice8=0 50 61 20 18 0 30 90\n")   // Grandpa
-        sb.append("Voice9=0 50 69 0 0 0 50 92\n")     // Eddy
-        return sb.toString()
-    }
-
     @Synchronized
     fun initialize(): Boolean {
         if (initialized) return true
-        // New Apple engine: no longer uses the legacy Guangrong JNI (libeloquence_jni.so is deprecated)
-        // Synthesis runs through VvttsCore's in-house bridge (dlopen Apple libeci.so); we just pre-write eci.ini here.
+        if (retireExecutor.isShutdown) retireExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "elq-retire").apply { isDaemon = true }
+        }
+        // Prepare storage and schedule optional native warmup. Native readiness is checked per request.
         try {
             val info: ApplicationInfo = appContext.applicationInfo
             val libDir = info.nativeLibraryDir
@@ -157,10 +93,8 @@ class EloquenceEngine(context: Context) {
             }
             val configDir = File(storageContext.filesDir, "eloquence")
             if (!configDir.exists()) configDir.mkdirs()
-            val config = buildEloquenceConfig(File(libDir))
-            FileWriter(File(configDir, "eci.ini")).use { fw -> fw.write(config) }
             initialized = true
-            Log.i(TAG, "Eloquence engine (apple-eloquence-elf) ready, 14 languages")
+            Log.i(TAG, "Eloquence openevv engine ready")
             // Warm the default (US English) voice in the background: preloads the LPC voice
             // tables so the FIRST hover/swipe utterance starts speaking immediately.
             if (!skipWarmupForAutotest) warmupDialect(SHIPPED_DIALECTS.first().toInt())
@@ -169,29 +103,6 @@ class EloquenceEngine(context: Context) {
             Log.e(TAG, "init failed", e)
             return false
         }
-    }
-
-    // Guangrong mapPitch: p<=50 -> p*69/50; p>50 ->(p-50)*31/50+69
-    private fun mapPitch(pitch: Int): Int {
-        var pitch = pitch
-        if (pitch < 0) pitch = 0
-        if (pitch > 100) pitch = 100
-        return if (pitch <= 50) pitch * 69 / 50 else (pitch - 50) * 31 / 50 + 69
-    }
-
-    private fun coerceIn(v: Int, min: Int, max: Int): Int {
-        if (v < min) return min
-        return if (v > max) max else v
-    }
-
-    private fun coerceInF(v: Float, min: Float, max: Float): Float {
-        if (v < min) return min
-        return if (v > max) max else v
-    }
-
-    fun setProsody(rate: Int, pitch: Int, volume: Int, rateMultiplier: Float) {
-        // Legacy Guangrong routing dropped; prosody is handled by synthesizeCore's internal setParam
-        lastNativePitch = mapPitch(pitch)
     }
 
     companion object {
@@ -205,15 +116,22 @@ class EloquenceEngine(context: Context) {
          *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
         @Volatile var skipWarmupForAutotest = false
 
-        private fun applyDict(text: String, entries: List<DictEntry>): String {
-            var t = text
-            for (e in entries) {
-                if (e.word.isEmpty()) continue
-                val flag = if (e.caseSensitive) "" else "(?i)"
-                val re = Regex(flag + "\\b" + Regex.escape(e.word) + "\\b")
-                t = re.replace(t) { e.spoken }
+        private fun applyDict(text: String, rules: List<Pair<Regex, String>>): String {
+            var result = text
+            for ((pattern, spoken) in rules) {
+                // Bound chained replacements too; dictionary entries can expand each other.
+                val next = StringBuilder()
+                var offset = 0
+                for (match in pattern.findAll(result)) {
+                    require(next.length + match.range.first - offset + spoken.length <= 16384) { "Dictionary expansion too large" }
+                    next.append(result, offset, match.range.first).append(spoken)
+                    offset = match.range.last + 1
+                }
+                require(next.length + result.length - offset <= 16384) { "Dictionary expansion too large" }
+                next.append(result, offset, result.length)
+                result = next.toString()
             }
-            return t
+            return result
         }
 
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
@@ -221,7 +139,7 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
         const val DIALECT_ES_MX =                          0x20002    // [2.2] esmx (real Mexican Spanish module
         const val DIALECT_ES_US =                          0x20001    // [2.1] esus — US Spanish (#18: no const existed; shipped module esus
-        const val DIALECT_PL_PL =                         0x110000    // [11.0] plpl — Polish (#18: shipped module plpl; segment not in buildEloquenceConfig — known gap
+        const val DIALECT_PL_PL =                         0x110000    // [11.0] plpl — Polish
         const val DIALECT_FR_FR = 0x30000    // [3.0] fra
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
@@ -235,18 +153,7 @@ class EloquenceEngine(context: Context) {
         // Language modules actually linked in this build (matches build_native.sh LANGS)
         // chs is linked (synthesis = oracle voice bank); zh-TW (cht)/ko (kor) have no module,
         // the native side would reject them; we intercept first so nothing depends on that rejection.
-        val SHIPPED_DIALECTS: Set<Long> = setOf(
-            0x10000L, 0x10001L,             // enus, engb
-            0x20000L, 0x20001L, 0x20002L,    // eses, esus, esmx
-            0x30000L, 0x30001L,             // frfr, frca
-            0x40000L,                       // dede
-            0x50000L,                       // itit
-            0x70000L,                       // ptb
-            0x80000L,                       // jajp
-            0x90000L,                       // fin
-            0x110000L,                      // plpl
-            0x60000L,                       // chs
-        )
+        val SHIPPED_DIALECTS: Set<Long> = VoiceRegistry.voices.map { it.dialect.toLong() }.toSet()
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
         // Engine's real output rate:  the enu library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
                 const val ENGINE_SAMPLE_RATE = 11025
@@ -256,8 +163,6 @@ class EloquenceEngine(context: Context) {
 
                 const val SAMPLE_RATE = 44100
 
-        private val CHINESE_CHARSET: Charset = Charset.forName("GB18030")
-        private val ENGLISH_CHARSET: Charset = Charset.forName("windows-1252")
 
         /** Dialect -> text encoding (CJK uses its own encodings; Western uses windows-1252) */
         private fun charsetForDialect(dialect: Int): Charset {
@@ -265,6 +170,7 @@ class EloquenceEngine(context: Context) {
                 DIALECT_ZH_CN -> Charset.forName("GB18030")
                 DIALECT_ZH_TW -> Charset.forName("Big5")
                 DIALECT_JA_JP -> Charset.forName("Shift_JIS")
+                DIALECT_PL_PL -> Charsets.UTF_8 // openevv custom-character module decodes UTF-8
                 DIALECT_KO_KR -> Charset.forName("EUC-KR")
                 else -> Charset.forName("windows-1252")
             }
@@ -274,13 +180,14 @@ class EloquenceEngine(context: Context) {
          *  through unchanged —the Lingua/segment layer already handled their quirks. */
         private fun preprocess(
             text: String, dialect: Int,
-            userDict: List<DictEntry> = emptyList(),
+            userDict: List<Pair<Regex, String>> = emptyList(),
             readPunct: Boolean = false,
             numberMode: Int = 0,
         ): String {
             val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
                 TextNormalizer.normalizeForChinese(text) else text
-            if (base.isEmpty() || dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW) return base
+            if (base.isEmpty()) return base
+            if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW) return applyDict(base, userDict)
             // Factory (decompiled Eloquence apk) Western text cleanups + per-dialect
             // spoken-exception tables ( ia.b a() + language packs(, ported verbatim..
             // Case-insensitive substring semantics match the factory (no word boundaries(. The
@@ -438,43 +345,31 @@ class EloquenceEngine(context: Context) {
 
     fun stop() {
             stopped = true
-            engineEpoch++
+            engineEpoch.incrementAndGet()
             // Native stop (s->cancel=1 volatile) is the designed cross-thread cancellation:
             // it aborts the in-flight synth's own wait loop instead of queueing behind it.  Iterating
             // handles cross-thread is safe now that they live in a ConcurrentHashMap the worker may lazily grow.
 
             val worker = synthWorker
-            for (h in worker.handles.values) VvttsCore.stop(h)
-        }
-
-    /** Call after delivery has drained, so no more synthesis from that service can start. */
-    fun awaitActiveSynthesis() {
-        var interrupted = false
-        for (completion in activeSynthesis.toList()) {
-            while (true) {
-                try {
-                    completion.await()
-                    break
-                } catch (e: InterruptedException) {
-                    interrupted = true
-                }
+            synchronized(handleLock) {
+                for (h in worker.handles.values) VvttsCore.stop(h)
             }
         }
-        if (interrupted) Thread.currentThread().interrupt()
-    }
 
     @Synchronized
     fun shutdown() {
-        engineEpoch++
+        engineEpoch.incrementAndGet()
+        lifecycleEpoch.incrementAndGet()
         val worker = synthWorker
+        worker.retired = true
+        initialized = false
         try {
             worker.executor.execute {
                 // Cleanup queues behind any in-flight synthesis so it frees the
                 // handles on their owning thread only after the native call returns.
 
 
-                for (h in worker.handles.values) VvttsCore.shutdown(h)
-                worker.handles.clear()
+                closeHandles(worker)
             }
         } catch (ignore: RejectedExecutionException) {
             // A retired worker may still be using its handles; its in-flight task
@@ -508,25 +403,46 @@ class EloquenceEngine(context: Context) {
             Thread.currentThread().interrupt()
             worker.executor.shutdownNow()
         }
+        retireExecutor.shutdown()
         synthWorker = SynthWorker()
         initialized = false
-        core = null
         }
 
     fun isInitialized(): Boolean = initialized
-    fun getNativeHandle(): Long = nativeHandle
     fun getSampleRate(): Int = SAMPLE_RATE
 
         // ===== In-house bridge (the only synthesis path) =====
-    private var lastSynthRate =  44100  // output rate of the most recent synthesized audio (44.1k after resample(
-    fun getCoreSampleRate(): Int = lastSynthRate
+    fun getCoreSampleRate(): Int = SAMPLE_RATE
 
     /** Open + cache the engine handle for a dialect (no synthesis(.  Doing this
      *  once inthe background after onCreate removes the LPC voice-table load from
      *  the critical path of the first utterance (the single biggest "hover to
      *  speech" latency component(.
      */
+    private fun closeHandles(worker: SynthWorker) {
+        val handles = synchronized(handleLock) {
+            val values = worker.handles.values.toList()
+            worker.handles.clear()
+            values
+        }
+        handles.forEach { VvttsCore.shutdown(it) }
+    }
+
+    private fun retireHandle(worker: SynthWorker, dialect: Int, handle: Long) {
+        val removed = synchronized(handleLock) { worker.handles.remove(dialect, handle) }
+        if (removed) {
+            worker.lastParamSig = null
+            try {
+                retireExecutor.execute { VvttsCore.shutdown(handle) }
+            } catch (_: RejectedExecutionException) {
+                // Teardown closed the executor while this owning worker returned.
+                VvttsCore.shutdown(handle)
+            }
+        }
+    }
+
     private fun ensureHandle(worker: SynthWorker, dialect: Int): Long {
+        if (worker.retired || synthWorker !== worker || !initialized) return 0L
         val cached = worker.handles[dialect] ?: 0L
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
@@ -534,25 +450,23 @@ class EloquenceEngine(context: Context) {
         if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); return 0L }
         val libDir = File(libDirRaw)
         val cfgDir = File(storageContext.filesDir, "eloquence")
-        try {
-            FileWriter(File(cfgDir, "eci.ini")).use { fw ->
-                fw.write(buildEloquenceConfig(libDir))
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "write eci.ini failed", e)
-            return 0L
-        }
-        val epoch = engineEpoch
+        val epoch = lifecycleEpoch.get()
         val handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
         Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
         if (handle ==  0L) return 0L
-        // A handle born across a rotate/shutdown/stop is retired, never cached —
-        // the zombie worker that opened it may still be driving it.
-        if (epoch != engineEpoch) {
+        // A handle born across a rotate/shutdown is retired, never cached —
+        // the zombie worker that opened it may still be driving it. A stop does
+        // not retire the owning worker, so a handle opened across a stop is kept.
+        if (epoch != lifecycleEpoch.get() || worker.retired || synthWorker !== worker || !initialized) {
             VvttsCore.shutdown(handle)
             return   0L
         }
-        worker.handles[dialect] = handle
+        val accepted = synchronized(handleLock) {
+            if (epoch != lifecycleEpoch.get() || worker.retired || synthWorker !== worker || !initialized) false
+            else { worker.handles[dialect] = handle; true }
+        }
+        // Native destruction can wait; never hold the lock used by Stop while closing.
+        if (!accepted) { VvttsCore.shutdown(handle); return 0L }
         return handle
     }
 
@@ -580,41 +494,16 @@ class EloquenceEngine(context: Context) {
             Log.i(TAG, "warmupDialect skipped: engine not initialized")
             return
         }
+        val epoch = lifecycleEpoch.get()
         try {
-            worker.executor.execute { ensureHandle(worker, dialect) }
+            worker.executor.execute {
+                if (epoch == lifecycleEpoch.get() && !worker.retired && synthWorker === worker && initialized)
+                    ensureHandle(worker, dialect)
+            }
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "warmupDialect skipped: executor shutting down")
         }
     }
-    /** Currently selected voice preset (1-8( and custom-mode flag */
-    @Volatile private var voicePreset = 1
-    @Volatile private var voiceCustom = false
-    @Volatile private var customPitch = 50
-
-    /**
-     * Apple Kona CSV backtick annotation.
-     * `vN=standard voice number` vs=speed (0-100)` vv=volume` vy=vocalTract
-     * `vb=breathiness `vh=headSize `vr=roughness `vf=pitchFluctuation `vb?=pitch
-     * All values come from KonaVoicePresets.csv (Reed=1 Shelley=2 Sandy=3 Rocko=4 Flo=6 Grandma=7 Grandpa=8 Eddy=9)
-     */
-    private fun presetAnnotation(n: Int): String {
-        return when (n) {
-            1 -> "`v1 `vs50 `vv90"                              // Reed
-            2 -> "`v3 `vb61 `vh31 `vr18 `vy20 `vf44 `vs50 `vv90" // Sandy
-            3 -> "`v2 `vb20 `vh30 `vr5  `vy30 `vf30 `vs50 `vv90" // Shelley
-            4 -> "`v4 `vb0  `vh50 `vr45 `vy50 `vf25 `vs48 `vv90" // Rocko
-            5 -> "`v9 `vb10 `vh55 `vr8  `vy50 `vf35 `vs50 `vv90" // Eddy
-            6 -> "`v6 `vb35 `vh35 `vr10 `vy35 `vf40 `vs52 `vv90" // Flo
-            7 -> "`v8 `vb30 `vh45 `vr28 `vy45 `vf22 `vs44 `vv90" // Grandpa
-            8 -> "`v7 `vb45 `vh40 `vr20 `vy40 `vf35 `vs45 `vv90" // Grandma
-            else -> "`v1"
-        }
-    }
-
-    /**
-     * Synthesis runs on the in-house bridge (full Apple engine, all 14 languages supported().
-     * Voice is driven by presetId (1-8 Apple presets(, going through eciSetStandardVoice2.
-     */
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int): ShortArray? {
         return synthesizeCore(text, dialect, volume, presetId, 50)
     }
@@ -633,7 +522,6 @@ class EloquenceEngine(context: Context) {
                 Log.e(TAG, "dialect not in this build: 0x" + Integer.toHexString(dialect))
                 return@synthWithTimeout null
             }
-            if (core == null) core = VvttsCore()
 
             // session lazy-loading (cached per dialect(
             val handle = ensureHandle(worker, dialect)
@@ -651,76 +539,24 @@ class EloquenceEngine(context: Context) {
             // every utterance speaks engine default=Reed; params tune but never pick the voice.
 
 
-            if (voice.eciVoiceNumber != worker.pendingEciVoiceByDialect[dialect]) {
-
-                if (VvttsCore.setStandardVoice(handle, voice.eciVoiceNumber) >=  0) {
-                    worker.pendingEciVoiceByDialect[dialect] = voice.eciVoiceNumber
-                } else {
-                    // Voice copy failed: drop the cached voice so a later utterance retries the copy.
-
-                    worker.pendingEciVoiceByDialect.remove(dialect)
-                }
-            }
-
             val vp = voiceProfile
-            val sigBase = presetId.toString() + "|" + dialect + "|" + uiPitch + "|" + uiRate + "|" + volume + "|" + voice.eciVoiceNumber
-            // Voice-character overrides (head/fluc/rough/breath) bust the the voice-param cache too:
-            // dragging a char slider leaves the sig unchanged and the engine skips param re-injection ( dead sliders(.
-            val sigChar = if (vp != null) VoiceProfile.EDITABLE_PARAMS.joinToString("|") { p -> vp.getParam(presetId,	p).toString() } else ""
-            val sig = sigBase + "|" + sigChar
-            val sameAsLast = sig == worker.lastParamSig
-            var paramWriteFailed = false   // set by the 8-param injection loop on native failure
-            val pitchBase = mapUiPitchToKona(uiPitch, voice.pitchBase)   // eciPitchBaseline
-            val speedVal = Math.round(50.0f * uiRate /  100.0f)
-                .toInt().coerceIn(5,  250)   // eciSpeed:  0..250 (engine ceiling
-
-            if (!sameAsLast) {
-            // Inject this voice's 8 ECI voice params (gender=0 head=1 pitchBase=2
-            // pitchFluc=3 rough=4 breath=5 speed=6 vol=7.
-            var pitchLogged = false
-            var speedLogged = false
-            var volLogged = false
-            for (p in 0..7) {
-            // Custom overrides first; otherwise KonaVoice defaults
-                val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
-                val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
-                if (ret < 0) paramWriteFailed = true
-                // Diagnostic-only logging (remove after root cause found): failures always;
-                // successes once per param, so a dead channel shows in logcat without spam.
-
-                if (ret < 0) {
-                    Log.w("VvTts", "voice param #$p=$value -> ret $ret (FAILURE)")
-                    paramWriteFailed = true
-                } else if (p==2 && !pitchLogged) {
-
-                    Log.i("VvTts", "voice param #2 pitch=$value -> ret $ret (OK)")
-                    pitchLogged = true
-                } else if (p==6 && !speedLogged) {
-                    Log.i("VvTts", "voice param #6 speed=$value -> ret $ret (OK)")
-                    speedLogged = true
-                } else if (p==7 && !volLogged) {
-                    Log.i("VvTts", "voice param #7 vol=$value -> ret $ret (OK)")
-                    volLogged = true
+            val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
+            params[2] = mapUiPitchToKona(uiPitch, params[2])
+            params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
+            val sig = "$presetId|$dialect|" + params.joinToString("|")
+            if (worker.lastParamSig != sig) {
+                worker.lastParamSig = null
+                // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
+                val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
+                val configured = copied >= 0 && params.indices.all { p ->
+                    VvttsCore.setVoiceParam(handle, 0, p, params[p]) >= 0
+                } && VvttsCore.setParam(handle, VvttsCore.ECI_SAMPLE_RATE, 1) >= 0
+                if (!configured) {
+                    retireHandle(worker, dialect, handle)
+                    return@synthWithTimeout null
                 }
+                worker.lastParamSig = sig
             }
-
-            // User UI params
-            // Pitch: UI 0-100 -> Apple pitchBase (±30 around the voice's own pitchBase
-            if (VvttsCore.setVoiceParam(handle, 0, 2, pitchBase) < 0) paramWriteFailed = true   // eciPitchBaseline
-
-            // Speed: eciSpeed voice param (voice param 6, range 0..250, 50=normal,
-                        // matching the CSV speed in the 8-param injection above; previously eciSampleRate
-                        // (env[5]) resampling faked the speed,and the 22050/32000/44100 steps force-sinc'd
-                        // the 11 kHz LPC voice up — it sounded like pure electric crackle — dropped.
-                        // Engine outputs native 11025;the JNI layer upsamplest it to 44.1k for playback.
-                        if (VvttsCore.setVoiceParam(handle, 0, 6, speedVal) < 0) paramWriteFailed = true
-                        VvttsCore.setParam(handle,  5,  1)   // eciSampleRate=1 => engine stays native,no speed-side effects
-                                                lastSynthRate = 44100  // post-resample playback rate
-
-
-            // Volume: CSV preset volume; no second applyVolume; set the voice param first
-            if (VvttsCore.setVoiceParam(handle, 0,   7, voice.vol) < 0) paramWriteFailed = true   // eciVolume
-                        }
             // Encoding
             val cs = charsetForDialect(dialect)
             val encoded: ByteArray
@@ -729,7 +565,7 @@ class EloquenceEngine(context: Context) {
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
                     .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext,  preprocess(
-                                            text,  dialect,  userDictionary.dictEntries(),  userDictionary.punctEnabled,
+                                            text,  dialect,  userDictionary.compiledDictionary(),  userDictionary.punctEnabled,
                                             if (userDictionary.numberEnabled) userDictionary.numberModePref else -1))))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
@@ -738,36 +574,15 @@ class EloquenceEngine(context: Context) {
                 return@synthWithTimeout null
             }
             val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
-            val outFile = File(storageContext.cacheDir, "core_pcm_out_" + UUID.randomUUID())
-            if (!sameAsLast) {
-            // Second param write right before synthesis — an addText/internal reset on this
-            // call path would otherwise drop the first batch (CLI only ever writes once, before add(.
-            for (p in 0..7) {
-                val value = if (vp != null && vp.hasOverride(presetId, p)) vp.getParam(presetId, p) else voice.param(p)
-                val ret = VvttsCore.setVoiceParam(handle, 0, p, value)
-                if (ret < 0) paramWriteFailed = true
-            }
-            VvttsCore.setVoiceParam(handle, 0, 2, pitchBase)   // eciPitchBaseline
-                        VvttsCore.setVoiceParam(handle, 0, 6, speedVal)
-            VvttsCore.setVoiceParam(handle, 0,   7, voice.vol)   // eciVolume
-                        }
-                        var pcm = VvttsCore.synth(handle, dialect, encoded, charset, null)
-            // DSP mode read live from prefs so both the Settings test path and the
-            // TTS service honor the toggle without restart (0 = standard, 1 = enhanced).
-            runCatching { outFile.delete() }
+            var pcm = VvttsCore.synth(handle, dialect, encoded, charset, null)
             if (pcm != null && pcm.isEmpty()) {
                 // Native retirement is permanent. The next utterance opens a
                 // fresh session and must reapply its voice and parameters.
-                if (worker.handles.remove(dialect, handle)) {
-                worker.pendingEciVoiceByDialect.remove(dialect)
-                worker.lastParamSig = null
-                retireExecutor.execute { VvttsCore.shutdown(handle) }
-                }
+                retireHandle(worker, dialect, handle)
                 return@synthWithTimeout null
             }
             if (pcm != null && pcm.size > 0) {
                 pcm = applyVolume(pcm, volume)
-                if (!paramWriteFailed) worker.lastParamSig = sig  // only admit success:failed param writes must retry (stale sig ⇒ next utterance re-injects them)
             }
             pcm
         }
@@ -776,129 +591,10 @@ class EloquenceEngine(context: Context) {
     /** UI pitch 0-100 -> Apple pitchBase (±30 around the current voice's pitchBase) */
     private fun mapUiPitchToKona(uiPitch: Int, basePitch: Int): Int {
         // uiPitch 50 = neutral (voice's default pitchBase(; 0 = -30; 100 = +30
-        val offset = uiPitch - 50
-        val requested = basePitch + Math.round(offset * 0.6).toInt()
-        val pitch = coerceIn(requested, 40, 120)
-        if (pitch != requested) {
-            Log.w(TAG, "pitchBase $requested clamped to $pitch (engine range 40..120)")
-        }
-        return pitch
+        val pitch = uiPitch.coerceIn(0, 100)
+        val base = basePitch.coerceIn(0, 100)
+        return if (pitch <= 50) base * pitch / 50 else base + (100 - base) * (pitch - 50) / 50
     }
-
-    /** Set the voice preset (1-8() */
-    fun setVoicePreset(n: Int) {
-        voicePreset = coerceIn(n, 1, 8)
-        voiceCustom = false
-        Log.e(TAG, "voicePreset -> " + voicePreset)
-    }
-
-    /** Custom pitch mode (driven directly by the UI slider( */
-    fun setCustomPitch(pitch: Int): Int {
-        val effective = coerceIn(pitch, 0, 100)
-        if (effective != pitch) {
-            Log.w(TAG, "setCustomPitch: requested $pitch clamped to $effective (range 0..100)")
-        }
-        customPitch = effective
-        voiceCustom = true
-        return effective
-    }
-
-    fun getPendingPitchFactor(): Float = pendingPitchFactor
-
-    /**
-     * Apply the speaking voice (voice params are now read inside synthesizeCore from the
-     * voiceProfile override; this stub stays for backward compat.)
-     */
-    fun applyVoiceProfile(dialect: Int, profile: VoiceProfile?) {
-        // Nothing extra needed: synthesizeCore already reads overrides via the voiceProfile field
-    }
-
-    // Apple-CSV pitchBase-derived voice pitch factor (Reed=65 is the baseline(
-    private fun presetPitchFactor(n: Int): Float {
-        return when (n) {
-            1 -> 1.00f  // Reed
-            2 -> 1.43f  // Sandy
-            3 -> 1.25f  // Shelley
-            4 -> 0.86f  // Rocko
-            5 -> 1.06f  // Eddy
-            6 -> 1.37f  // Flo
-            7 -> 0.94f  // Grandpa
-            8 -> 1.05f  // Grandma
-            else -> 1.0f
-        }
-    }
-
-    // Voice speed factor (Apple CSV speed=50-baseline character tuning(
-    private fun presetSpeedFactor(n: Int): Float {
-        return when (n) {
-            1 -> 1.00f  // Reed
-            2 -> 1.03f  // Sandy
-            3 -> 1.01f  // Shelley
-            4 -> 0.98f  // Rocko
-            5 -> 1.00f  // Eddy
-            6 -> 1.02f  // Flo
-            7 -> 0.94f  // Grandpa
-            8 -> 0.96f  // Grandma
-            else -> 1.0f
-        }
-    }
-
-    // Apple CSV eciVoiceNumber (en-US(: Reed=1 Shelley=2 Sandy=3 Rocko=4 Flo=6 Grandma=7 Grandpa=8 Eddy=9
-    private fun presetEciVoice(n: Int): Int {
-        return when (n) {
-            1 -> 1  // Reed
-            2 -> 3  // Sandy
-            3 -> 2  // Shelley
-            4 -> 4  // Rocko
-            5 -> 9  // Eddy
-            6 -> 6  // Flo
-            7 -> 8  // Grandpa
-            8 -> 7  // Grandma
-            else -> 1
-        }
-    }
-
-    /**
-     * Uses Apple KonaVoicePresets.csv params (breathiness/headSize/roughness/pitchFlutter(
-     * injected into the current voice via eciSetVoiceParam. ECI voice param numbers (matching the Apple CSV fields(:
-     * Voice-quality params go through ECI's standard voice param channel.
-     */
-    private fun applyCsvVoiceParams(handle: Long, presetId: Int) {
-    // Apple CSV {breathiness, headSize, roughness, pitchFluctuation}
-        val p: IntArray = when (presetId) {
-            2 -> intArrayOf(50, 50, 0, 30)   // Shelley
-            3 -> intArrayOf(50, 22, 0, 30)   // Sandy
-            4 -> intArrayOf(0, 50, 0, 30)    // Rocko
-            5 -> intArrayOf(0, 55, 0, 30)    // Eddy
-            6 -> intArrayOf(35, 35, 0, 40)   // Flo
-            7 -> intArrayOf(20, 30, 18, 44)  // Grandpa
-            8 -> intArrayOf(45, 40, 20, 35)  // Grandma
-            else -> intArrayOf(0, 50, 0, 30) // Reed
-        }
-        // ECI voice param:eciPitchBaseline=2, eciSpeed=3, eciVolume=4, eciGeneral=5,
-            // eciSayAsCtrl=6 ... roughness/breath are engine-specific extended params; trying common numbers here
-            // Conservative: only safe, verified base params are set; tone quality rides on voiceNumber itself
-            // (voiceNumber is switched via eciSetStandardVoice2, so the base timbre follows it)
-        Log.e(TAG, "csvVoiceParams preset=" + presetId + " breath=" + p[0]
-                + " head=" + p[1] + " rough=" + p[2] + " flutter=" + p[3])
-    }
-
-        // SAPI inline tags (natively supported by Eloquence; format follows chtvoice.sapi.txt(
-        // \\v=X\\ switches the standard voice number directly
-    private fun presetSapiMark(n: Int): String {
-        return when (n) {
-            1 -> "\\v=1\\"   // Reed
-            2 -> "\\v=3\\"   // Sandy
-            3 -> "\\v=2\\"   // Shelley
-            4 -> "\\v=4\\"   // Rocko
-            5 -> "\\v=9\\"   // Eddy
-            6 -> "\\v=6\\"   // Flo
-            7 -> "\\v=8\\"   // Grandpa
-            8 -> "\\v=7\\"   // Grandma
-            else -> ""
-        }
-    }
-
 
     // Runs a synthesis body on the single worker thread. If it has not finished
     // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
@@ -910,6 +606,7 @@ class EloquenceEngine(context: Context) {
             return null
         }
         val worker = synthWorker
+        val requestEpoch = engineEpoch.get()
         val future = try {
             worker.executor.submit<ShortArray?> {
                 // Fail closed even if queued before retire:the retired engine's native
@@ -917,9 +614,7 @@ class EloquenceEngine(context: Context) {
 
 
  
-                if (SystemClock.elapsedRealtime() < retireUntilMs) {
-
-
+                if (requestEpoch != engineEpoch.get() || synthWorker !== worker || SystemClock.elapsedRealtime() < retireUntilMs) {
                     Log.w(TAG, "TTS_HANG: retired engine; dropping queued synthesis")
                     null
                 } else {
@@ -932,9 +627,8 @@ class EloquenceEngine(context: Context) {
                     // replacement worker's thread. Idempotent: a queued shutdown cleanup (or an
                     // already-cleared cache) makes this a no-op.
 
-                    if (synthWorker !== worker) {
-                        for (h in worker.handles.values) VvttsCore.shutdown(h)
-                        worker.handles.clear()
+                    if (worker.retired || synthWorker !== worker) {
+                        closeHandles(worker)
                     }
                 }
                 r
@@ -949,7 +643,7 @@ class EloquenceEngine(context: Context) {
             return null
         }
         return try {
-            future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS)
+            future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS).takeIf { requestEpoch == engineEpoch.get() }
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e)
             var first = true
@@ -976,18 +670,20 @@ class EloquenceEngine(context: Context) {
 // The single worker froze (can't interrupt native code(: retire it, start a fresh
     // executor + fresh native handles so subsequent requests work again immediatel
     private fun rotateEngine() {
+        val worker = synthWorker
+        worker.retired = true
         try {
-            synthWorker.executor.shutdownNow()
+            worker.executor.shutdownNow()
         } catch (e: Exception) {
             Log.e(TAG, "rotate: shutdown failed", e)
         }
         // JNI stop/shutdown are not safe while the retired worker is in native code.
         // Leave its handles with it; the replacement worker owns a separate cache.
-        engineEpoch++
+        engineEpoch.incrementAndGet()
+        lifecycleEpoch.incrementAndGet()
         // A fresh worker starts with empty per-worker caches; fresh handles begin at
         // the engine-default voice, so no stale voice/param state can leak across an open.
 
         synthWorker = SynthWorker()
-        hangDetected = true
     }
 }

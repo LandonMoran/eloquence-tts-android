@@ -188,4 +188,5 @@ What the voice speaks - tap to change</string>
     <string name="update_failed_fmt">Update failed: %1$s</string>
     <string name="update_install_ok">Update installed</string>
     <string name="update_open_release">Open release page</string>
+    <string name="dict_import_failed">Dictionary import failed: %1$s. No entries were changed.</string>
 </resources>

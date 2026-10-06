@@ -15,10 +15,8 @@
 #include <pthread.h>
 
 #include "eci.h"
+#include "eci_compat.h"
 #include "eci/api/eci_old.h"
-
-/* ECIVoice is a private per-file typedef in the engine. */
-typedef struct ECIVoice { int32_t w[0x14]; } ECIVoice;
 
 /* ---- engine entry points this layer calls. ---- */
 
@@ -36,11 +34,9 @@ extern int32_t api_delete(void *self);
 extern int32_t api_add_text(void *self, void *text, int32_t b, int32_t c, int32_t d, int32_t f);
 extern int32_t api_synthesize(void *self);
 
-extern void cpp_delete(void *p);
-
-extern int setRealWorldVoiceParam(char *voice, int which, int value);
-extern int getRealWorldVoiceParam(ECIVoice v, int which);
-extern void setRealWorldParamsFromECIParams(char *voice, int which);
+extern int es_delete_checked(OldInst *h);
+extern int vc_getVoiceParam(OldInst *h, int voiceno, int which);
+extern int vc_copyVoice(OldInst *h, int from, int to);
 
 extern int vc_setVoiceParam(OldInst *h, int voiceno, int which, int value);
 
@@ -69,16 +65,10 @@ ECIAPI ECIHand ECICALL eciNewEx(int language)
 
 ECIAPI ECIHand ECICALL eciDelete(ECIHand handle)
 {
-    OldInst *h = (OldInst *)handle;
-    if (!h)
-        return (ECIHand)0;
-    api_delete(OI_NEW((OldInst *)handle));
-    cpp_delete(OI_CONCAT((OldInst *)handle));
-    /* The engine instance lives in its own arena (evv_arena, mmap'd), not
-     * malloc; free() here is an invalid free that corrupts the heap
-     * ("double free or corruption (out)" + SIGABRT) on glibc and bionic.
-     * api_delete/cpp_delete dispose the engine side. */
-    return (ECIHand)0;
+    if (!handle) return NULL;
+    // Destruction runs inside the engine so its arena allocator and owned
+    // queues/converted strings are all released by their actual owner.
+    return es_delete_checked((OldInst *)handle) ? NULL : handle;
 }
 
 ECIAPI int ECICALL eciSetOutputBuffer(ECIHand handle, int samples, short *buffer)
@@ -94,6 +84,16 @@ ECIAPI int ECICALL eciSetParam(ECIHand handle, int parameter, int value)
 ECIAPI void ECICALL eciRegisterCallback(ECIHand handle, ECICallback callback, void *data)
 {
     eo_registerCallback((OldInst *)handle, (void *)callback, data);
+}
+
+/* Keep the public void ABI, but let the JNI constructor verify registration.
+ * eo_registerCallback only assigns these two fields and may refuse reentry. */
+int vv_register_callback(ECIHand handle, ECICallback callback, void *data)
+{
+    OldInst *h = (OldInst *)handle;
+    if (!h || !callback) return 0;
+    eo_registerCallback(h, (void *)callback, data);
+    return OI_CALLBACK(h) == (void *)callback && OI_CBDATA(h) == data;
 }
 
 ECIAPI int ECICALL eciAddText(ECIHand handle, const void *text)
@@ -113,8 +113,7 @@ ECIAPI int ECICALL eciSpeaking(ECIHand handle)
 
 ECIAPI int ECICALL eciStop(ECIHand handle)
 {
-    eo_stop((OldInst *)handle);
-    return 0;
+    return eo_stop((OldInst *)handle);
 }
 
 ECIAPI int ECICALL eciClearInput(ECIHand handle)
@@ -123,15 +122,6 @@ ECIAPI int ECICALL eciClearInput(ECIHand handle)
 }
 
 /* Voice editing. Voice 0 is the active voice. */
-
-static char *voice_slot(OldInst *h, int voice)
-{
-    if (voice == 0)
-        return OI_VOICE(h);
-    if (voice < 1 ||voice >  16)
-        return NULL;
-    return OI_VOICES(h) + (voice -  1) * VOICE_BYTES;
-}
 
 ECIAPI int ECICALL eciSetVoiceParam(ECIHand handle, int voice, int param, int value)
 {
@@ -145,29 +135,14 @@ ECIAPI int ECICALL eciSetVoiceParam(ECIHand handle, int voice, int param, int va
 
 ECIAPI int ECICALL eciGetVoiceParam(ECIHand handle, int voice, int param)
 {
-    char *slot = voice_slot((OldInst *)handle, voice);
-    if (!slot)
-        return -1;
-    return getRealWorldVoiceParam(*(ECIVoice *)slot, param);
+    return vc_getVoiceParam((OldInst *)handle, voice, param);
 }
 
 ECIAPI int ECICALL eciCopyVoice(ECIHand handle, int from, int to)
 {
-    OldInst *h = (OldInst *)handle;
-    char *src, *dst;
-
-    /* eciCopyVoice writes to voice 0 or  9 through 16. */
-    if (to != 0 && (to < 9 ||to >  16))
-        return 0;
-    src = voice_slot(h, from);
-    dst = voice_slot(h, to);
-    if (!src ||!dst)
-        return 0;
-    if (src == dst)
-        return 1;
-    memcpy(dst, src, VOICE_BYTES);
-    setRealWorldParamsFromECIParams(dst, -1);
-    return 1;
+    if (!handle || from < 0 || from > ECI_LAST_VOICE ||
+        (to != 0 && (to < 9 || to > ECI_LAST_VOICE))) return 0;
+    return vc_copyVoice((OldInst *)handle, from, to);
 }
 
 /* Japanese is a real member of the engine now: the romanizer lives in

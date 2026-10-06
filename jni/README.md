@@ -1,43 +1,19 @@
-# Native 桥接层（openevv 方案）
+# Native bridge
 
-本目录包含 native 桥接层源码，以及引擎本体随 `native/openevv/` 一并 vendor（MIT 协议，
-IBM Eloquence/ETI 的可移植 C 重实现，**不含任何 Apple 代码**）。
+`vvtts_core.c` exposes the eight `VvttsCore` JNI methods. `eci_compat.c` adapts the legacy openevv ABI, including checked construction/deletion and parameter error returns. The engine is statically linked into one `libvvtts_core.so` per ABI.
 
-- **`vvtts_core.c`** —— JNI 桥接层（唯一 native 源码），把 Kotlin 端的 8 个
-  `@JvmStatic external fun` 接到 openevv 的 `eci.h` API。
-  - 对应 `com.xw.vvtts.core.VvttsCore`（`System.loadLibrary("vvtts_core")`）：
-    `nativeInitEngine` `nativeSynthesize` `nativeSetVoiceParam` `nativeGetVoiceParam`
-    `nativeSetParam` `nativeSetStandardVoice` `nativeStop` `nativeShutdown`
-  - 采样率 `eciSampleRate=1`（11,025 Hz，引擎原生格式，与 Kotlin 播放端一致）
-  - voice 参数沿用原 ECI 编号（gender/head/pitch/fluctuation/roughness/breath/speed/volume），
-    并按 Kotlin 预设表做 pitch 40–120 → openevv 0–100 的钳位。
-激活 voice 恒为 0：
-    `eciCopyVoice(from, 0)` 把 8 个预设（Reed…Eddy、拷到活动 voice 上用 Kotlin 微调。
-  - 语音合成是异步回调（`eciRegisterCallback` 收集 `eciWaveformBuffer`），会话用
-    `eciSpeaking` 轮询等收尾——和旧桥层同一套契约。Kotlin 端已有合成锁，每次会话单线程驱动即可。
+## Runtime contract
 
-## 构建
+- Native engine PCM is signed 16-bit mono at 11,025 Hz, resampled to 44,100 Hz for Android. Both buffer edges fade to zero after resampling.
+- Voice 0 is active; standard source rows are 1–8. Eddy is native row 5. Kotlin's historical Apple row 9 is mapped explicitly.
+- Voice parameter ranges are gender 0–1, speed 0–250, other parameters 0–100. Engine sample rate stays at 1 and real-world units at 0. Pitch UI 0–50–100 maps to 0–preset–100.
+- JNI handles are monotonic IDs in a locked registry, with references held by active calls. Shutdown unpublishes the ID before reclaiming storage; stale calls fail without dereferencing freed memory.
+- Per-session operation guards serialize synthesis and controls. Only the synthesis owner calls legacy engine operations. Stop publishes an atomic generation; queued and late results are discarded. Failure to settle retires the session; its buffers are not reused.
+- Text is limited to 16 KiB and buffered native audio to 60 seconds. Oracle clips are bounded before allocation.
+- The 14 shipped dialects match `VoiceRegistry.kt`; `tests/contracts.py` enforces parity. Traditional Chinese and Korean are not advertised.
 
-`build_native.sh`（仓库根目录）把引擎+桥层**静态链接成单一 `native-libs/arm64-v8a/libvvtts_core.so`，
-并清空该目录下全部旧 `.so`（旧 Apple 语言库 `.so` 已从仓库删除，不再随 APK 分发）。
+## Build and verification
 
-- 交叉编译：`make CC=<NDK aarch64 clang> CFLAGS=-fPIC RULES=c` —— C 规则内联
-  （冷启动/延迟低于 bytecode 规则），10 个 IBM 语言全量打包进同一镜像。
-- 引擎运行时不读任何文件、不依赖任何库（仅 libm）。`.so` 自包含，APK 只需这一个 native 文件。
-- 唯一构件产物路径写死为 `native-libs/arm64-v8a/libvvtts_core.so`（已 gitignore）；CI 每次重新生成。
+GitHub Actions is the official Android SDK/NDK build machine. Do not run Android builds locally. `build_native.sh` builds arm64-v8a, armeabi-v7a or x86_64 according to `ABI`.
 
->
-
-## 测试路径
-
-CI（GitHub Actions `build.yml`）是唯一官方构建机器：NDK 出自 runner 镜像，产物直接进
-`build.sh` 的 APK 组装（`cp native-libs/arm64-v8a/*.so tmp_apk/lib/arm64-v8a/`）。本地只允许
-做源码级语法检查；开发机上不得跑 Android SDK/NDK 构建。
-
-
-## 语言状态
-
-引擎打包 10 个 IBM 语言：en-US、en-GB、de-DE、fr-FR、fr-CA、es-ES、es-US、it-IT、
-ja-JP、pl-PL。Kotlin UI 中的 zh/pt/ko/fi 槽位暂由引擎默认回退；添加新语言（含 zh-CN）见
-`native/openevv/docs/language.md`（数据编写工程，非代码工程）；质量改进（采样率 22.05k/44.1k、
-韵律规则微调）同样在文档里。
+Host source checks are allowed: `bash tests/native/run.sh` uses a JDK, GCC, ASan and UBSan to exercise JNI admission, cancellation, buffer ownership, bounded oracle allocation and compatibility failure propagation. Real-device listening and rapid TalkBack stop/restart checks remain release gates.

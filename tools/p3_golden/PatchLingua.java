@@ -35,7 +35,6 @@ public class PatchLingua {
         File outFile = new File(args[1]);
         byte[] bridge = readAll(new FileInputStream(args[2]));
         boolean patched = false;
-        boolean droppedBridge = false;
         try (JarInputStream jin = new JarInputStream(new FileInputStream(inFile));
               JarOutputStream jout = new JarOutputStream(new FileOutputStream(outFile))) {
             JarEntry e;
@@ -47,20 +46,19 @@ public class PatchLingua {
                     patched = pr.patched;
                 } else if (e.getName().equals(BRIDGE_CLASS)) {
 
-                    droppedBridge = true;
                     continue;
                 }
-                jout.putNextEntry(e);
+                JarEntry copy = new JarEntry(e.getName());
+                copy.setTime(0L);
+                jout.putNextEntry(copy);
                 jout.write(data);
                 jout.closeEntry();
             }
             if (!patched) {
                 throw new IllegalStateException("target method not found and not already patched");
             }
-            if (droppedBridge) {
-                throw new IllegalStateException("bridge class already present -- refusing to double-inject");
-            }
             JarEntry be = new JarEntry(BRIDGE_CLASS);
+            be.setTime(0L);
             jout.putNextEntry(be);
             jout.write(bridge);
             jout.closeEntry();
@@ -170,7 +168,7 @@ public class PatchLingua {
                 throw new IllegalStateException("pattern not found");
             }
         }
-        return new PatchResult(cw.toByteArray(), patched[0] || hasBridge);
+        return new PatchResult(patched[0] ? cw.toByteArray() : code, patched[0] || hasBridge);
     }
 
     static boolean containsUtf8(byte[] b, String s) {

@@ -24,8 +24,7 @@ reviews:
         This repository — `eloquence-tts-android` — is a Kotlin/Java Android app that exposes a
         `TextToSpeechService` backed by a native Eloquence engine (14 languages, 8 voices с ECI
         voice parameters(. It has NO Gradle build: artifact is built by `build.sh`
-        (aapt/d8/zipalign/apksigner( and verified by GitHub Actions workflows. There are no unit tests —
-        do not assume a test harness exists.
+        (aapt/d8/zipalign/apksigner( and verified by GitHub Actions workflows. Host regression harnesses live in tests/host and tests/native; Android builds run in CI.
 
         Review against these hard requirements:
         1. BINDER/PARCEL SAFETY — an exception escaping ANY voice-family override
@@ -36,8 +35,8 @@ reviews:
            in `onGetVoices` must carry a NON-NULL feature set ( `Voice.writeToParcel` builds
            `new ArrayList(mFeatures)` — a null list NPEs mid-reply, AFTER the method returned(.
         2. TTS FRAMEWORK CONTRACT — per Android docs and AOSP `TextToSpeechService.java`:
-           `onSynthesizeText` must be SYNCHRONOUS — enqueue the work, return fast, NEVER hold
-           the callback nor call it after returning. `onGetLanguage()` returns the CURRENT language's
+           `onSynthesizeText` must be SYNCHRONOUS: finish all callback calls before returning; NEVER retain
+           the callback or call it after returning. `onGetLanguage()` returns the CURRENT language's
            3-element `[language, country, variant]`, NOT the catalog. `onIsLanguageAvailable` /
            `onGetDefaultVoiceNameFor` / `onLoadLanguage` receive ISO-639-2/T THREE-letter codes
            (`eng`, `spa`, `jpn`( — prefix-matching them against 2-letter codes
@@ -51,14 +50,12 @@ reviews:
            (`lastModified()`-guarded( on every synthesis, and never rely on static in-memory state shared
            with the UI process. Direct-boot: route engine file writes through
            `createDeviceProtectedStorageContext()`, mirrors write-through..
-        4. SYNTHESIS LOOP — must not hold AOSP's serial synthesis thread for audio duration: offload
-           the whole synth+pacing+callback job to a dedicated singleThreadExecutor so `onStop()` arrives
-           promptly;`callback.start()`/`done()` must terminate EXACTLY ONCE even on throw
-           ( terminal `TextToSpeech.ERROR_SYNTHESIS`(; guard `callback.getMaxBufferSize() <= 0`;
-           `onStop()` must invalidate already-queued executor work via a monotonically-advancing
-           `generation` counter, dropping stale runnables BEFORE any flag reset. Request params:
-           `getSpeechRate()`/`getPitch()` return INT PERCENTS (100 = normal( — pass through, never treat
-           as floats or multiply.
+        4. SYNTHESIS LOOP — synthesize and deliver callbacks synchronously on the framework
+           synthesis thread. onStop arrives on another thread and must never acquire a lock
+           held across native synthesis or paced delivery. Stop invalidates the generation;
+           stale work must not clear cancellation or emit audio. Every accepted callback must
+           terminate according to the framework contract. Guard getMaxBufferSize() <= 0.
+           getSpeechRate()/getPitch() are integer percentages (100 = normal).
         5. ACCESSIBILITY–FIRST — TalkBack is the primary consumer; a broken default TTS engine
            is a full lockout for the user. Engine logs are the observable: cite logcat evidence for
            claims about case runtime behavior. Keep chat comments a11y-clean ( no ASCII art(.
@@ -68,16 +65,14 @@ reviews:
         executor owned by a scope something cancels; never swallow `CancellationException`;
         a non-null type filled from Java/framework can still hold null at runtime — validate at the boundary;
         `when` over sealed types as expressions; prefer immutable published state over mutated
-        collections re-emitted. Async handoff from `onSynthesizeText`: enqueue fast AND start audio
-        promptly — a worker stuck behind long prior work delays `start()`/`audioAvailable()`, which a
-        framework path waiting on audio can treat as a dead utterance → silent TalkBack.
+        collections re-emitted. Keep onSynthesizeText synchronous and onStop independently callable.
 
     - path: "AndroidManifest.xml"
       instructions: |
         TTS service must remain in its own process — `android:process=\":tts\"` is load-bearing
         (swipe-kill fix(; NEVER remove it. Service must be `directBootAware`, exported, with
-        `android.permission.BIND_TEXT_TO_SPEECH_SERVICE` intent-filter. Keep the
-        BootCompleteReceiver permission gates intact — they are intentional UX.
+        the android.intent.action.TTS_SERVICE intent-filter. Android defines no
+        BIND_TEXT_TO_SPEECH permission; do not add a nonexistent binding gate.
 
     - path: "jni/**"
       instructions: |

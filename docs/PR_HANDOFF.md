@@ -1,0 +1,203 @@
+# Prepared issue: consolidated TTS branch handoff
+
+This document prepares the consolidated PR description below. The branch link points to the current revision; the pinned commit identifies the first follow-up fix. Earlier environments could not create issues or PRs; the consolidated PR was created from the authorized checkout using the embedded description.
+
+## Branch and current status
+
+- Repository: [LandonMoran/eloquence-tts-android](https://github.com/LandonMoran/eloquence-tts-android)
+- Branch: `coderabbit/fix-open-issues-engine/5b367011`
+- First published commit from this follow-up audit: [`a3e91f00fd7e42768c6d8dd855d25c818c524fa3`](https://github.com/LandonMoran/eloquence-tts-android/commit/a3e91f00fd7e42768c6d8dd855d25c818c524fa3)
+- Base: `main`
+- [Browse branch](https://github.com/LandonMoran/eloquence-tts-android/tree/coderabbit/fix-open-issues-engine/5b367011) · [Open comparison / create PR](https://github.com/LandonMoran/eloquence-tts-android/compare/main...coderabbit/fix-open-issues-engine/5b367011?expand=1)
+- PRs #240, #241, #286 and #287 have been reviewed and integrated into this branch's history. They have not been merged into `main` by this task.
+- The coding environment permits branch pushes but refuses both issue and PR creation with `CODERABBIT_AGENT_RUNTIME_OWNS_GIT_DELIVERY`. This document is the prepared issue body for creating one consolidated PR; the issue command was also rejected with exit 89.
+
+## Continuation covering the 53 current open issues
+
+This continuation starts from `64bc339` on the same consolidation branch. It adds
+a publication helper and APK version-code validation, exact-country lookup, engine
+owner teardown, and retryable native cleanup. It adds regressions for the already
+serialized warmup path and Android's actual sample-result contract. Details and
+the eight new issue mappings are in `docs/repository-audit.md`.
+
+Validation for the continuation passed: full Kotlin API-34 compilation, nine host
+regression groups, three native ASan/UBSan suites, nine helper/source contracts and generated asset verification. The publication
+workflow change passes lint; the `publish` job is installed on this branch and covered by workflow integration assertions. APK packaging, device acceptance and real
+release/installation flows remain unverified here (no tag-triggered production release was run).
+
+Issue #291's requested `Activity.RESULT_OK` change conflicts with Android Settings:
+the platform consumer expects `TextToSpeech.LANG_AVAILABLE`. The existing code is
+preserved and now tested; that report is closed with the linked AOSP evidence.
+
+The earlier full continuation push was rejected because its GitHub App credential
+lacked workflow write permission; the non-workflow changes were then pushed
+normally. From the authorized checkout, `.github/workflows/release.yml` was later
+updated with the #288 `publish` job and pushed normally (no force push).
+Automatic release publication (#288) is now installed on this branch.
+
+The semantic updater requires APK-derived Android version-code metadata, which
+the installed `publish` job populates automatically from the signed APK manifests.
+Semantic releases without the marker are intentionally not offered. Helper
+contract tests and workflow integration assertions both pass, but release
+publication itself remains unverified until the first real signed release runs.
+
+Publication status: the non-workflow continuation was pushed as
+`5dcc8149e2f294467d947cb073a0109a53e8719f`; the #288 workflow change was pushed as
+`e1c2e3612c4477d29c89b1bf428f3d78b38b98c9`, both by normal push with no force
+push. The consolidated draft PR was created (see the status note below). Issue
+#288 is implemented on the branch and reopened; #291 is closed with the AOSP
+explanation.
+
+## Follow-up status note (2026-10-05)
+
+- Workflow head: `e1c2e3612c4477d29c89b1bf428f3d78b38b98c9`, pushed with a PAT
+  carrying workflow scope (normal push; no force push).
+- Consolidated PR: [pull/296](https://github.com/LandonMoran/eloquence-tts-android/pull/296),
+  draft, base `main`, head `coderabbit/fix-open-issues-engine/5b367011`. The
+  embedded description carries `Fixes #288` and `Closes #291`.
+- Fresh validation at the head: `tests/contracts.py` 10/10 pass including the new
+  `test_release_publication_integration`; `actionlint` 1.7.12 clean on all
+  `.github/workflows/*.yml`; `git diff --check` clean.
+- CI at the head at the time of writing: previous head `d0bc75a0` build
+  **success**; both `e1c2e361` build runs `in_progress`. Re-check before acting
+  on CI state (GitHub hides logs while runs are active).
+- Issue ops: #288 reopened with an implementation note; #291 closed with AOSP
+  evidence (`LANG_AVAILABLE == 0`, `Activity.RESULT_OK == -1 == LANG_MISSING_DATA`
+  in `TextToSpeech.java`).
+- No release was published and nothing was merged; closing superseded PRs
+  #240/#241/#286/#287 happens only after this PR lands, per the plan above.
+
+## What the branch changes
+
+Native session lifetime/cancellation/error handling; PCM boundaries; Direct Boot settings and atomic mirroring; dictionary bounds/decoding/cache; shared voice capability contracts; update flow lifetime/version/install checks; generated assets; CI/signing/oracle workflows; removal of demonstrably unused code. Full mapping: [repository-audit.md](https://github.com/LandonMoran/eloquence-tts-android/blob/coderabbit/fix-open-issues-engine/5b367011/docs/repository-audit.md).
+
+The latest pass confirmed and fixed four more defects:
+
+1. Locked-device preference edits could revert to the older credential copy after unlock.
+2. ECI clear/add/start errors could leave failed native sessions eligible for reuse.
+3. Embedded carriage returns could corrupt line-based stored dictionary entries.
+4. CR-only dictionary files merged records; the bounded importer now handles LF, CRLF and CR with all supported BOM encodings.
+
+## Validation and confidence
+
+- Passed locally on the branch: full Kotlin compilation against the public Android API 34 jar, nine host regression groups, JNI/oracle/compatibility ASan+UBSan suites, and nine contract tests.
+- One new failure-injection test initially caught an unfixed synthesis-start branch; that branch was fixed and the final native suite passed.
+- Previous generated-asset and workflow checks are reused only where relevant inputs stayed unchanged.
+- [Branch CI runs](https://github.com/LandonMoran/eloquence-tts-android/actions?query=branch%3Acoderabbit%2Ffix-open-issues-engine%2F5b367011) must be checked for the PR's exact head. Earlier failures are documented and corrected; a running build is not a pass.
+- Fresh checks at the workflow head: `tests/contracts.py` passes, including the new `test_release_publication_integration`; `actionlint` and `git diff --check` are clean. The concrete head SHA, consolidated PR link and its CI result are recorded in the follow-up status note in this file.
+- Still required: real-device listening, rapid TalkBack stop/restart, reboot before first unlock, service-rebind stress and an actual signed update confirmation flow.
+- Closed issue #141: the historical signing key is absent from the current tree, but remains in Git history. Owner confirmation of key rotation and released APK identity is still needed. Configure protected `release` environment reviewers/tag restrictions before release signing.
+
+**Assessment:** the reproduced findings in the covered host/native paths are fixed and their regressions pass. This audit continues to find defects, so I am not claiming the repository is defect-free or that its bugs are mostly gone. File/issue/commit inventories are coverage records, not proof of every file's semantics or every historical acceptance criterion. The 45 original open issues have implementation mappings; they have not been administratively closed by this task.
+
+## How to create the PR
+
+1. Open the comparison link above.
+2. Set base repository to this repository and base branch to `main`; compare branch must be `coderabbit/fix-open-issues-engine/5b367011`.
+3. Use title **Consolidate TTS fixes, remove dead code, and repair audited regressions**.
+4. Paste the PR description below. Create as a draft until CI for its head is green and the listed acceptance gaps are reviewed.
+5. Put the resulting PR link in this issue. Merge only after review; use a merge commit if the integrated PR ancestry should remain visible. Close superseded PRs after the consolidated PR lands, and close this handoff issue then.
+
+Alternatively, from an authenticated checkout with permission to create PRs:
+
+```bash
+gh pr create --repo LandonMoran/eloquence-tts-android \
+  --base main --head coderabbit/fix-open-issues-engine/5b367011 --draft \
+  --title "Consolidate TTS fixes, remove dead code, and repair audited regressions" \
+  --body-file pr-description.md
+```
+
+Save only the description below to `pr-description.md` before running that command.
+
+## Ready-to-use PR description
+
+```markdown
+## Summary
+
+The latest adversarial pass also preserves Direct Boot settings edits across unlock, retires native sessions after clear/add/start failures, prevents carriage returns from corrupting stored dictionary records, and preserves CR-only imported records.
+
+Consolidate reviewed PRs #240, #241, #286 and #287 with the application/runtime fixes on this branch. Optimization is limited to removing unused code and state; confirmed correctness gaps are repaired separately.
+
+- Fix native cancellation, ownership, configuration failure handling, PCM endpoints and bounded allocations. Closed issue #43 still used raw pointer handles: replace them with registry IDs/reference-held lifetimes and safe deferred shutdown.
+- Fix Direct Boot preferences, dictionary bounds/cache/strict decoding, voice registry/contracts, pitch mapping, update ownership/version/install contracts and synthesis work budget.
+- Fix closed warmup issue #187 and corpus issues #99/#52/#69 with deterministic regressions.
+- Remove unused futures, wrapper instance/state, obsolete locale helpers and mutable fields with no remaining use.
+- Include isolated release signing, exact APK ABI checks, pinned oracle inputs, explicit fanout assembly and content-aware asset generation from reviewed PR #287. Fix its observed CI failure caused by relying on ripgrep on GitHub runners.
+
+## Release publication
+
+The #288 `publish` job runs after signing, downloads `release-signed-apks`, and invokes `tools/publish_release.py` with the release tag, the signed directory and the aapt path. `contents: write` is granted only to that job; production signing secrets remain inside the protected signing job. Workflow integration assertions cover the dependency, artifact, invocation, permission, environment and secret boundaries; the workflow is lint-clean. No tag-triggered production release was run while preparing this PR, so real signed release publication remains an acceptance check. Fixes #288.
+
+## Review and integration
+
+All four PR heads are ancestors of this branch. The fixes from #240/#241/#286 were already incorporated and tested; merge records retain that implementation. #240's tail fade bug was corrected. #287's older copies of tests/tools were resolved in favor of the current regression fixes. Do not merge the standalone workflow PR before its application dependencies.
+
+## Audit scope
+
+Inventoried every current file, all 225 issues (45 open/180 closed), and all 570 commits reachable before consolidation. The coding task includes file hashes, categories, issue closure links and a commit ledger. This does not mean every historical revision was rebuilt or every vendored/reference file was semantically proven correct. See `docs/repository-audit.md` for verified findings and acceptance gaps.
+
+## Validation
+
+- Passed: full Kotlin compile and nine host regression groups; ASan/UBSan JNI/oracle/compatibility tests; source/resource/archive format checks; workflow lint; generated asset comparison (unchanged inputs reused).
+- Added native stale/invalid/repeated-handle and concurrent-shutdown tests, queued/in-flight warmup teardown tests, Unicode/case/locale corpus tests, corrupt dictionary and duplicate APK-entry tests.
+- Consolidated contracts include a tracked-signing-key guard. Android CI status is tracked on this branch; do not infer device readiness from host fixtures.
+- Outstanding: actual device listening, reboot before first unlock, service-rebind stress, signed installer interaction, and owner confirmation that the historical compromised signing key was rotated. The key remains in Git history; this PR does not rewrite shared history or rotate production identity.
+
+## Issues implemented
+
+Fixes #239
+Fixes #242
+Fixes #243
+Fixes #244
+Fixes #245
+Fixes #246
+Fixes #247
+Fixes #248
+Fixes #249
+Fixes #250
+Fixes #251
+Fixes #252
+Fixes #253
+Fixes #254
+Fixes #255
+Fixes #256
+Fixes #257
+Fixes #258
+Fixes #259
+Fixes #260
+Fixes #261
+Fixes #262
+Fixes #263
+Fixes #264
+Fixes #265
+Fixes #266
+Fixes #267
+Fixes #268
+Fixes #269
+Fixes #270
+Fixes #271
+Fixes #272
+Fixes #273
+Fixes #274
+Fixes #275
+Fixes #276
+Fixes #277
+Fixes #278
+Fixes #279
+Fixes #280
+Fixes #281
+Fixes #282
+Fixes #283
+Fixes #284
+Fixes #285
+Fixes #288 (publication workflow installed; real signed release acceptance pending)
+Fixes #289
+Fixes #290
+Closes #291 (existing Android contract confirmed; proposed change would regress it)
+Fixes #292
+Fixes #293
+Fixes #294
+Fixes #295
+```
+
+This handoff records the completed follow-up audit. The additional line-ending regression passes alongside the other host groups; no claim of exhaustive correctness is made.

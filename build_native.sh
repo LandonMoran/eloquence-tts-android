@@ -94,7 +94,7 @@ fi
 # 2. JNI bridge + engine static-linked into one .so.  -fvisibility=hidden
 # keeps engine internals private; JNIEXPORT marks the 8 natives + OnLoad public.
 
-"$CLANG" -shared -std=gnu99 -O2 -fPIC -fvisibility=hidden \
+"$CLANG" -shared -std=gnu11 -O2 -fPIC -fvisibility=hidden \
     -I native/openevv/include \
         -I native/openevv/src \
         -o "$OUT/libvvtts_core.so" \

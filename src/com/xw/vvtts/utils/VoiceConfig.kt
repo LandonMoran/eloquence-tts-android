@@ -2,10 +2,6 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Xml
-import org.xmlpull.v1.XmlPullParser
-import java.io.File
-import java.io.FileInputStream
 
 /** One user-dictionary rule: written word -> spoken form. Case-sensitive rules only
  *  match the exact written casing; others match any casing ( mirrors the factory's per-entry flag.
@@ -30,132 +26,12 @@ class VoiceConfig(private val context: Context) {
         val eciDialect: Long,
     )
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    // Direct-boot mirror: settings written here must also land in device-protected
-    // storage so a locked start (before first unlock( reads the same values (the service's
-    // boot-time init reads that copy; without write-through the mirror goes stale until the
-    // next unlocked service start, which is what made the voice revert at lock-screen).
-    private val devicePrefs: SharedPreferences =
-        context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    @Volatile private var cachedMap: Map<String, String>? = null
-    @Volatile private var cachedMtime: Long = -1L
-    /**
-     * Reads voice preferences from XML, reusing the cached map while the file timestamp is unchanged.
-     *
-     * Falls back to device-protected storage if the app preference file is absent.
-     * Closes the input stream after parsing and preserves an existing cache if reading fails.
-     */
-    private fun readMap(): Map<String, String> {
-        val appCtx = context.applicationContext ?: context
-        val f = try {
-            if (File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml").exists())
-                File(appCtx.getDataDir(), "shared_prefs/$PREFS.xml")
-            else File(context.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
-        } catch (ignore: Throwable) {
+    private val store = MirroredPreferences(context, PREFS)
+    private fun readMap() = store.strings()
+    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) { store.edit(block) }
 
-            File(context.createDeviceProtectedStorageContext().getDataDir(), "shared_prefs/$PREFS.xml")
-        }
-        val mt = if (f.exists()) f.lastModified() else -1L
-        if (cachedMap != null && mt == cachedMtime) return cachedMap!!
-        val map = HashMap<String, String>()
-        var parsedOk = false
-        if (f.exists()) {
-            try {
-                val parser = Xml.newPullParser()
-                FileInputStream(f).use { fis ->
-                    parser.setInput(fis, null)
-                    var t = parser.eventType
-                    var curKey: String? = null
-                                        val curVal = StringBuilder()
-                                        while (t != XmlPullParser.END_DOCUMENT) {
-                                            when (t) {
-                                                XmlPullParser.START_TAG -> {
-                                                    val n = parser.getAttributeValue(null, "name")
-                                                    val v = parser.getAttributeValue(null, "value")
-                                                    if (parser.name == "string") {
-                                                        curKey = n?.takeIf { it.isNotEmpty() }
-                                                        curVal.setLength(0)
-                                                    } else if (n != null && v != null) {
-                                                        map[n] = v
-                                                    }
-                                                }
-                                                XmlPullParser.TEXT -> if (curKey != null) curVal.append(parser.text ?: "")
-                                                XmlPullParser.END_TAG -> if (parser.name == "string" && curKey != null) {
-                                                    map[curKey!!] = curVal.toString()  // tolerate empty values; empty states are legitimate
-                                                    curKey = null
-                                                }
-                                            }
-                                            t = parser.next()
-                                        }
-                }
-            } catch (ignore: Throwable) {
-                // A transient read failure must not wipe a good cache; retry on the next access.
-
-                val prev = cachedMap
-                if (prev != null) return prev
-            }
-        } else {
-                    parsedOk = true  // No file yet: an empty state is authoritative
-                }
-                // Only cache a clean, complete parse; an in-progress XML write that
-                // happened to parse must not pin a partial map, so a later read retries.
-
-
-                if (parsedOk && (!f.exists() || map.isNotEmpty())) {
-
-                    cachedMap = map
-                    cachedMtime = mt
-                }
-                return map
-            }
-
-
-    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) {
-            // Synchronous, failure-checked commits; apply() is fire-and-forget, so a
-            // rejected/killed write silently reported success end left the pair split.
-
-
-
-            val snapshot = prefs.getAll()
-            val okCred: Boolean
-            try {
-                val a: SharedPreferences.Editor = prefs.edit(); block(a); okCred = a.commit()
-            } catch (ignore: Throwable) { return }  // nothing written: keep cache
-            if (!okCred) { invalidateCache(); return }
-            val okDevice: Boolean
-            try {
-                val b = devicePrefs.edit(); block(b); okDevice = b.commit()
-            } catch (ignore: Throwable) {
-                restorePrefs(prefs, snapshot)  // roll the first leg back: pair stays consistent
-                invalidateCache()
-                return
-            }
-            if (!okDevice) {
-                restorePrefs(prefs, snapshot)
-                invalidateCache()
-                return
-            }
-            invalidateCache()
-        }
-
-        private fun invalidateCache() {
-            cachedMap = null
-            cachedMtime = -1L
-        }
-
-        private fun restorePrefs(p: SharedPreferences, snapshot: Map<String, *>?) {
-            if (snapshot == null) return
-            val ed = p.edit(); ed.clear()
-            for ((k,v)in snapshot) when (v) {
-                is String -> ed.putString(k, v)
-                is Boolean -> ed.putBoolean(k, v)
-                is Int -> ed.putInt(k, v)
-                is Long -> ed.putLong(k, v)
-                is Float -> ed.putFloat(k, v)
-                is Set<*> -> ed.putStringSet(k, v.map { it.toString() }.toSet())
-            }
-            ed.commit()
-        }
+    val extraLogging: Boolean get() = store.getBoolean("extra_logging", false)
+    fun setExtraLogging(enabled: Boolean) { writeBoth { it.putBoolean("extra_logging", enabled) } }
 
     val voice: String
         get() = readMap()[KEY_VOICE] ?: "en-US"
@@ -165,9 +41,6 @@ class VoiceConfig(private val context: Context) {
         get() = readMap()[KEY_PITCH]?.toIntOrNull() ?: 50
     val volume: Int
         get() = readMap()[KEY_VOLUME]?.toIntOrNull() ?: 100
-    /** DSP mode: 0 = standard (raw engine output), 1 = enhanced (de-hiss + limiter). Default: standard. */
-    val dspMode: Int
-        get() = readMap()[KEY_DSP_MODE]?.toIntOrNull() ?: 0
     val isAutoDetect: Boolean
         get() = readMap()[KEY_AUTO_DETECT]?.toBoolean() ?: true
 
@@ -175,7 +48,6 @@ class VoiceConfig(private val context: Context) {
     fun setRate(r: Int) { writeBoth { it.putInt(KEY_RATE, r) } }
     fun setPitch(p: Int) { writeBoth { it.putInt(KEY_PITCH, p) } }
     fun setVolume(v: Int) { writeBoth { it.putInt(KEY_VOLUME, v) } }
-    fun setDspMode(m: Int) { writeBoth { it.putInt(KEY_DSP_MODE, m) } }
     fun setAutoDetect(b: Boolean) { writeBoth { it.putBoolean(KEY_AUTO_DETECT, b) } }
 
     fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT,  b) } }
@@ -189,69 +61,93 @@ class VoiceConfig(private val context: Context) {
         val numberModePref: Int
             get() = readMap()[KEY_NUMBER_MODE]?.toIntOrNull() ?: 0
 
-    /** Dictionary: newline-separated "word|spoken" lines in creation order. */
+    private var dictionaryRaw: String? = null
+    private var dictionaryEntries: List<DictEntry> = emptyList()
+    private var dictionaryRules: List<Pair<Regex, String>> = emptyList()
+
+    @Synchronized
     fun dictEntries(): List<DictEntry> {
-            val raw = readMap()[KEY_DICT] ?: ""
-            val out = ArrayList<DictEntry>()
-            for (line in raw.split("\n")) {
-                parseDictLine(line)?.let { out.add(it) }
-            }
-            return out
-        }
+        refreshDictionary()
+        return dictionaryEntries
+    }
 
-        /** Parse one stored "word|spoken[|cs]" line; null when malformed( no word/no spoken(.*/
-        private fun parseDictLine(line: String): DictEntry? {
-            val idx1 = line.indexOf('|')
-            if (idx1 <= 0 || idx1 >= line.length - 1) return null
-            val word = line.substring(0,  idx1).trim()
-            if (word.isEmpty()) return null
-            val idx2 = line.indexOf('|',  idx1 + 1)
-            if (idx2 <= 0) {
-                val spoken = line.substring(idx1 + 1).trim()
-                return if (spoken.isEmpty()) null else DictEntry(word,  spoken)
-            }
-            val spoken = line.substring(idx1 + 1,  idx2).trim()
-            if (spoken.isEmpty()) return null
-            val tail = line.substring(idx2 + 1).trim()
-            return DictEntry(word,  spoken,  tail.equals("cs",  ignoreCase = true))
-        }
+    @Synchronized
+    fun compiledDictionary(): List<Pair<Regex, String>> {
+        refreshDictionary()
+        return dictionaryRules
+    }
 
-    fun addDictEntry(word: String,  spoken: String,  caseSensitive: Boolean = false) {
-            val w = word.trim().replace('\n', ' ').replace('|', ' ')
-            val s = spoken.trim().replace('\n', ' ').replace('|', ' ')
-            if (w.isEmpty() || s.isEmpty()) return
-            val cur = readMap()[KEY_DICT] ?: ""
-            val kept = ArrayList<String>()
-            for (l in cur.split("\n")) {
-                if (l.isBlank()) continue
-                val existing = parseDictLine(l)
-                if (existing != null && existing.word.equals(w,  ignoreCase = true)) continue
-                kept.add(l)
-            }
-            kept.add(w + "|" + s + if (caseSensitive) "|cs" else "")
-            writeBoth { it.putString(KEY_DICT,  kept.joinToString("\n")) }
+    private fun refreshDictionary() {
+        val raw = store.read()[KEY_DICT] as? String ?: ""
+        if (raw == dictionaryRaw) return
+        val entries = parseDictionary(raw)
+        dictionaryEntries = entries
+        dictionaryRules = entries.map { entry ->
+            val w = entry.word
+            fun wordy(c: Char) = (c.isLetterOrDigit() || c == '_') &&
+                Character.UnicodeScript.of(c.code) !in setOf(Character.UnicodeScript.HAN,
+                    Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA)
+            val lead = if (wordy(w.first())) "(?<![\\p{L}\\p{N}_])" else ""
+            val trail = if (wordy(w.last())) "(?![\\p{L}\\p{N}_])" else ""
+            Regex((if (entry.caseSensitive) "" else "(?i)") + lead + Regex.escape(w) + trail) to entry.spoken
         }
+        dictionaryRaw = raw
+    }
+
+    private fun parseDictionary(raw: String): List<DictEntry> {
+        if (raw.length > MAX_DICT_BYTES || raw.toByteArray(Charsets.UTF_8).size > MAX_DICT_BYTES) return emptyList()
+        return raw.lineSequence().mapNotNull { line ->
+            val parts = line.split('|', limit = 3)
+            if (parts.size < 2) null else {
+                val word = parts[0].trim()
+                val spoken = parts[1].trim()
+                if (word.isEmpty() || spoken.isEmpty() || word.length > MAX_WORD_CHARS || spoken.length > MAX_SPOKEN_CHARS) null
+                else DictEntry(word, spoken, parts.getOrNull(2).equals("cs", true))
+            }
+        }.take(MAX_DICT_ENTRIES).toList()
+    }
+
+    /** Validate the whole batch before committing; imports never leave half a dictionary. */
+    fun addDictEntries(entries: List<DictEntry>, replacingWord: String? = null): Boolean = store.update { values ->
+        val current = parseDictionary(values[KEY_DICT] as? String ?: "").toMutableList()
+        if (replacingWord != null) current.removeAll { it.word.equals(replacingWord, true) }
+        for (entry in entries) {
+            val word = entry.word.trim().replace('\n', ' ').replace('\r', ' ').replace('|', ' ')
+            val spoken = entry.spoken.trim().replace('\n', ' ').replace('\r', ' ').replace('|', ' ')
+            require(word.isNotEmpty() && word.length <= MAX_WORD_CHARS) { "Dictionary word exceeds $MAX_WORD_CHARS characters" }
+            require(spoken.isNotEmpty() && spoken.length <= MAX_SPOKEN_CHARS) { "Dictionary replacement exceeds $MAX_SPOKEN_CHARS characters" }
+            current.removeAll { it.word.equals(word, true) }
+            current += DictEntry(word, spoken, entry.caseSensitive)
+            require(current.size <= MAX_DICT_ENTRIES) { "Dictionary exceeds $MAX_DICT_ENTRIES entries" }
+        }
+        val raw = current.joinToString("\n") { it.word + "|" + it.spoken + if (it.caseSensitive) "|cs" else "" }
+        require(raw.toByteArray(Charsets.UTF_8).size <= MAX_DICT_BYTES) { "Dictionary exceeds $MAX_DICT_BYTES bytes" }
+        values[KEY_DICT] = raw
+    }
+
+    fun addDictEntry(word: String, spoken: String, caseSensitive: Boolean = false): Boolean =
+        addDictEntries(listOf(DictEntry(word, spoken, caseSensitive)))
 
     fun removeDictEntry(word: String) {
-            val cur = readMap()[KEY_DICT] ?: ""
-            val kept = ArrayList<String>()
-            for (l in cur.split("\n")) {
-                if (l.isBlank()) continue
-                val existing = parseDictLine(l)
-                if (existing != null && existing.word.equals(word,  ignoreCase = true)) continue
-                kept.add(l)
-            }
-            writeBoth { it.putString(KEY_DICT,  kept.joinToString("\n")) }
+        store.update { values ->
+            values[KEY_DICT] = parseDictionary(values[KEY_DICT] as? String ?: "")
+                .filterNot { it.word.equals(word, true) }
+                .joinToString("\n") { it.word + "|" + it.spoken + if (it.caseSensitive) "|cs" else "" }
         }
+    }
 
     fun clearDict() { writeBoth { it.remove(KEY_DICT) } }
     companion object {
+        const val MAX_DICT_BYTES = 256 * 1024
+        const val MAX_DICT_ENTRIES = 1000
+        const val MAX_WORD_CHARS = 128
+        const val MAX_SPOKEN_CHARS = 512
+        const val MAX_IMPORT_BYTES = 1024 * 1024
         private const val PREFS = "vvtts_prefs"
         const val KEY_VOICE = "voice"
         const val KEY_RATE = "rate"
         const val KEY_PITCH = "pitch"
         const val KEY_VOLUME = "volume"
-        const val KEY_DSP_MODE = "dsp_mode"
         const val KEY_AUTO_DETECT = "auto_detect"
         const val KEY_PUNCT = "speak_punctuation"
         const val KEY_DICT = "user_dict"
@@ -279,24 +175,6 @@ class VoiceConfig(private val context: Context) {
             Lang("zh-CN", "Chinese (Mandarin)", 12, 0x60000L), // linked: oracle synth path
             Lang("zh-TW", "Chinese (Taiwan)", 13, 0x60001L), // not linked
         )
-
-        /** CF library code (Code Factory 10 languages) mapped from BCP-47 */
-        fun cfCodeFor(bcp47: String?): String? {
-            if (bcp47 == null) return null
-            return when (bcp47) {
-                "de-DE" -> "deu"
-                "en-US" -> "enu"
-                "en-GB" -> "eng"
-                "es-ES" -> "esn"  // Castilian Spanish
-                "es-MX" -> "esm"  // Latin American / Mexican Spanish
-                "fr-FR" -> "fra"
-                "fr-CA" -> "frc"
-                "it-IT" -> "ita"
-                "pt-BR" -> "ptb"
-                "fi-FI" -> "fin"
-                else -> null      // zh/ja/ko have no CF library → the openevv chain handles them
-            }
-        }
 
         fun findLang(code: String?): Lang {
             if (code == null) return LANGS[0]// en-US

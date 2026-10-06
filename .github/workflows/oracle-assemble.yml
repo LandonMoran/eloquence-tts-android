@@ -1,70 +1,48 @@
 name: oracle-assemble
-
 on:
   workflow_dispatch:
-
+    inputs:
+      run_ids:
+        description: Comma-separated successful oracle-fanout run IDs for this revision
+        required: true
+        type: string
+      dialect:
+        required: true
+        type: choice
+        options: [zh-cn, zh-tw, ko, ja]
+      pieces:
+        description: Exact required pieces (1 through 8; Japanese uses 1 only)
+        required: true
+        default: '1,2,3,4,5,6,7,8'
+        type: string
 permissions:
   contents: read
-
+  actions: read
 jobs:
   assemble:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository }}
-          ref: oracle-dev
-          fetch-depth: 1
-      - name: Fetch pieces
-        uses: actions/download-artifact@v4
-        with:
-          pattern: oracle-piece-*
-          path: pieces
-      - name: Assemble tables
+      - uses: actions/checkout@v4
+      - name: Fetch selected fanout runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_IDS: ${{ inputs.run_ids }}
         run: |
-          set -o pipefail
-          cd pieces
-          : > "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
-          for d in 1 2 3 4; do
-            f="oracle-piece-zh-cn-p$d/output.tsv"
-            [ -f "$f" ] || { echo "FATAL: missing $f"; exit 1; }
-            cat "$f"
-          done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-cn-hanzi.tsv"
-          : > "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
-          for d in 1 2 3 4; do
-            f="oracle-piece-zh-tw-p$d/output.tsv"
-            [ -f "$f" ] || { echo "FATAL: missing $f"; exit 1; }
-            cat "$f"
-          done >> "$GITHUB_WORKSPACE/oracle/corpus/zh-tw-hanzi.tsv"
-          [ -f "oracle-piece-ko-p1/output.tsv" ] || { echo "FATAL: missing oracle-piece-ko-p1/output.tsv"; exit 1; }
-          cp "oracle-piece-ko-p1/output.tsv" "$GITHUB_WORKSPACE/oracle/corpus/ko-sample.tsv"
-          [ -f "oracle-piece-ja-p1/output.tsv" ] || { echo "FATAL: missing oracle-piece-ja-p1/output.tsv"; exit 1; }
-          cp "oracle-piece-ja-p1/output.tsv" "$GITHUB_WORKSPACE/oracle/corpus/ja-sample.tsv"
-          wc -l "$GITHUB_WORKSPACE/oracle/corpus"/*.tsv
-      - name: Validate oracle tables
-        run: |
-          set -o pipefail
-          cd "$GITHUB_WORKSPACE/oracle/corpus"
-          ok=1
-          for f in zh-cn-hanzi.tsv zh-tw-hanzi.tsv ko-sample.tsv ja-sample.tsv; do
-            pcm=$(grep -c '^pcm' "$f" || true)
-            nonzero=$(awk '/^pcm/{if ($2 > 0) n++} END{print n+0}' "$f")
-            echo "$f: pcm_rows=$pcm nonzero=$nonzero"
-            if [ "$nonzero" -eq 0 ]; then ok=0; fi
+          set -euo pipefail
+          IFS=, read -ra ids <<< "$RUN_IDS"
+          for id in "${ids[@]}"; do
+            [[ "$id" =~ ^[0-9]+$ ]] || { echo "Invalid run ID"; exit 1; }
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" > /tmp/fanout-run.json
+            python3 -c 'import json,os; r=json.load(open("/tmp/fanout-run.json")); assert r["path"] == ".github/workflows/oracle-fanout.yml" and r["conclusion"] == "success" and r["head_sha"] == os.environ["GITHUB_SHA"], "Run must be successful fanout at this revision"'
+            gh run download "$id" --repo "$GITHUB_REPOSITORY" --pattern 'oracle-piece-*' --dir "pieces/$id"
           done
-          if [ "$ok" -eq 0 ]; then
-            echo "FATAL: at least one table produced no waveform output (all zero)"
-            exit 1
-          fi
-          echo "VALIDATE-OK: every table produced audio"
-      - name: Upload oracle tables
-        uses: actions/upload-artifact@v4
+      - name: Assemble and validate every requested contribution
+        env:
+          DIALECT: ${{ inputs.dialect }}
+          PIECES: ${{ inputs.pieces }}
+        run: python3 tools/assemble_oracle.py pieces "$DIALECT" "$PIECES" "assembled/$DIALECT.tsv"
+      - uses: actions/upload-artifact@v4
         with:
-          name: oracle-tables
-          path: |
-            oracle/corpus/zh-cn-hanzi.tsv
-            oracle/corpus/zh-tw-hanzi.tsv
-            oracle/corpus/ko-sample.tsv
-            oracle/corpus/ja-sample.tsv
+          name: oracle-tables-${{ inputs.dialect }}
+          path: assembled/
           if-no-files-found: error
