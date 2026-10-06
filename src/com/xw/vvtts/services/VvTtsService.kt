@@ -55,7 +55,6 @@ class VvTtsService : TextToSpeechService() {
 /** Loader thread for the n-gram tables; owned so teardown can interrupt backoff waits. */
     @Volatile private var ngramLoadThread: Thread? = null
     // BCP-47 tags advertised by onGetVoices; onLoadVoice accepts exactly these.
-    private val shippedVoiceTags get() = VoiceRegistry.voices.map { it.voiceName }
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
@@ -273,49 +272,6 @@ class VvTtsService : TextToSpeechService() {
         return try { block() } catch (t: Throwable) {
             Log.w(TAG, "voice query failed;returning safe fallback", t)
             fallback
-        }
-    }
-
-    /** Maps an incoming language tag to the two-letter prefix the dialect matchers
-     *  expect: the framework probes with ISO-639-2/T three-letter codes
-     *  (getISO3Language: eng, spa, jpn, ...) as well as ISO-639-1 two-letter ones.
-     *  Without this, "spa" never matches startsWith("es") and non-English
-     *  locales silently fall back to en-US. Passes 2-letter tags through. */
-    private fun langPrefix(tag: String?): String {
-        return when ((tag ?: "").lowercase()) {
-            "eng" -> "en"
-            "deu", "ger" -> "de"
-            "fra", "fre" -> "fr"
-            "spa" -> "es"
-            "ita" -> "it"
-            "jpn" -> "ja"
-            "pol" -> "pl"
-            "por" -> "pt"
-            "fin" -> "fi"
-            "zho", "chi" -> "zh"
-            else -> (tag ?: "").lowercase()
-        }
-    }
-
-    /** Maps a three-letter ISO-3166 country code (getISO3Country: USA, GBR, ...)
-     *  to its two-letter form for comparisons; passes 2-letter codes through. */
-    private fun countryCode(tag: String?): String {
-        return when ((tag ?: "").uppercase()) {
-            "USA" -> "US"
-            "GBR" -> "GB"
-            "DEU" -> "DE"
-            "FRA" -> "FR"
-            "CAN" -> "CA"
-            "ESP" -> "ES"
-            "MEX" -> "MX"
-            "ITA" -> "IT"
-            "JPN" -> "JP"
-            "POL" -> "PL"
-            "BRA" -> "BR"
-            "FIN" -> "FI"
-            "CHN" -> "CN"
-            "TWN" -> "TW"
-            else -> (tag ?: "").uppercase()
         }
     }
 

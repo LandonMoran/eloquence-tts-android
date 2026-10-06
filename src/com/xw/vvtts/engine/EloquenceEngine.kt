@@ -20,9 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutionException
-import java.util.concurrent.Future
-import java.util.concurrent.FutureTask
-import java.util.concurrent.Callable
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -42,10 +39,10 @@ class EloquenceEngine(context: Context) {
     // Credential-encrypted getSharedPreferences throws IllegalStateException, so a
     // locked start would break every synthesis until the first user unlock. See #235.
     private val userDictionary by lazy { VoiceConfig(storageContext) }
-    @Volatile private var core: VvttsCore? = null          // In-house bridge (multi-language
-    private var initialized = false
+    @Volatile private var initialized = false
     // Keep handles with their owning worker, including after a timeout retires it.
     private class SynthWorker {
+        @Volatile var retired = false
         // handles is iterated by stop() from the caller thread, so it must stay safe
         // for concurrent reads while this worker lazily opens new sessions..
         val handles = ConcurrentHashMap<Int, Long>()
@@ -83,8 +80,7 @@ class EloquenceEngine(context: Context) {
     @Synchronized
     fun initialize(): Boolean {
         if (initialized) return true
-        // New Apple engine: no longer uses the legacy Guangrong JNI (libeloquence_jni.so is deprecated)
-        // Synthesis runs through VvttsCore's in-house bridge (dlopen Apple libeci.so); we just pre-write eci.ini here.
+        // Prepare storage and schedule optional native warmup. Native readiness is checked per request.
         try {
             val info: ApplicationInfo = appContext.applicationInfo
             val libDir = info.nativeLibraryDir
@@ -164,8 +160,6 @@ class EloquenceEngine(context: Context) {
 
                 const val SAMPLE_RATE = 44100
 
-        private val CHINESE_CHARSET: Charset = Charset.forName("GB18030")
-        private val ENGLISH_CHARSET: Charset = Charset.forName("windows-1252")
 
         /** Dialect -> text encoding (CJK uses its own encodings; Western uses windows-1252) */
         private fun charsetForDialect(dialect: Int): Charset {
@@ -363,6 +357,8 @@ class EloquenceEngine(context: Context) {
     fun shutdown() {
         engineEpoch.incrementAndGet()
         val worker = synthWorker
+        worker.retired = true
+        initialized = false
         try {
             worker.executor.execute {
                 // Cleanup queues behind any in-flight synthesis so it frees the
@@ -405,15 +401,13 @@ class EloquenceEngine(context: Context) {
         }
         synthWorker = SynthWorker()
         initialized = false
-        core = null
         }
 
     fun isInitialized(): Boolean = initialized
     fun getSampleRate(): Int = SAMPLE_RATE
 
         // ===== In-house bridge (the only synthesis path) =====
-    private var lastSynthRate =  44100  // output rate of the most recent synthesized audio (44.1k after resample(
-    fun getCoreSampleRate(): Int = lastSynthRate
+    fun getCoreSampleRate(): Int = SAMPLE_RATE
 
     /** Open + cache the engine handle for a dialect (no synthesis(.  Doing this
      *  once inthe background after onCreate removes the LPC voice-table load from
@@ -438,6 +432,7 @@ class EloquenceEngine(context: Context) {
     }
 
     private fun ensureHandle(worker: SynthWorker, dialect: Int): Long {
+        if (worker.retired || synthWorker !== worker || !initialized) return 0L
         val cached = worker.handles[dialect] ?: 0L
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
@@ -451,14 +446,16 @@ class EloquenceEngine(context: Context) {
         if (handle ==  0L) return 0L
         // A handle born across a rotate/shutdown/stop is retired, never cached —
         // the zombie worker that opened it may still be driving it.
-        if (epoch != engineEpoch.get()) {
+        if (epoch != engineEpoch.get() || worker.retired || synthWorker !== worker || !initialized) {
             VvttsCore.shutdown(handle)
             return   0L
         }
-        synchronized(handleLock) {
-            if (epoch != engineEpoch.get()) { VvttsCore.shutdown(handle); return 0L }
-            worker.handles[dialect] = handle
+        val accepted = synchronized(handleLock) {
+            if (epoch != engineEpoch.get() || worker.retired || synthWorker !== worker || !initialized) false
+            else { worker.handles[dialect] = handle; true }
         }
+        // Native destruction can wait; never hold the lock used by Stop while closing.
+        if (!accepted) { VvttsCore.shutdown(handle); return 0L }
         return handle
     }
 
@@ -486,8 +483,12 @@ class EloquenceEngine(context: Context) {
             Log.i(TAG, "warmupDialect skipped: engine not initialized")
             return
         }
+        val epoch = engineEpoch.get()
         try {
-            worker.executor.execute { ensureHandle(worker, dialect) }
+            worker.executor.execute {
+                if (epoch == engineEpoch.get() && !worker.retired && synthWorker === worker && initialized)
+                    ensureHandle(worker, dialect)
+            }
         } catch (e: RejectedExecutionException) {
             Log.w(TAG, "warmupDialect skipped: executor shutting down")
         }
@@ -510,7 +511,6 @@ class EloquenceEngine(context: Context) {
                 Log.e(TAG, "dialect not in this build: 0x" + Integer.toHexString(dialect))
                 return@synthWithTimeout null
             }
-            if (core == null) core = VvttsCore()
 
             // session lazy-loading (cached per dialect(
             val handle = ensureHandle(worker, dialect)
@@ -616,7 +616,7 @@ class EloquenceEngine(context: Context) {
                     // replacement worker's thread. Idempotent: a queued shutdown cleanup (or an
                     // already-cleared cache) makes this a no-op.
 
-                    if (synthWorker !== worker) {
+                    if (worker.retired || synthWorker !== worker) {
                         closeHandles(worker)
                     }
                 }
@@ -659,8 +659,10 @@ class EloquenceEngine(context: Context) {
 // The single worker froze (can't interrupt native code(: retire it, start a fresh
     // executor + fresh native handles so subsequent requests work again immediatel
     private fun rotateEngine() {
+        val worker = synthWorker
+        worker.retired = true
         try {
-            synthWorker.executor.shutdownNow()
+            worker.executor.shutdownNow()
         } catch (e: Exception) {
             Log.e(TAG, "rotate: shutdown failed", e)
         }

@@ -2,8 +2,7 @@
 
 ## 构建（Building）
 
-- 原生引擎：仓库根运行 `./build_native.sh`（走 oracle 生成器流水线，详见 `docs/artifacts-contract.md`）。
-- APK：本地构建在仓库根运行 `./build.sh`（需 Linux + Android SDK + JDK 11+）；GitHub Actions CI（见 `.github/workflows/` 各 lane）亦以该脚本构建并校验，可读 CI 日志核验构建结果。
+Android SDK/NDK builds run in GitHub Actions. Do not run Android builds locally; follow `jni/README.md`. Host source/regression checks are documented in `docs/repository-audit.md` and use JDK 17, Kotlin 1.9.25 and GCC sanitizers.
 
 ##测试（Testing）
 

@@ -7,7 +7,8 @@
 - Native engine PCM is signed 16-bit mono at 11,025 Hz, resampled to 44,100 Hz for Android. Both buffer edges fade to zero after resampling.
 - Voice 0 is active; standard source rows are 1–8. Eddy is native row 5. Kotlin's historical Apple row 9 is mapped explicitly.
 - Voice parameter ranges are gender 0–1, speed 0–250, other parameters 0–100. Engine sample rate stays at 1 and real-world units at 0. Pitch UI 0–50–100 maps to 0–preset–100.
-- Only the synthesis owner calls legacy engine operations. Stop publishes an atomic generation; queued and late results are discarded. Failure to settle retires the session; its buffers are not reused.
+- JNI handles are monotonic IDs in a locked registry, with references held by active calls. Shutdown unpublishes the ID before reclaiming storage; stale calls fail without dereferencing freed memory.
+- Per-session operation guards serialize synthesis and controls. Only the synthesis owner calls legacy engine operations. Stop publishes an atomic generation; queued and late results are discarded. Failure to settle retires the session; its buffers are not reused.
 - Text is limited to 16 KiB and buffered native audio to 60 seconds. Oracle clips are bounded before allocation.
 - The 14 shipped dialects match `VoiceRegistry.kt`; `tests/contracts.py` enforces parity. Traditional Chinese and Korean are not advertised.
 

@@ -39,7 +39,7 @@ int et_addText(void *h, const char *text) { assert(strcmp(text, "hello") == 0); 
 int et_synthesize(void *h) {
     memcpy(active->chunk, pcm_fixture, sizeof(pcm_fixture));
     vv_cb(h, eciWaveformBuffer, 256, active);
-    if (cancel_during_copy == 2) atomic_store(&waiting, 1);
+    if (cancel_during_copy == 2 || cancel_during_copy == 3) atomic_store(&waiting, 1);
     return 1;
 }
 size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) { *out = NULL; return 0; }
@@ -51,7 +51,7 @@ static void clear_exception(JNIEnv *env) {}
 static void copy_bytes(JNIEnv *env, jbyteArray a, jsize start, jsize len, jbyte *out) {
     memcpy(out, "hello", 5);
     if (cancel_during_copy == 1)
-        Java_com_xw_vvtts_core_VvttsCore_nativeStop(env, NULL, (jlong)(intptr_t)active);
+        Java_com_xw_vvtts_core_VvttsCore_nativeStop(env, NULL, active->id);
 }
 static jshortArray new_array(JNIEnv *env, jsize n) {
     Array *a = malloc(sizeof(Array) + sizeof(short) * n); assert(a); a->len = n; return (jshortArray)a;
@@ -68,7 +68,12 @@ static JNIEnv env = &jni;
 
 static void *stop_thread(void *ignored) {
     while (!atomic_load(&waiting)) { struct timespec t={0,100000}; nanosleep(&t,NULL); }
-    Java_com_xw_vvtts_core_VvttsCore_nativeStop(&env,NULL,(jlong)(intptr_t)active);
+    if (cancel_during_copy == 3) {
+        // Shutdown removes the public handle immediately but must retain the active call.
+        jlong id = active->id;
+        assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,id,5,1)==-1);
+        SHUT(id);
+    } else Java_com_xw_vvtts_core_VvttsCore_nativeStop(&env,NULL,active->id);
     return NULL;
 }
 
@@ -77,7 +82,7 @@ int main(void) {
     for (fail_setup=1;fail_setup<=3;fail_setup++) { int before=deletes; assert(INIT()==0); assert(deletes==before+1); }
     fail_setup=0;
     jlong h=INIT(); assert(h);
-    VvtsSession *s=(void *)(intptr_t)h;
+    VvtsSession *s=active;
     // The first mutation boundary must follow settlement, even after stop.
     s->text=strdup("previous"); old_text=s->text; s->pcmLen=7;
     s->pcmCap=256; s->pcm=calloc(256,sizeof(short)); settling=1;
@@ -121,6 +126,17 @@ int main(void) {
     assert(vv_cb(s->hECI,eciWaveformBuffer,APP_SAMPLES+1,s)==eciDataProcessed);
     a=(Array *)SYNTH(h); assert(a && a->len==0); free(a);
     SHUT(h);
+    // Repeated destruction and stale/arbitrary handles must never dereference freed storage.
+    SHUT(h); SHUT(INT64_MAX);
+    Java_com_xw_vvtts_core_VvttsCore_nativeStop(&env,NULL,h);
+    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)==-1);
+    assert(SYNTH(h)==NULL);
+    jlong old = h; h=INIT(); assert(h && h!=old);
+    cancel_during_copy=3; before=deletes;
+    pthread_create(&thread,NULL,stop_thread,NULL);
+    assert(SYNTH(h)==NULL); pthread_join(thread,NULL);
+    assert(deletes==before+1); SHUT(h); assert(deletes==before+1);
+    assert(vv_sessions==NULL);
     short tiny[]={1000,-1000}; vv_fade_edges(tiny,2); assert(tiny[0]==0 && tiny[1]==0);
     assert(vv_dialect_shipped(0x70000) && vv_dialect_shipped(0x90000));
     puts("PASS native: setup failures, stop generations, settlement ownership, repeat synthesis, control guards, ranges, PCM edges");

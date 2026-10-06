@@ -19,6 +19,10 @@ public class Context {
         return new File(root,device?"de":"ce");
     }
     public File getFilesDir() { File f=new File(getDataDir(),"files"); f.mkdirs(); return f; }
+    public android.content.pm.ApplicationInfo getApplicationInfo() {
+        android.content.pm.ApplicationInfo info=new android.content.pm.ApplicationInfo();
+        info.nativeLibraryDir=root.getPath(); return info;
+    }
     public File getCacheDir() { File f=new File(getDataDir(),"cache"); f.mkdirs(); return f; }
     public Object getSystemService(Class<?> cls) { return new UserManager(); }
     public SharedPreferences getSharedPreferences(String name,int mode) {

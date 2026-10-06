@@ -3,7 +3,8 @@ package com.xw.vvtts.utils
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
-import java.io.BufferedReader
+import java.io.Reader
+import java.util.Locale
 import java.io.InputStreamReader
 import java.util.zip.GZIPInputStream
 import kotlin.text.Charsets
@@ -78,8 +79,14 @@ object CrashCodeDefender {
         return out.toString()
     }
 
-    private fun isBreak(c: Char): Boolean =
-        !(c.isLetterOrDigit() || c == '\'')
+    private fun isBreak(c: Char): Boolean {
+        if (c.isLetterOrDigit() || c == '\'') return false
+        return when (Character.getType(c)) {
+            Character.NON_SPACING_MARK.toInt(), Character.COMBINING_SPACING_MARK.toInt(),
+            Character.ENCLOSING_MARK.toInt() -> false
+            else -> true
+        }
+    }
 
     /**
      * ASCII fold for corpus membership: NFKD-normalize, drop combining marks,
@@ -92,7 +99,7 @@ object CrashCodeDefender {
         for (c in nfkd) {
             if (Character.getType(c) != Character.NON_SPACING_MARK.toInt()) sb.append(c)
         }
-        return sb.toString().lowercase()
+        return sb.toString().lowercase(Locale.ROOT)
     }
 
     private fun rewrite(t: String): String {
@@ -119,34 +126,9 @@ object CrashCodeDefender {
         synchronized(gate) {
             if (loaded) return
             try {
-                val set = HashSet<String>(65536)
-                var totalChars = 0L
-                var lines = 0L
-                ctx.assets.open("crashers.txt.gz").use { raw ->
-                    GZIPInputStream(raw).use { gz ->
-                        val reader = BufferedReader(InputStreamReader(gz, Charsets.UTF_8))
-                        while (true) {
-                            val line = reader.readLine() ?: break
-                            lines++
-                            if (lines > MAX_CORPUS_LINES) {
-                                throw IllegalStateException(
-                                    "crashers corpus exceeds $MAX_CORPUS_LINES lines"
-                                )
-                            }
-                            totalChars += line.length.toLong() + 1L
-                            if (totalChars > MAX_CORPUS_CHARS) {
-                                throw IllegalStateException("crashers corpus exceeds size bound")
-                            }
-                            val l = line.trim()
-                            if (l.isNotEmpty() && !l.startsWith("#") &&
-                                l.length <= MAX_TOKEN_LEN
-                            ) {
-                                set.add(l)
-                            }
-                        }
-                    }
+                corpus = ctx.assets.open("crashers.txt.gz").use { raw ->
+                    GZIPInputStream(raw).use { gz -> readCorpus(InputStreamReader(gz, Charsets.UTF_8)) }
                 }
-                corpus = set
                 loaded = true
                 attemptFailures = 0
             } catch (t: Throwable) {
@@ -155,6 +137,29 @@ object CrashCodeDefender {
                 Log.e(TAG, "failed to load crashers corpus; defense off (retry in ${retryDelayMs()}ms)", t)
             }
         }
+    }
+
+    /** Enforce limits before allocating a complete decompressed line. */
+    internal fun readCorpus(input: Reader): Set<String> {
+        val reader = input.buffered()
+        val result = HashSet<String>()
+        val line = StringBuilder()
+        var chars = 0L
+        var lines = 0L
+        fun accept() {
+            check(++lines <= MAX_CORPUS_LINES) { "Too many corpus lines" }
+            val word = line.toString().trim()
+            if (word.isNotEmpty() && !word.startsWith("#")) result += fold(word)
+            line.setLength(0)
+        }
+        while (true) {
+            val c = reader.read()
+            if (c == -1) { if (line.isNotEmpty()) accept(); break }
+            check(++chars <= MAX_CORPUS_CHARS) { "Corpus exceeds size bound" }
+            if (c == '\n'.code) accept()
+            else { check(line.length < MAX_TOKEN_LEN) { "Corpus line too long" }; line.append(c.toChar()) }
+        }
+        return result
     }
 
     private fun retryDelayMs(): Long =

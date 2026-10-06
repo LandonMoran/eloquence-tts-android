@@ -157,8 +157,59 @@ private fun lifecycle() {
     println("PASS lifecycle: blocked synthesis Stop, stale-result suppression, listener teardown, long-read work budget")
 }
 
+private fun warmupRetirement() {
+    val boundary = com.xw.vvtts.core.VvttsCore::class.java
+    fun count(name:String) = (boundary.getField(name).get(null) as java.util.concurrent.atomic.AtomicInteger).get()
+    fun worker(engine:EloquenceEngine) = field(engine,"synthWorker")!!
+    fun executor(worker:Any) = field(worker,"executor") as ExecutorService
+    val engine=EloquenceEngine(Context()); set(engine,"initialized",true)
+    val old=worker(engine); val gate=CountDownLatch(1); val entered=CountDownLatch(1)
+    executor(old).execute { entered.countDown(); try { gate.await() } catch (_: InterruptedException) {} }
+    check(entered.await(2,TimeUnit.SECONDS))
+    val opens=count("opens"); engine.warmupDialect(EloquenceEngine.DIALECT_EN_US)
+    engine.shutdown(); gate.countDown(); check(executor(old).awaitTermination(2,TimeUnit.SECONDS))
+    check(count("opens")==opens) { "Queued warmup opened a retired handle" }
+    // Shutdown while openEngine is in progress: the returning handle must be closed.
+    set(engine,"initialized",true)
+    val opening=CountDownLatch(1); val release=CountDownLatch(1)
+    boundary.getField("entered").set(null,opening); boundary.getField("release").set(null,release)
+    val old2=worker(engine); val closes=count("closes")
+    engine.warmupDialect(EloquenceEngine.DIALECT_EN_US); check(opening.await(2,TimeUnit.SECONDS))
+    engine.shutdown(); release.countDown(); check(executor(old2).awaitTermination(2,TimeUnit.SECONDS))
+    check(count("closes")==closes+1 && (field(old2,"handles") as Map<*,*>).isEmpty())
+    boundary.getField("entered").set(null,null); boundary.getField("release").set(null,null)
+    check(engine.initialize())
+    executor(worker(engine)).submit {}.get(2,TimeUnit.SECONDS)
+    check(count("opens")==opens+2) { "Explicit reinitialization could not warm a fresh handle" }
+    engine.shutdown()
+    println("PASS warmup: queued retirement, shutdown during native open, explicit reinitialization")
+}
+
+private fun defender() {
+    val dictionary=CrashCodeDefender.readCorpus(java.io.StringReader("# fixture\nUNCOSP\nIHOSTILE\n"))
+    check(dictionary==setOf("uncosp","ihostile"))
+    checkFails { CrashCodeDefender.readCorpus(java.io.StringReader("x".repeat(2048))) }
+    checkFails { CrashCodeDefender.readCorpus(java.io.StringReader("\n".repeat(200001))) }
+    val oldLocale=java.util.Locale.getDefault()
+    try {
+        java.util.Locale.setDefault(java.util.Locale("tr","TR"))
+        set(CrashCodeDefender,"corpus",dictionary); set(CrashCodeDefender,"loaded",true)
+        val context=Context()
+        for(word in listOf("UNCOSP","unco\u0301sp","IHOSTILE"))
+            check(CrashCodeDefender.sanitize(context,word)!=word) { "Corpus bypass: $word" }
+        check(CrashCodeDefender.sanitize(context,"ordinary speech") == "ordinary speech")
+        java.util.zip.GZIPInputStream(File("assets/crashers.txt.gz").inputStream()).reader().use {
+            check(CrashCodeDefender.readCorpus(it).isNotEmpty())
+        }
+    } finally {
+        java.util.Locale.setDefault(oldLocale)
+        set(CrashCodeDefender,"loaded",false); set(CrashCodeDefender,"corpus",emptySet<String>())
+    }
+    println("PASS defender: pre-allocation line bound, shipped corpus, combining marks, case and locale")
+}
+
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); lifecycle() }
+    try { preferences(); dictionary(); versionsAndVoices(); lifecycle(); warmupRetirement(); defender() }
     finally { Context.root.deleteRecursively() }
 }

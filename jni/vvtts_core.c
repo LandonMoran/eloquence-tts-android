@@ -157,13 +157,18 @@ static void vv_fade_edges(short *pcm, size_t n) {
 
 /* ------------------------------------------------------------------ */
 
-typedef struct {
+typedef struct VvtsSession {
     ECIHand hECI;
     int32_t dialect;            /* dialect the handle was initialized for (#113) */
     short   chunk[APP_SAMPLES]; /* callback scratch */
     short  *pcm;                /* accumulated waveform */
     size_t  pcmLen, pcmCap;
     void   *text;               /* text kept alive for the engine's thread */
+    jlong id;
+    unsigned references;
+    int closing;
+    struct VvtsSession *next;
+    pthread_mutex_t operation;
     atomic_int synthBusy;
     atomic_uint stopGeneration;
     unsigned activeGeneration;
@@ -311,9 +316,44 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
     *pn = keep;
 }
 
+/* IDs never expose addresses or get reused. The registry owns the lifetime;
+ * every JNI operation acquires a reference before touching session storage. */
+static pthread_mutex_t vv_registry_lock = PTHREAD_MUTEX_INITIALIZER;
+static VvtsSession *vv_sessions;
+static jlong vv_next_id = 1;
+static void vv_destroy(VvtsSession *s);
+
 static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
-    return (handle == 0) ? NULL : (VvtsSession *)(intptr_t)handle;
+    (void)env;
+    pthread_mutex_lock(&vv_registry_lock);
+    VvtsSession *s = vv_sessions;
+    while (s && s->id != handle) s = s->next;
+    if (s) ++s->references;
+    pthread_mutex_unlock(&vv_registry_lock);
+    return s;
 }
+
+static void vv_release(VvtsSession **reference) {
+    VvtsSession *s = *reference;
+    if (!s) return;
+    pthread_mutex_lock(&vv_registry_lock);
+    int destroy = --s->references == 0 && s->closing;
+    pthread_mutex_unlock(&vv_registry_lock);
+    if (destroy) vv_destroy(s);
+}
+
+static void vv_unlock(pthread_mutex_t **lock) {
+    if (*lock) pthread_mutex_unlock(*lock);
+}
+
+/* Clang (Android) and GCC (host tests) release these guards on every return. */
+#define VV_REFERENCE(handle) \
+    VvtsSession *s __attribute__((cleanup(vv_release))) = vv_find(env, handle)
+#define VV_OPERATION(failure) \
+    pthread_mutex_t *op __attribute__((cleanup(vv_unlock))) = NULL; \
+    if (!s || pthread_mutex_trylock(&s->operation)) return failure; \
+    op = &s->operation
+
 
 /* Dialect whitelist: only the language modules linked into this build
  * (build_native.sh LANGS) may be instantiated.  eo_newEx builds its voice
@@ -367,7 +407,21 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         if (!eciDelete(s->hECI)) free(s);
         return 0;
     }
-    return (jlong)(intptr_t)s;
+    if (pthread_mutex_init(&s->operation, NULL)) {
+        if (!eciDelete(s->hECI)) free(s);
+        return 0;
+    }
+    pthread_mutex_lock(&vv_registry_lock);
+    if (vv_next_id == INT64_MAX) {
+        pthread_mutex_unlock(&vv_registry_lock);
+        vv_destroy(s);
+        return 0;
+    }
+    s->id = vv_next_id++;
+    s->next = vv_sessions;
+    vv_sessions = s;
+    pthread_mutex_unlock(&vv_registry_lock);
+    return s->id;
 }
 
 /* ------------------------------------------------------------------ */
@@ -392,9 +446,8 @@ static jshortArray vv_empty_result(JNIEnv *env) {
 /* ------------------------------------------------------------------ */
 
 static jshortArray vv_synthesize(
-        JNIEnv *env, jclass cls, jlong handle, jint dialect,
+        JNIEnv *env, jclass cls, VvtsSession *s, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
-    VvtsSession *s = vv_find(env, handle);
     if (!s) return NULL;
     if (s->failed) return vv_empty_result(env);
     if (s->retired) return vv_empty_result(env); /* engine wedge: never re-drive this session */
@@ -578,14 +631,15 @@ JNIEXPORT jshortArray JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         JNIEnv *env, jclass cls, jlong handle, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
-    VvtsSession *s = vv_find(env, handle);
+    VV_REFERENCE(handle);
+    VV_OPERATION(NULL);
     if (!s) return NULL;
     unsigned generation = atomic_load(&s->stopGeneration);
     int expected = 0;
     if (!atomic_compare_exchange_strong(&s->synthBusy, &expected, 1)) return NULL;
     s->activeGeneration = generation;
     // Never clear stopGeneration: a stop racing this start must remain observable.
-    jshortArray result = vv_synthesize(env, cls, handle, dialect, text, charsetId, outPath);
+    jshortArray result = vv_synthesize(env, cls, s, dialect, text, charsetId, outPath);
     atomic_store(&s->synthBusy, 0);
     return result;
 }
@@ -593,7 +647,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param, jint value) {
-    VvtsSession *s = vv_find(env, handle);
+    VV_REFERENCE(handle);
+    VV_OPERATION(-1);
     if (!vv_usable(s)) return -1;
     if (voice != 0 || param < 0 || param >= eciNumVoiceParams) return -1;
     int maximum = param == eciSpeed ? 250 : param == eciGender ? 1 : 100;
@@ -604,7 +659,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeGetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param) {
-    VvtsSession *s = vv_find(env, handle);
+    VV_REFERENCE(handle);
+    VV_OPERATION(-1);
     if (!vv_usable(s)) return -1;
     if (voice < 0 || voice > ECI_LAST_VOICE || param < 0 || param >= eciNumVoiceParams) return -1;
     return eciGetVoiceParam(s->hECI, voice, param);
@@ -613,7 +669,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeGetVoiceParam(
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
         JNIEnv *env, jclass cls, jlong handle, jint param, jint value) {
-    VvtsSession *s = vv_find(env, handle);
+    VV_REFERENCE(handle);
+    VV_OPERATION(-1);
     if (!vv_usable(s) || param < 0 || param >= eciNumParams) return -1;
     // Use the engine's authoritative ranges; its setter also rejects reserved
     // indices, invalid rates and unsupported dialect changes. Never voice-clamp.
@@ -634,7 +691,8 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetStandardVoice(
         JNIEnv *env, jclass cls, jlong handle, jint voiceNumber) {
-    VvtsSession *s = vv_find(env, handle);
+    VV_REFERENCE(handle);
+    VV_OPERATION(-1);
     if (!vv_usable(s)) return -1;
     if (voiceNumber < 1 || voiceNumber > ECI_PRESET_VOICES) return -1;
     return eciCopyVoice(s->hECI, voiceNumber, 0) ? 1 : -1;
@@ -643,7 +701,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetStandardVoice(
 JNIEXPORT void JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
-    VvtsSession *s = vv_find(env, handle);
+    VV_REFERENCE(handle);
     if (!vv_usable(s)) return;
     // The owning synthesis thread performs eciStop while polling. Calling the
     // legacy engine itself from the stop thread races its non-atomic queue state.
@@ -654,8 +712,25 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
 JNIEXPORT void JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
         JNIEnv *env, jclass cls, jlong handle) {
-    VvtsSession *s = vv_find(env, handle);
-    if (!s) return;
+    (void)env; (void)cls;
+    pthread_mutex_lock(&vv_registry_lock);
+    VvtsSession **link = &vv_sessions;
+    while (*link && (*link)->id != handle) link = &(*link)->next;
+    VvtsSession *s = *link;
+    int destroy = 0;
+    if (s) {
+        *link = s->next;
+        s->closing = 1;
+        atomic_store(&s->cancel, 1);
+        atomic_fetch_add(&s->stopGeneration, 1);
+        destroy = s->references == 0;
+    }
+    pthread_mutex_unlock(&vv_registry_lock);
+    // An active call retains ownership and performs destruction on return.
+    if (destroy) vv_destroy(s);
+}
+
+static void vv_destroy(VvtsSession *s) {
     if (s->hECI) {
         s->cancel = 1; /* let a concurrent wait loop abort fast */
         eciStop(s->hECI);
@@ -678,6 +753,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     }
     free(s->text);
     free(s->pcm);
+    pthread_mutex_destroy(&s->operation);
     free(s);
 }
 

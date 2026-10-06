@@ -14,7 +14,6 @@ import java.io.FileInputStream
  * user custom values live in SharedPreferences; reset removes the overrides.
  */
 class VoiceProfile(context: Context) {
-    private val appContext: Context = context.applicationContext ?: context
     private val store = MirroredPreferences(context, PREFS)
     private fun readMap() = store.strings()
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) { store.edit(block) }

@@ -174,24 +174,6 @@ class VoiceConfig(private val context: Context) {
             Lang("zh-TW", "Chinese (Taiwan)", 13, 0x60001L), // not linked
         )
 
-        /** CF library code (Code Factory 10 languages) mapped from BCP-47 */
-        fun cfCodeFor(bcp47: String?): String? {
-            if (bcp47 == null) return null
-            return when (bcp47) {
-                "de-DE" -> "deu"
-                "en-US" -> "enu"
-                "en-GB" -> "eng"
-                "es-ES" -> "esn"  // Castilian Spanish
-                "es-MX" -> "esm"  // Latin American / Mexican Spanish
-                "fr-FR" -> "fra"
-                "fr-CA" -> "frc"
-                "it-IT" -> "ita"
-                "pt-BR" -> "ptb"
-                "fi-FI" -> "fin"
-                else -> null      // zh/ja/ko have no CF library → the openevv chain handles them
-            }
-        }
-
         fun findLang(code: String?): Lang {
             if (code == null) return LANGS[0]// en-US
             for (l in LANGS) if (l.code == code) return l

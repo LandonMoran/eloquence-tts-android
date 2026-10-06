@@ -101,3 +101,16 @@ Configure the GitHub `release` environment with required reviewers, protected ta
 - APK auditing rejects duplicate native-library ZIP entries, whose different payloads could otherwise collapse into one set entry and evade the exact-content check.
 
 The follow-up adds regressions for all three cases.
+
+## Closed-issue and history follow-up (2026-10-06)
+
+The audit inventories all 225 issues (45 open, 180 closed), 570 commits reachable from the application branch before consolidation, and 2,315 current files at the initial follow-up checkpoint. CSV evidence ledgers are attached in the coding task Outputs. These are coverage records, not a claim that every historical revision was rebuilt or every reference/binary was semantically proven correct.
+
+- **#43** was closed although `vv_find` still cast raw pointers. JNI now uses monotonic IDs, a synchronized registry, references held across operations, and deferred destruction. Stale IDs, repeated shutdown, concurrent shutdown during synthesis and control serialization have sanitizer coverage.
+- **#187** remained incomplete after the lifecycle changes in `5db1a5b`: an epoch sampled only inside native open did not reject queued warmups, and cleanup could miss a retiring worker. Workers now retire before teardown and warmup validates its captured generation; tests cover queued work, shutdown during open and explicit reinitialization.
+- **#99 / #52 / #69** remained incomplete in `cb79f1e`: the corpus loader bounded strings after `readLine()` allocated them, combining marks split words before normalization, and folding used the default locale. The parser now bounds each line during reading, preserves Unicode marks through tokenization, and folds corpus/input using Locale.ROOT.
+- Dead-code removals: unused native-wrapper instance, Future/FutureTask/Callable imports, obsolete CF locale mapper, unused VoiceProfile context and redundant mutable sample-rate field. No supported voice, setting or speech feature was removed.
+
+### Outstanding acceptance evidence
+
+Issue #141's historical key is removed from the current tree but still exists in Git history. Rotation and whether distributed APKs used that identity require owner confirmation; this branch does not rewrite shared history or rotate production signing identity. Native initialization readiness (#138), Android service-rebind stress (#81/#97), device listening, reboot-before-first-unlock and signed installation still need Android/device acceptance evidence. Closure metadata is not treated as proof that these criteria passed.
