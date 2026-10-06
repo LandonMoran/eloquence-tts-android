@@ -1,6 +1,6 @@
 # Prepared issue: consolidated TTS branch handoff
 
-This is a ready-to-post issue body, saved here because this coding environment blocks GitHub issue and PR creation. The branch link below points to the current revision; the pinned commit identifies the first follow-up fix. Copy the body below into a repository issue, then use its embedded PR description.
+This document prepares the consolidated PR description below. The branch link points to the current revision; the pinned commit identifies the first follow-up fix. Earlier environments could not create issues or PRs; the consolidated PR was created from the authorized checkout using the embedded description.
 
 ## Branch and current status
 
@@ -21,33 +21,30 @@ serialized warmup path and Android's actual sample-result contract. Details and
 the eight new issue mappings are in `docs/repository-audit.md`.
 
 Validation for the continuation passed: full Kotlin API-34 compilation, nine host
-regression groups, three native ASan/UBSan suites, nine helper/source contracts and generated asset verification. The proposed
-workflow passed lint separately; it is deferred and not installed on this branch. APK packaging, device acceptance and real
-release/installation flows remain unverified here.
+regression groups, three native ASan/UBSan suites, nine helper/source contracts and generated asset verification. The publication
+workflow change passes lint; the `publish` job is installed on this branch and covered by workflow integration assertions. APK packaging, device acceptance and real
+release/installation flows remain unverified here (no tag-triggered production release was run).
 
 Issue #291's requested `Activity.RESULT_OK` change conflicts with Android Settings:
 the platform consumer expects `TextToSpeech.LANG_AVAILABLE`. The existing code is
-preserved and now tested; close that report with the linked AOSP evidence.
+preserved and now tested; that report is closed with the linked AOSP evidence.
 
-The user deferred the workflow change after the repository credential rejected
-workflow updates. This continuation preserves all application/native changes and
-`tools/publish_release.py`, while retaining the original `.github/workflows/release.yml`
-throughout its unpublished replacement history. Automatic release publication
-(#288) is **not installed or fixed** on this branch. The full tested continuation
-and proposed workflow are preserved as separate Outputs artifacts for later
-application. No issue attachment/comment exists because the runtime blocked it.
+The earlier full continuation push was rejected because its GitHub App credential
+lacked workflow write permission; the non-workflow changes were then pushed
+normally. From the authorized checkout, `.github/workflows/release.yml` was later
+updated with the #288 `publish` job and pushed normally (no force push).
+Automatic release publication (#288) is now installed on this branch.
 
-The semantic updater now requires APK-derived Android version-code metadata.
-Until the deferred workflow is installed, an authorized manual release process
-must supply equivalent assets and the matching metadata marker; semantic releases
-without the marker are intentionally not offered. Helper contract tests pass,
-but CI publication integration and real releases remain unverified.
+The semantic updater requires APK-derived Android version-code metadata, which
+the installed `publish` job populates automatically from the signed APK manifests.
+Semantic releases without the marker are intentionally not offered. Helper
+contract tests and workflow integration assertions both pass, but release
+publication itself remains unverified until the first real signed release runs.
 
-Publication status: the non-workflow continuation was successfully pushed as
-`5dcc8149e2f294467d947cb073a0109a53e8719f` to
-`coderabbit/fix-open-issues-engine/5b367011`. The remote accepted a normal push;
-no force push was used. The earlier rejected full continuation is preserved in
-Outputs. Issue #288 remains deferred as described above.
+Publication status: the non-workflow continuation was pushed as
+`5dcc8149e2f294467d947cb073a0109a53e8719f`; the workflow change lands with this
+revision, both by normal push with no force push. Issue #288 is fixed on the
+branch; #291 is closed with the AOSP explanation.
 
 ## What the branch changes
 
@@ -66,6 +63,7 @@ The latest pass confirmed and fixed four more defects:
 - One new failure-injection test initially caught an unfixed synthesis-start branch; that branch was fixed and the final native suite passed.
 - Previous generated-asset and workflow checks are reused only where relevant inputs stayed unchanged.
 - [Branch CI runs](https://github.com/LandonMoran/eloquence-tts-android/actions?query=branch%3Acoderabbit%2Ffix-open-issues-engine%2F5b367011) must be checked for the PR's exact head. Earlier failures are documented and corrected; a running build is not a pass.
+- Fresh checks at the workflow head: `tests/contracts.py` passes, including the new `test_release_publication_integration`; `actionlint` and `git diff --check` are clean. The concrete head SHA, consolidated PR link and its CI result are recorded in the follow-up status note in this file.
 - Still required: real-device listening, rapid TalkBack stop/restart, reboot before first unlock, service-rebind stress and an actual signed update confirmation flow.
 - Closed issue #141: the historical signing key is absent from the current tree, but remains in Git history. Owner confirmation of key rotation and released APK identity is still needed. Configure protected `release` environment reviewers/tag restrictions before release signing.
 
@@ -105,12 +103,9 @@ Consolidate reviewed PRs #240, #241, #286 and #287 with the application/runtime 
 - Remove unused futures, wrapper instance/state, obsolete locale helpers and mutable fields with no remaining use.
 - Include isolated release signing, exact APK ABI checks, pinned oracle inputs, explicit fanout assembly and content-aware asset generation from reviewed PR #287. Fix its observed CI failure caused by relying on ripgrep on GitHub runners.
 
-## Deferred release publication
+## Release publication
 
-The later #288 publication job is excluded by user choice. The helper is tested,
-but current CI does not call it. Semantic updates require APK-derived version-code
-metadata from the future workflow or an equivalent authorized manual release.
-Do not close #288 based on this PR.
+The #288 `publish` job runs after signing, downloads `release-signed-apks`, and invokes `tools/publish_release.py` with the release tag, the signed directory and the aapt path. `contents: write` is granted only to that job; production signing secrets remain inside the protected signing job. Workflow integration assertions cover the dependency, artifact, invocation, permission, environment and secret boundaries; the workflow is lint-clean. No tag-triggered production release was run while preparing this PR, so real signed release publication remains an acceptance check. Fixes #288.
 
 ## Review and integration
 
@@ -174,7 +169,7 @@ Fixes #282
 Fixes #283
 Fixes #284
 Fixes #285
-Deferred: #288 (publication helper present; workflow installation and release acceptance pending)
+Fixes #288 (publication workflow installed; real signed release acceptance pending)
 Fixes #289
 Fixes #290
 Closes #291 (existing Android contract confirmed; proposed change would regress it)

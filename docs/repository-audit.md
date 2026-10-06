@@ -123,22 +123,22 @@ Issue #141's historical key is removed from the current tree but still exists in
 
 These fixes have focused host/native regressions. New findings in this pass mean the repository is not claimed defect-free or "mostly bug-free"; device acceptance and signing-key rotation evidence remain outstanding.
 
-The continuing audit also found CR-only imported dictionary files could merge records. The bounded importer now recognizes CR, LF and CRLF; tests cover all line endings with UTF-8, UTF-16LE and UTF-16BE BOMs. `docs/PR_HANDOFF.md` contains the issue text and proposed PR description, since the runtime blocks direct issue and PR creation.
+The continuing audit also found CR-only imported dictionary files could merge records. The bounded importer now recognizes CR, LF and CRLF; tests cover all line endings with UTF-8, UTF-16LE and UTF-16BE BOMs. `docs/PR_HANDOFF.md` maintains the consolidated PR description; the PR is created from the authorized checkout rather than being blocked by the runtime.
 
 ## Open-issue reconciliation (2026-10-06, continuation)
 
 Rechecked all **53 currently open issues** against consolidation commit
 `64bc339` and this continuation. The original 45 issue implementations above
-remain present. The eight later issues have the following status; #288 remains deferred:
+remain present. The eight later issues have the following status:
 
 | Issue | Resolution | Regression evidence |
 |---|---|---|
-| #288 | **Deferred by user choice.** The branch retains the signing-only workflow. `tools/publish_release.py` is ready for a later authorized workflow change; automatic publication is not installed. The complete proposed workflow is supplied separately as an Outputs artifact. | Helper asset/version/create/update/error behavior tests pass. Workflow integration and actual publication remain outstanding; this issue is not fixed on the branch. |
+| #288 | **Implemented.** `release.yml` gains a `publish` job after `sign` that downloads `release-signed-apks` and runs `tools/publish_release.py` with the release tag, the signed directory and the aapt path. `contents: write` is granted only to the publication job; production signing secrets stay inside the protected `environment: release` signing job.  | Helper asset/version/create/update/error tests and workflow integration assertions pass; `actionlint` is clean. A real tag-triggered signed release has not been run yet; actual publication remains an acceptance check. |
 | #289 | Existing engine serialization already queues warmup and synthesis on the same `SynthWorker.executor`; no new native lock is needed. | Host regression blocks synthesis, queues warmup, and verifies no native open can overlap it. Stop remains independent. |
 | #290 | Service teardown releases its engine owner. Overlapping service instances are counted under the process engine lock; the last owner stops and shuts down the engine. The retirement executor also shuts down. | Host regression destroys a service during blocked synthesis, checks deferred handle closure, recreates a service, and verifies overlapping owners remain usable. |
 | #291 | **Reported premise disproved.** Android Settings expects `TextToSpeech.LANG_AVAILABLE` (0), not `Activity.RESULT_OK` (-1), from `GET_SAMPLE_TEXT`. Preserve the existing result code. | Execute the actual sample activity with host Android boundary stubs; verify result code, localized sample extra, unsupported country/voice/variant, and finish. |
 | #292 | Country-specific registry lookup now requires a shipped ISO-2/ISO-3 country match. Only absent/empty country requests fall back to the first language voice. | Every shipped ISO-2/ISO-3 locale, `spa/ARG`, `es/AR`, unknown country, language-only and case-insensitive lookup. |
-| #293 | Require increasing Android versionCode and, when both names parse, increasing semantic version. The updater requires `<!-- android-version-code: N -->` in release notes. The helper extracts this from signed APK manifests and checks all three assets; populating it depends on deferred #288 or an equivalent authorized manual release process. Semantic tags without metadata fail closed; numeric legacy tags remain supported. | Lower/equal/higher Android codes, older/equal/newer semantic versions, Long codes, malformed/missing/duplicate metadata, publication tag/APK agreement. |
+| #293 | Require increasing Android versionCode and, when both names parse, increasing semantic version. The updater requires `<!-- android-version-code: N -->` in release notes. The installed #288 `publish` job runs `tools/publish_release.py`, which extracts this marker from signed APK manifests and checks all three assets; no real release has run yet, so the marker's first live use remains an acceptance check. Semantic tags without metadata fail closed; numeric legacy tags remain supported. | Lower/equal/higher Android codes, older/equal/newer semantic versions, Long codes, malformed/missing/duplicate metadata, publication tag/APK agreement. |
 | #294 | Native shutdown now guarantees cleanup ownership after revoking the public handle. If deletion refuses, a process-owned queue retains the native session and retries independently of the Kotlin worker/service lifetime. | Native fault injection refuses deletion, repeats shutdown, rejects stale controls, then permits deletion and proves exactly one reclamation. |
 | #295 | Failed initialization transfers its unpublished session to the same cleanup path. The cleanup worker must start before native allocation; session mutex initialization precedes ECI creation. | Fail callback, output-buffer and sample-rate setup while deletion also refuses; prove each retained session is eventually reclaimed. |
 
@@ -153,7 +153,4 @@ The native cleanup queue deliberately retains sessions while the native engine
 continues to refuse destruction. This prevents freeing live callback storage and
 allows eventual recovery; it cannot force a permanently wedged engine to recover.
 
-No GitHub issue was administratively closed, no release was published, and no PR
-was merged during this continuation. Device listening, reboot before unlock,
-actual signed installation and protected release environment configuration remain
-acceptance checks outside the host/native fixtures.
+No release was published and no PR was merged during this continuation. The consolidated PR from this branch is open as a draft (see `docs/PR_HANDOFF.md`); #291 was closed with the AOSP `LANG_AVAILABLE` explanation, and #288 was reopened ahead of the PR's `Fixes #288` keyword so it closes when the PR lands. Device listening, reboot before unlock, actual signed installation and protected release environment configuration remain acceptance checks outside the host/native fixtures.

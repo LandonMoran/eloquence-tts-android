@@ -52,8 +52,8 @@ class Contracts(unittest.TestCase):
     def test_release_publication_helper(self):
         with patch.dict(sys.modules, {'audit_apk_abis': module('audit_apk_abis')}):
             publisher = module('publish_release')
-        # Workflow installation is deferred (#288). This test exercises the
-        # publication helper only; it does not establish CI integration.
+        # Helper contract: create/update/error/version/asset behavior. CI
+        # integration of this helper is asserted by the workflow test below.
         self.assertEqual(set(publisher.ASSETS), {'vvtts-arm64-v8a.apk', 'vvtts-armeabi-v7a.apk', 'vvtts-universal.apk'})
         badging = "package: name='com.xw.vvtts' versionCode='2000000003' versionName='1.0.2'"
         self.assertEqual(publisher.package_version(badging), (2000000003, '1.0.2'))
@@ -95,6 +95,37 @@ class Contracts(unittest.TestCase):
             upload=next(i for i,c in enumerate(calls) if c[:3]==('gh','release','upload'))
             self.assertIn('--draft',calls[create]); self.assertIn('--verify-tag',calls[create])
             self.assertLess(create,upload)
+
+    def test_release_publication_integration(self):
+        workflow=(ROOT/'.github/workflows/release.yml').read_text()
+        self.assertNotIn('eloquence-ci',workflow)
+        idx=workflow.index('  publish:\n')
+        publish=workflow[idx:]
+        sign=workflow[:idx]
+        # The publication job depends on signing and downloads its artifact.
+        self.assertIn('needs: sign',publish)
+        self.assertIn('name: release-signed-apks',publish)
+        self.assertIn('path: signed',publish)
+        # It runs the helper with the tag, the signed directory and the aapt path.
+        self.assertIn('python3 tools/publish_release.py "$RELEASE_TAG" signed "$ANDROID_HOME/build-tools/35.0.0/aapt"',publish)
+        self.assertIn('GH_TOKEN: ${{ github.token }}',publish)
+        self.assertIn('RELEASE_TAG: ${{ github.ref_name }}',publish)
+        # Write permission is granted to the publication job only.
+        self.assertEqual(workflow.count('contents: write'),1)
+        self.assertIn('contents: write',publish)
+        self.assertNotIn('contents: write',sign)
+        # Signing stays behind the protected release environment; production
+        # signing secrets are referenced from the release workflow only. The
+        # names in build.yml are an ephemeral CI key (openssl rand), not
+        # production identity.
+        self.assertIn('environment: release',sign)
+        for secret in ('KEYSTORE_B64','KS_PASS','KEY_PASS'):
+            self.assertNotIn(secret,publish)
+            self.assertNotIn('${{ secrets.%s }}' % secret,(ROOT/'.github/workflows/build.yml').read_text())
+        # The helper, with its own three-asset audit contract, is the sole
+        # upload path: no APK name is hard-coded in the publication job.
+        self.assertFalse(re.findall(r'vvtts-[a-z0-9-]*\.apk',publish))
+        self.assertEqual(workflow.count('release-signed-apks'),2)  # sign upload + publish download
 
     def test_apk_exact_abis(self):
         audit=module('audit_apk_abis')
