@@ -226,6 +226,7 @@ int STDCALL es_pause(OldInst *h, int32_t on)
 }
 
 /* Checked destruction for the Android bridge: refusal retains ownership. */
+/** Destroy an engine and owned allocations; return zero without transferring ownership if deletion is refused. */
 int es_delete_checked(OldInst *h)
 {
     OldInst *inst;
@@ -265,6 +266,7 @@ int es_delete_checked(OldInst *h)
 }
 
 /* Preserve the legacy ABI, whose documented result is always zero. */
+/** Preserve the legacy deletion ABI by returning zero regardless of checked deletion status. */
 int STDCALL es_delete(OldInst *h)
 {
     es_delete_checked(h);

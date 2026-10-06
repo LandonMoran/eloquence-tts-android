@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def assemble(root, dialect, pieces, output):
+    """Validate and concatenate requested waveform pieces, returning and writing their hash manifest."""
     if dialect not in ("zh-cn", "zh-tw", "ko", "ja"):
         raise ValueError("Unknown dialect")
     if len(set(pieces)) != len(pieces) or not pieces or any(p not in range(1, 9) for p in pieces):

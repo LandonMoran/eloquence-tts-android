@@ -70,6 +70,7 @@ class VvTtsService : TextToSpeechService() {
     // dirty listeners on all three from both the device-protected storage and
     // the credential store, so any UI edit marks settings dirty exactly once.
 
+    /** Register each available settings store once so preference changes invalidate the cache. */
     private fun registerAllPrefsListeners(ctx: Context?) {
         if (ctx == null) return
         val names = arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)
@@ -81,6 +82,7 @@ class VvTtsService : TextToSpeechService() {
             }
         }
     }
+    /** Initialize Direct Boot settings, acquire the process engine, and start language loading. */
     override fun onCreate() {
         super.onCreate()
         // Direct Boot: speak on the lock screen ( before first unlock(.
@@ -147,6 +149,7 @@ class VvTtsService : TextToSpeechService() {
         Log.e(TAG, "onCreate engine initialized=$ok")
     }
 
+    /** Invalidate speech, cancel loaders, unregister listeners, and release this service's engine. */
     override fun onDestroy() {
         // Drop every queued utterance on teardown. Synthesis runs inline (the
         // delivery executor is gone), so there is no queued work left to drain on
@@ -227,6 +230,7 @@ class VvTtsService : TextToSpeechService() {
     private val prefsDirMtimes = HashMap<String, Long>()
     private val prefsFileMtimes = HashMap<String, String>()
 
+    /** Reload changed settings from disk and apply voice and language configuration. */
     private fun refreshSettings() { synchronized(prefsDirLock) {
         if (!settingsDirty && !prefsDirsChanged()) return
         // Clear BEFORE re-reading: a prefs write that lands during the read
@@ -330,6 +334,7 @@ class VvTtsService : TextToSpeechService() {
     }
 
     private val CAPABLE_VOICES get() = VoiceRegistry.voices
+    /** Normalize framework language codes through the shipped voice registry. */
     private fun normalizeLanguage(language: String?) = VoiceRegistry.normalizeLanguage(language)
 
     /** Returns the advertised offline voices, or an empty list if building the catalog fails. */
@@ -817,6 +822,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
 
         // Restore language-detection settings from SharedPreferences (device-protected
         // storage when the user is locked; mirrored copy otherwise(.
+        /** Apply persisted detection options, enabling all shipped languages on a fresh install. */
         private fun restoreLanguageSettings(prefs: MirroredPreferences) {
             LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
             LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
@@ -834,6 +840,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         // === Direct Boot (lock-screen( helpers === Mirror the 3 settings files from
         // credential-encrypted to device-protected storage. Called only while unlocked;
         // the device copy is what a locked start reads ( before first unlock(.
+        /** Reconcile the three preference stores into both storage areas while unlocked. */
         private fun mirrorPrefsToDevice(device: Context) {
             for (name in arrayOf(VOICE_CONFIG_PREFS, VOICE_PROFILE_PREFS, PREFS_NAME)) {
                 MirroredPreferences(device, name).update { }
@@ -930,6 +937,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
             private var processEngine: EloquenceEngine? = null
             private var processEngineOwners = 0
 
+            /** Acquire an initialized process engine and count this service as an owner, or return null. */
             private fun acquireProcessEngine(ctx: Context): EloquenceEngine? = synchronized(engineLock) {
                 processEngine?.takeIf { it.isInitialized() }?.let {
                     processEngineOwners++
@@ -948,6 +956,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                 }
             }
 
+            /** Release ownership and stop/shut down the engine when its last service owner leaves. */
             private fun releaseProcessEngine(owned: EloquenceEngine) {
                 val lastOwner = synchronized(engineLock) {
                     if (processEngine !== owned) true

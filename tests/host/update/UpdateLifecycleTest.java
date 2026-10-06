@@ -8,7 +8,9 @@ import java.lang.reflect.Field;
 import java.util.concurrent.TimeUnit;
 
 public class UpdateLifecycleTest {
+    /** Throw an assertion error with context when a lifecycle invariant fails. */
     static void check(boolean ok,String message) { if(!ok)throw new AssertionError(message); }
+    /** Start a blocked update, reject a duplicate check, then dismiss its owner and return a weak reference. */
     static WeakReference<Activity> beginAndDestroy() throws Exception {
         Activity owner=new Activity();
         UpdateActions.INSTANCE.showCheckDialog(owner);
@@ -20,6 +22,7 @@ public class UpdateLifecycleTest {
         check(AlertDialog.active==0,"dialog retained");
         return weak;
     }
+    /** Verify owner collection, stale-result rejection, and successful checks after activity recreation. */
     public static void main(String[] args) throws Exception {
         WeakReference<Activity> old=beginAndDestroy();
         for(int i=0;i<40 && old.get()!=null;i++) { System.gc(); Thread.sleep(10); }

@@ -4,9 +4,11 @@
 #include "../../jni/chs_oracle_synth.c"
 static unsigned char bytes[4]={1,0,2,0};
 static uint32_t clip_length=4;
+/** Return one synthetic GBK clip with a configurable reported size for allocation-bound tests. */
 int chs_oracle_pcm_for_gbk(uint32_t key,const uint8_t **data,uint32_t *len) {
     *data=bytes; *len=clip_length; return key==0x8140;
 }
+/** Check PCM concatenation and rejection of oversized text or waveform lengths before copying. */
 int main(void) {
     unsigned char text[]={0x81,0x40,0x81,0x40}; short *pcm=(void *)1;
     assert(chs_build_pcm(text,sizeof(text),&pcm)==4); assert(pcm[0]==1 && pcm[3]==2); free(pcm);

@@ -79,6 +79,7 @@ object CrashCodeDefender {
         return out.toString()
     }
 
+    /** Identify token separators while keeping apostrophes and combining marks within words. */
     private fun isBreak(c: Char): Boolean {
         if (c.isLetterOrDigit() || c == '\'') return false
         return when (Character.getType(c)) {
@@ -119,6 +120,7 @@ object CrashCodeDefender {
         return t.toCharArray().joinToString(" ")
     }
 
+    /** Load the compressed crash corpus once, backing off after failures before retrying. */
     private fun ensureLoaded(ctx: Context) {
         if (loaded) return
         val now = SystemClock.elapsedRealtime()
@@ -146,6 +148,7 @@ object CrashCodeDefender {
         val line = StringBuilder()
         var chars = 0L
         var lines = 0L
+        /** Count and accept one bounded corpus line, ignoring blank lines and comments. */
         fun accept() {
             check(++lines <= MAX_CORPUS_LINES) { "Too many corpus lines" }
             val word = line.toString().trim()
