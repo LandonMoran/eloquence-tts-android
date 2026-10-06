@@ -19,6 +19,12 @@ def module(name):
 
 
 class Contracts(unittest.TestCase):
+    def test_no_tracked_signing_keys(self):
+        import subprocess
+        tracked = subprocess.check_output(
+            ['git', 'ls-files', '-z', '--', '*.jks', '*.keystore', '*.p12', '*.pfx'], cwd=ROOT)
+        self.assertFalse(tracked, 'Signing key material must not be tracked')
+
     def test_registry_native_parity(self):
         engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
         registry = (ROOT/'src/com/xw/vvtts/engine/VoiceRegistry.kt').read_text()

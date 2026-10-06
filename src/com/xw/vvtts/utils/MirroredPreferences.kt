@@ -18,7 +18,9 @@ import java.io.RandomAccessFile
  */
 class MirroredPreferences(context: Context, private val name: String) {
     private val device = context.createDeviceProtectedStorageContext()
-    private val credential = context.createCredentialProtectedStorageContext()
+    // applicationContext is the app's CE context; the credential-context factory
+    // is hidden from the public Android SDK. No CE file is opened here.
+    private val credential = context.applicationContext ?: context
     private data class Stamp(val path: String, val inode: Long, val modified: Long, val size: Long)
     private var stamp: Stamp? = null
     private var cached: Map<String, Any> = emptyMap()

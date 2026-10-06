@@ -2,7 +2,7 @@
 
 ## Publication status
 
-The application changes can be pushed with the available repository permission. Workflow changes are kept in a separate companion patch because GitHub rejected workflow updates from the current credential. CI/signing/oracle-workflow claims below describe the complete prepared change set; those workflow fixes remain pending until that patch is applied with workflow-write permission. The two workflow-specific contract tests will fail on the application-only branch until then.
+The consolidation branch contains the application fixes and the workflow changes from PR #287. The earlier workflow-write rejection was resolved by merging the same workflow content already present on that repository branch. All seven contract tests pass together. PRs #240, #241 and #286 are also integrated into the branch history with their accepted fixes preserved and the tail-fade correction retained.
 
 ## Scope and limits
 
@@ -68,7 +68,7 @@ All 45 issues open at the start of this work are mapped below. Closing keywords 
 - **#241**: incorporated the Direct Boot constructor fix into shared preference access, with inaccessible-CE fallback, atomic mirrored updates and serialization across processes.
 - **#286**: incorporated the synthesis work budget so playback pacing does not exhaust the watchdog. The measurement is elapsed time waiting for synthesis, not CPU time.
 
-These changes supersede those three PRs. Their branches must be rechecked before closing them after the replacement PR is published.
+These three PR heads and PR #287 are merged into the consolidation branch. Their GitHub PR status is not marked merged into main until the consolidated change lands.
 
 ## Additional findings addressed
 
