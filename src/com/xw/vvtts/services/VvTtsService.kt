@@ -3,9 +3,7 @@ package com.xw.vvtts.services
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences

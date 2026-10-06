@@ -2,10 +2,6 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Xml
-import org.xmlpull.v1.XmlPullParser
-import java.io.File
-import java.io.FileInputStream
 
 /**
  * Voice profile configuration.

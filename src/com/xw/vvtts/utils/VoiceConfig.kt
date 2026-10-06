@@ -2,10 +2,6 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Xml
-import org.xmlpull.v1.XmlPullParser
-import java.io.File
-import java.io.FileInputStream
 
 /** One user-dictionary rule: written word -> spoken form. Case-sensitive rules only
  *  match the exact written casing; others match any casing ( mirrors the factory's per-entry flag.

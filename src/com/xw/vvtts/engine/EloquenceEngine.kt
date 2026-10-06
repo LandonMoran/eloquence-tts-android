@@ -5,7 +5,6 @@ import android.content.pm.ApplicationInfo
 import android.os.SystemClock
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
-import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.KonaVoice
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.TextNormalizer
