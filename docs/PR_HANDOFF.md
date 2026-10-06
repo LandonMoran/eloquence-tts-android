@@ -43,9 +43,11 @@ must supply equivalent assets and the matching metadata marker; semantic release
 without the marker are intentionally not offered. Helper contract tests pass,
 but CI publication integration and real releases remain unverified.
 
-Publication status: the non-workflow continuation is prepared for a normal push
-to `coderabbit/fix-open-issues-engine/5b367011`; the remote result is recorded after
-the push. The earlier rejected continuation commits are preserved in Outputs.
+Publication status: the non-workflow continuation was successfully pushed as
+`5dcc8149e2f294467d947cb073a0109a53e8719f` to
+`coderabbit/fix-open-issues-engine/5b367011`. The remote accepted a normal push;
+no force push was used. The earlier rejected full continuation is preserved in
+Outputs. Issue #288 remains deferred as described above.
 
 ## What the branch changes
 
