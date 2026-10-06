@@ -3,10 +3,6 @@ name: oracle-decompile
 on:
   workflow_dispatch:
     inputs:
-      url:
-        description: XAPK zip URL (empty = embedded default(
-        required: false
-        default: ""
       target:
         description: Split APK to decompile (empty = base.apk = Java wiring((
         required: false
@@ -23,15 +19,19 @@ jobs:
     env:
       # Oracle fingerprint: factory.zip md5 7e4274e9f140e5cc249765cda3f27694
       FACTORY_URL: "https://files.catbox.moe/3g38bc.zip"
+      FACTORY_SHA256: "b13a7c4871bb689c5c04fee88ca8905895a7b4b3da53f59d521d691cdb137f72"
+      JADX_SHA256: "12fd966431903b8e15c36e5007f19343475be7d8f2a55f082e7a929eeabc937e"
       TARGET_APK: "${{ inputs.target }}"
     steps:
       - name: Fetch oracle XAPK
         run: |
-          set -o pipefail
+          set -euo pipefail
           URL="${FACTORY_URL:-https://files.catbox.moe/3g38bc.zip}"
           TGT="${TARGET_APK:-base.apk}"
+          [[ "$TGT" =~ ^[a-zA-Z0-9._-]+\.apk$ ]] || { echo "Invalid APK filename"; exit 1; }
           echo "fetching $URL (target=$TGT)"
-          curl -sSL -o factory.zip "$URL"
+          curl --fail --location --retry 2 -o factory.zip "$URL"
+          printf '%s  factory.zip\n' "$FACTORY_SHA256" | sha256sum -c -
           unzip -oq factory.zip -d splits "*.apk"
           ls -lh splits
 
@@ -43,10 +43,12 @@ jobs:
 
       - name: Decompile with jadx
         run: |
-          set -o pipefail
+          set -euo pipefail
           URL="${FACTORY_URL:-https://files.catbox.moe/3g38bc.zip}"
           TGT="${TARGET_APK:-base.apk}"
-          curl -sSL -o /tmp/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip
+          [[ "$TGT" =~ ^[a-zA-Z0-9._-]+\.apk$ ]] || { echo "Invalid APK filename"; exit 1; }
+          curl --fail --location --retry 2 -o /tmp/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip
+          printf '%s  /tmp/jadx.zip\n' "$JADX_SHA256" | sha256sum -c -
           unzip -q /tmp/jadx.zip -d /tmp/jadx
           /tmp/jadx/bin/jadx -d out --show-bad-code --threads-count 4 "splits/$TGT" || echo "jadx reported non-fatal errors; packaging partial sources"; find out -name '*.java' | wc -l
 

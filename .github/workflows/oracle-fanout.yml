@@ -46,6 +46,16 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 1
 
+      - name: Validate piece contract
+        env:
+          DIALECT: ${{ inputs.dialect }}
+          PIECE: ${{ inputs.piece }}
+        run: |
+          if [ "$DIALECT" = ja ] && [ "$PIECE" != 1 ]; then
+            echo "Japanese corpus is unsplit: select piece 1" >&2
+            exit 1
+          fi
+
       - name: Install runtime libs
         run: sudo apt-get update && sudo apt-get install -y libc++-dev libc++abi-dev gdb
 
