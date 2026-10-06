@@ -95,7 +95,8 @@ object UpdateActions {
         }
         val dialog = AlertDialog.Builder(activity)
             .setTitle(activity.getString(R.string.update_available_fmt, result.latestTag ?: ""))
-            .setMessage(result.releaseNotes ?: "")
+            .setMessage(result.releaseNotes.orEmpty()
+                .replace(Regex("""<!-- android-version-code: [^>]*-->"""), "").trim())
             .setPositiveButton(if (result.downloadUrl != null) R.string.download_install else R.string.update_open_release) { _, _ ->
                 if (result.downloadUrl != null) startDownload(activity, flow, result.downloadUrl)
                 else {

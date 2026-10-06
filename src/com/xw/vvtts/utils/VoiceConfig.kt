@@ -83,7 +83,13 @@ class VoiceConfig(private val context: Context) {
         val entries = parseDictionary(raw)
         dictionaryEntries = entries
         dictionaryRules = entries.map { entry ->
-            Regex((if (entry.caseSensitive) "" else "(?i)") + "\\b" + Regex.escape(entry.word) + "\\b") to entry.spoken
+            val w = entry.word
+            fun wordy(c: Char) = (c.isLetterOrDigit() || c == '_') &&
+                Character.UnicodeScript.of(c.code) !in setOf(Character.UnicodeScript.HAN,
+                    Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA)
+            val lead = if (wordy(w.first())) "(?<![\\p{L}\\p{N}_])" else ""
+            val trail = if (wordy(w.last())) "(?![\\p{L}\\p{N}_])" else ""
+            Regex((if (entry.caseSensitive) "" else "(?i)") + lead + Regex.escape(w) + trail) to entry.spoken
         }
         dictionaryRaw = raw
     }

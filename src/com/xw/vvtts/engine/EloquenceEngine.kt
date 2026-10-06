@@ -66,6 +66,7 @@ class EloquenceEngine(context: Context) {
     @Volatile private var synthWorker = SynthWorker()
     // Bumped on every rotate/shutdown/stop; native handles born across a bump are never cached
     private val engineEpoch = AtomicLong()
+    private val lifecycleEpoch = AtomicLong()
         @Volatile private var retireUntilMs = 0L
         private val HANG_TIMEOUT_S = 30L
         private val ZOMBIE_GRACE_MS = 12000L
@@ -358,6 +359,7 @@ class EloquenceEngine(context: Context) {
     @Synchronized
     fun shutdown() {
         engineEpoch.incrementAndGet()
+        lifecycleEpoch.incrementAndGet()
         val worker = synthWorker
         worker.retired = true
         initialized = false
@@ -448,18 +450,19 @@ class EloquenceEngine(context: Context) {
         if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); return 0L }
         val libDir = File(libDirRaw)
         val cfgDir = File(storageContext.filesDir, "eloquence")
-        val epoch = engineEpoch.get()
+        val epoch = lifecycleEpoch.get()
         val handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
         Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
         if (handle ==  0L) return 0L
-        // A handle born across a rotate/shutdown/stop is retired, never cached —
-        // the zombie worker that opened it may still be driving it.
-        if (epoch != engineEpoch.get() || worker.retired || synthWorker !== worker || !initialized) {
+        // A handle born across a rotate/shutdown is retired, never cached —
+        // the zombie worker that opened it may still be driving it. A stop does
+        // not retire the owning worker, so a handle opened across a stop is kept.
+        if (epoch != lifecycleEpoch.get() || worker.retired || synthWorker !== worker || !initialized) {
             VvttsCore.shutdown(handle)
             return   0L
         }
         val accepted = synchronized(handleLock) {
-            if (epoch != engineEpoch.get() || worker.retired || synthWorker !== worker || !initialized) false
+            if (epoch != lifecycleEpoch.get() || worker.retired || synthWorker !== worker || !initialized) false
             else { worker.handles[dialect] = handle; true }
         }
         // Native destruction can wait; never hold the lock used by Stop while closing.
@@ -491,10 +494,10 @@ class EloquenceEngine(context: Context) {
             Log.i(TAG, "warmupDialect skipped: engine not initialized")
             return
         }
-        val epoch = engineEpoch.get()
+        val epoch = lifecycleEpoch.get()
         try {
             worker.executor.execute {
-                if (epoch == engineEpoch.get() && !worker.retired && synthWorker === worker && initialized)
+                if (epoch == lifecycleEpoch.get() && !worker.retired && synthWorker === worker && initialized)
                     ensureHandle(worker, dialect)
             }
         } catch (e: RejectedExecutionException) {
@@ -677,6 +680,7 @@ class EloquenceEngine(context: Context) {
         // JNI stop/shutdown are not safe while the retired worker is in native code.
         // Leave its handles with it; the replacement worker owns a separate cache.
         engineEpoch.incrementAndGet()
+        lifecycleEpoch.incrementAndGet()
         // A fresh worker starts with empty per-worker caches; fresh handles begin at
         // the engine-default voice, so no stale voice/param state can leak across an open.
 

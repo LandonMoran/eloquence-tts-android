@@ -3,16 +3,17 @@
 - Tags use `vMAJOR.MINOR.PATCH` (each component 0–999), for example `v1.0.1`; `v1.0` is also accepted. Numeric tags may carry a nonnegative Long version code. Arbitrary embedded numbers and overflowing components are rejected.
 - Android versionCode must increase independently, and semantic tags must be newer than versionName when both parse. Release notes contain exactly one `<!-- android-version-code: N -->` marker, generated from the signed APK manifests. Semantic releases without this metadata are not offered; their tag cannot safely predict the APK versionCode. Legacy numeric tags remain supported.
 - Asset names are `vvtts-arm64-v8a.apk`, `vvtts-armeabi-v7a.apk`, `vvtts-universal.apk`; x86_64 also has a test APK. Unknown ABIs use the release page, not an incompatible download.
-- Ordinary CI uses temporary signing keys. `release.yml` signs tag builds using secrets scoped to the protected `release` environment. Automatic GitHub Release publication is deferred (#288); the current workflow only uploads signed build artifacts. The tested `tools/publish_release.py` helper is present, but is not invoked by this workflow. Configure reviewers and tag restrictions before use. A release signed with a different key cannot upgrade an existing installation.
+- Ordinary CI uses temporary signing keys. `release.yml` signs tag builds using secrets scoped to the protected `release` environment, then a `publish` job invokes `tools/publish_release.py` to attach the signed APKs and APK-derived version metadata to the GitHub Release. Publication is installed but has not yet run for a production tag; configure reviewers and tag restrictions, and validate on a real tag before relying on it. A release signed with a different key cannot upgrade an existing installation.
 
-## Deferred publication dependency
+## Publication status
 
-The semantic updater requires APK-derived version-code metadata. Until the deferred
-publication workflow is applied, the release owner must provide the three contracted
-signed APK assets and exactly one matching `<!-- android-version-code: N -->` marker
-through an authorized release process. Semantic releases without that marker are
-intentionally not offered. Helper tests do not establish workflow integration or a
-successful real release. Issue #288 remains open pending that setup and validation.
+The semantic updater requires APK-derived version-code metadata; release.yml's
+`publish` job derives it from the signed APK manifests via `tools/publish_release.py`
+and writes exactly one `<!-- android-version-code: N -->` marker into the release
+notes. Semantic releases without that marker are intentionally not offered. The
+integration is covered by contracts tests but has not yet produced a real release
+for a production tag; a successful tag-triggered release must still be validated
+end-to-end before the next ship.
 
 ## Historical v1.0 notes
 
