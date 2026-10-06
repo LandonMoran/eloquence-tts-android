@@ -15,16 +15,27 @@ const int32_t ev_paramRange[18][2] = {
     {0,1},{0,1},{0,3},{0,1},{0,100},{0,48000},{0,100},{0,1},{0,1},
     {0,INT32_MAX},{0,1},{0,1},{0,1},{2,INT32_MAX},{220,INT32_MAX},{0,INT32_MAX},{220,INT32_MAX},{0,0}
 };
+/** Return a sentinel native handle for JNI constructor tests. */
 ECIHand eciNewEx(int dialect) { return (void *)1; }
+/** Count deletion attempts and optionally refuse destruction to exercise deferred cleanup. */
 ECIHand eciDelete(ECIHand h) { deletes++; if (atomic_load(&refuse_delete)) return h; reclaimed++; return NULL; }
+/** Capture the session callback data and optionally reject callback registration. */
 int vv_register_callback(ECIHand h, ECICallback cb, void *data) { active = data; return fail_setup != 1; }
+/** Inject acceptance or failure of the native output-buffer setup. */
 int eciSetOutputBuffer(ECIHand h, int n, short *p) { return fail_setup != 2; }
+/** Count parameter writes and inject engine-parameter setup failure. */
 int eciSetParam(ECIHand h, int p, int v) { calls++; return fail_setup == 3 ? -1 : 1; }
+/** Count accepted voice-parameter writes. */
 int eciSetVoiceParam(ECIHand h, int v, int p, int x) { calls++; return 0; }
+/** Count voice-parameter reads and return a fixed midpoint fixture. */
 int eciGetVoiceParam(ECIHand h, int v, int p) { calls++; return 50; }
+/** Count preset copies and optionally reject configuration. */
 int eciCopyVoice(ECIHand h, int a, int b) { calls++; return fail_setup == 4 ? 0 : 1; }
+/** Count input clears and optionally reject preparation for synthesis. */
 int eciClearInput(ECIHand h) { calls++; return fail_setup != 5; }
+/** Record cancellation and release the simulated speaking loop. */
 int eciStop(ECIHand h) { stop_calls++; atomic_store(&waiting, 0); return 1; }
+/** Simulate speaking while asserting old text and PCM remain valid during settling. */
 int eciSpeaking(ECIHand h) {
     if (settling) {
         assert(active->text == old_text);
@@ -35,8 +46,11 @@ int eciSpeaking(ECIHand h) {
     if (atomic_load(&waiting)) { polls++; return 1; }
     return 0;
 }
+/** Inject index insertion success or failure. */
 int et_insertIndex(void *h, long index) { return fail_setup != 8; }
+/** Validate fixture text and optionally reject native input submission. */
 int et_addText(void *h, const char *text) { assert(strcmp(text, "hello") == 0); return fail_setup != 6; }
+/** Deliver fixture PCM and optionally simulate failure or continued speaking for cancellation tests. */
 int et_synthesize(void *h) {
     if (fail_setup == 7) return 0;
     memcpy(active->chunk, pcm_fixture, sizeof(pcm_fixture));
@@ -44,20 +58,27 @@ int et_synthesize(void *h) {
     if (cancel_during_copy == 2 || cancel_during_copy == 3) atomic_store(&waiting, 1);
     return 1;
 }
+/** Disable oracle synthesis in the bridge fixture; oracle behavior is tested separately. */
 size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) { *out = NULL; return 0; }
 
 typedef struct { jsize len; short samples[]; } Array;
+/** Return the length of the fixed hello text fixture. */
 static jsize array_length(JNIEnv *env, jarray a) { return 5; }
+/** Report that the JNI fixture has no pending exception. */
 static jboolean exception(JNIEnv *env) { return JNI_FALSE; }
+/** Provide a no-op exception clear for the exception-free JNI fixture. */
 static void clear_exception(JNIEnv *env) {}
+/** Copy fixture text and optionally race cancellation against the JNI input copy. */
 static void copy_bytes(JNIEnv *env, jbyteArray a, jsize start, jsize len, jbyte *out) {
     memcpy(out, "hello", 5);
     if (cancel_during_copy == 1)
         Java_com_xw_vvtts_core_VvttsCore_nativeStop(env, NULL, active->id);
 }
+/** Allocate a host-backed JNI short-array fixture and record its length. */
 static jshortArray new_array(JNIEnv *env, jsize n) {
     Array *a = malloc(sizeof(Array) + sizeof(short) * n); assert(a); a->len = n; return (jshortArray)a;
 }
+/** Copy PCM into a host array after asserting the destination bounds. */
 static void copy_shorts(JNIEnv *env, jshortArray array, jsize start, jsize n, const jshort *data) {
     Array *a = (Array *)array; assert(start + n <= a->len); memcpy(a->samples + start, data, n * sizeof(short));
 }
@@ -68,6 +89,7 @@ static JNIEnv env = &jni;
 #define SYNTH(h) Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(&env,NULL,h,0x10000,(jbyteArray)1,0,NULL)
 #define SHUT(h) Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(&env,NULL,h)
 
+/** Race stop or shutdown against active synthesis and assert concurrent operations are rejected. */
 static void *stop_thread(void *ignored) {
     while (!atomic_load(&waiting)) { struct timespec t={0,100000}; nanosleep(&t,NULL); }
     if (cancel_during_copy == 3) {
@@ -79,6 +101,7 @@ static void *stop_thread(void *ignored) {
     return NULL;
 }
 
+/** Read the deferred-cleanup count under its mutex. */
 static unsigned pending_cleanup(void) {
     pthread_mutex_lock(&vv_cleanup_lock);
     unsigned count = vv_pending_cleanup;
@@ -86,6 +109,7 @@ static unsigned pending_cleanup(void) {
     return count;
 }
 
+/** Wait within a bounded interval and assert all deferred sessions have been reclaimed. */
 static void await_cleanup(void) {
     for (int i = 0; i < 500 && pending_cleanup(); ++i) {
         struct timespec delay = {0, 10000000L}; nanosleep(&delay, NULL);
@@ -93,6 +117,7 @@ static void await_cleanup(void) {
     assert(pending_cleanup() == 0);
 }
 
+/** Exercise JNI setup failures, parameter bounds, PCM endpoints, cancellation, and session lifetime races. */
 int main(void) {
     for (int i=0;i<256;i++) pcm_fixture[i] = i > 32 && i < 220 ? 4000 : 0;
     for (fail_setup=1;fail_setup<=3;fail_setup++) { int before=deletes; assert(INIT()==0); assert(deletes==before+1); }

@@ -63,6 +63,7 @@ ECIAPI ECIHand ECICALL eciNewEx(int language)
     return (ECIHand)eo_newEx(language);
 }
 
+/** Destroy an engine, returning NULL on success or the still-owned handle on refusal. */
 ECIAPI ECIHand ECICALL eciDelete(ECIHand handle)
 {
     if (!handle) return NULL;
@@ -88,6 +89,7 @@ ECIAPI void ECICALL eciRegisterCallback(ECIHand handle, ECICallback callback, vo
 
 /* Keep the public void ABI, but let the JNI constructor verify registration.
  * eo_registerCallback only assigns these two fields and may refuse reentry. */
+/** Register a callback and return whether the engine accepted both callback and user data. */
 int vv_register_callback(ECIHand handle, ECICallback callback, void *data)
 {
     OldInst *h = (OldInst *)handle;
@@ -111,6 +113,7 @@ ECIAPI int ECICALL eciSpeaking(ECIHand handle)
     return eo_speaking((OldInst *)handle);
 }
 
+/** Forward stop to the engine and preserve its success/failure result. */
 ECIAPI int ECICALL eciStop(ECIHand handle)
 {
     return eo_stop((OldInst *)handle);
@@ -133,11 +136,13 @@ ECIAPI int ECICALL eciSetVoiceParam(ECIHand handle, int voice, int param, int va
     return vc_setVoiceParam((OldInst *)handle, voice, param, value);
 }
 
+/** Read a voice parameter through the engine's canonical accessor. */
 ECIAPI int ECICALL eciGetVoiceParam(ECIHand handle, int voice, int param)
 {
     return vc_getVoiceParam((OldInst *)handle, voice, param);
 }
 
+/** Copy a voice into the active or user-defined slots; return zero for invalid destinations. */
 ECIAPI int ECICALL eciCopyVoice(ECIHand handle, int from, int to)
 {
     if (!handle || from < 0 || from > ECI_LAST_VOICE ||

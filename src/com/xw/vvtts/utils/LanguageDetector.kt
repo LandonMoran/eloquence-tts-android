@@ -229,6 +229,7 @@ class LanguageDetector {
             }
         }
 
+        /** Interrupt the owned preload and invalidate its generation so stale work cannot publish. */
         fun cancelPreload() {
             synchronized(lock) {
                 linguaGeneration++
@@ -238,6 +239,7 @@ class LanguageDetector {
             }
         }
 
+        /** Lazily build a detector for enabled languages, returning null on failure or obsolete work. */
         private fun getLingua(): com.github.pemistahl.lingua.api.LanguageDetector? {
             linguaDetector?.let { return it }
             if (linguaInitFailed || Thread.currentThread().isInterrupted) return null
@@ -652,6 +654,7 @@ class LanguageDetector {
             else -> englishDialect
         }
 
+        /** Choose a Latin dialect using short-text/context shortcuts before statistical detection. */
         private fun detectLatin(text: String, fallbackDialect: Int): Int {
             // Short runs (names, loanwords, fragments( almost always belong to
                         // the user's base language. Don't let Lingua flip the voice mid-sentence:

@@ -7,6 +7,7 @@ import android.os.SystemClock
 internal class SynthesisBudget(private val limitMs: Long, private val clock: () -> Long = { SystemClock.elapsedRealtime() }) {
     private var spentMs = 0L
     val exhausted: Boolean get() = spentMs >= limitMs
+    /** Run a block and charge its elapsed time to the budget, including when it throws. */
     fun <T> measure(block: () -> T): T {
         val started = clock()
         try { return block() } finally {

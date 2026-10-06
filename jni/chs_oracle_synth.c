@@ -50,6 +50,7 @@ static size_t gb_advance(const unsigned char *s, size_t n, size_t i, uint32_t *k
     return 0;
 }
 
+/** Build bounded oracle PCM from encoded text; return its sample count and transfer the allocated buffer. */
 size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
     const uint8_t *d;
     uint32_t ln, key;

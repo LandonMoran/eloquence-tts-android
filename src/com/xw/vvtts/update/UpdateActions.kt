@@ -31,6 +31,7 @@ object UpdateActions {
 
     private fun Activity.alive() = !isFinishing && !isDestroyed
 
+    /** Replace the current dialog with a noncancelable progress view on the main thread. */
     private fun progress(activity: Activity, message: String) {
         currentDialog?.dialog?.dismiss()
         val text = TextView(activity).apply { this.text = message }
@@ -46,6 +47,7 @@ object UpdateActions {
         dialog.show()
     }
 
+    /** Dismiss and release a flow only if it still owns the current UI. */
     private fun finish(flow: Flow) {
         if (current !== flow) return
         currentDialog?.dialog?.dismiss()
@@ -53,6 +55,7 @@ object UpdateActions {
         current = null
     }
 
+    /** Cancel the activity's current flow, clear its weak owner, and interrupt its worker. */
     fun dismissFor(activity: Activity) {
         val flow = current ?: return
         if (flow.owner.get() !== activity) return
@@ -62,6 +65,7 @@ object UpdateActions {
         finish(flow)
     }
 
+    /** Deliver work on the main thread only while the flow and its activity remain current. */
     private fun post(flow: Flow, action: (Activity) -> Unit) {
         main.post {
             if (current === flow && !flow.cancelled.get()) {
@@ -71,6 +75,7 @@ object UpdateActions {
         }
     }
 
+    /** Start one update check for a live activity, retaining only its application context in the worker. */
     fun showCheckDialog(activity: Activity) {
         if (!activity.alive() || current != null) return
         val flow = Flow(activity)
@@ -83,6 +88,7 @@ object UpdateActions {
         }.apply { name = "update-check"; isDaemon = true; start() }
     }
 
+    /** Display the current check result and offer download or release-page actions. */
     private fun showResult(activity: Activity, flow: Flow, result: ElqUpdateChecker.UpdateResult) {
         currentDialog?.dialog?.dismiss()
         currentDialog = null
@@ -110,6 +116,7 @@ object UpdateActions {
         dialog.show()
     }
 
+    /** Show download progress for the current owner and launch work with application context. */
     private fun startDownload(activity: Activity, flow: Flow, url: String) {
         if (current !== flow || !activity.alive()) return
         progress(activity, activity.getString(R.string.update_downloading_fmt, 0))
@@ -117,6 +124,7 @@ object UpdateActions {
         download(activity.applicationContext, flow, url)
     }
 
+    /** Download/install on a worker, post results to the surviving owner, and delete the temporary APK. */
     private fun download(app: Context, flow: Flow, url: String) {
         flow.worker = Thread {
             var apk: File? = null

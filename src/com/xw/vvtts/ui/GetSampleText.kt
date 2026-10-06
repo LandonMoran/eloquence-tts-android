@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 
 class GetSampleText : Activity() {
+    /** Return localized sample text with LANG_AVAILABLE, or reject an unsupported voice request. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val result = Intent()

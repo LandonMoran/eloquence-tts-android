@@ -27,10 +27,13 @@ class VoiceConfig(private val context: Context) {
     )
 
     private val store = MirroredPreferences(context, PREFS)
+    /** Read the latest settings as strings from mirrored storage. */
     private fun readMap() = store.strings()
+    /** Persist editor changes through the shared mirrored-preferences transaction. */
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) { store.edit(block) }
 
     val extraLogging: Boolean get() = store.getBoolean("extra_logging", false)
+    /** Persist whether extra engine logging is enabled. */
     fun setExtraLogging(enabled: Boolean) { writeBoth { it.putBoolean("extra_logging", enabled) } }
 
     val voice: String
@@ -47,6 +50,7 @@ class VoiceConfig(private val context: Context) {
     fun setVoice(v: String) { writeBoth { it.putString(KEY_VOICE, v) } }
     fun setRate(r: Int) { writeBoth { it.putInt(KEY_RATE, r) } }
     fun setPitch(p: Int) { writeBoth { it.putInt(KEY_PITCH, p) } }
+    /** Persist the requested output volume in mirrored settings. */
     fun setVolume(v: Int) { writeBoth { it.putInt(KEY_VOLUME, v) } }
     fun setAutoDetect(b: Boolean) { writeBoth { it.putBoolean(KEY_AUTO_DETECT, b) } }
 
@@ -65,18 +69,21 @@ class VoiceConfig(private val context: Context) {
     private var dictionaryEntries: List<DictEntry> = emptyList()
     private var dictionaryRules: List<Pair<Regex, String>> = emptyList()
 
+    /** Return dictionary entries, refreshing the cache when persisted text changes. */
     @Synchronized
     fun dictEntries(): List<DictEntry> {
         refreshDictionary()
         return dictionaryEntries
     }
 
+    /** Return cached regex/replacement pairs, recompiling only after a dictionary change. */
     @Synchronized
     fun compiledDictionary(): List<Pair<Regex, String>> {
         refreshDictionary()
         return dictionaryRules
     }
 
+    /** Refresh dictionary entries and compiled boundary-aware rules from the current persisted text. */
     private fun refreshDictionary() {
         val raw = store.read()[KEY_DICT] as? String ?: ""
         if (raw == dictionaryRaw) return
@@ -84,6 +91,7 @@ class VoiceConfig(private val context: Context) {
         dictionaryEntries = entries
         dictionaryRules = entries.map { entry ->
             val w = entry.word
+            /** Identify characters that require word boundaries, excluding Han and Japanese scripts. */
             fun wordy(c: Char) = (c.isLetterOrDigit() || c == '_') &&
                 Character.UnicodeScript.of(c.code) !in setOf(Character.UnicodeScript.HAN,
                     Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA)
@@ -94,6 +102,7 @@ class VoiceConfig(private val context: Context) {
         dictionaryRaw = raw
     }
 
+    /** Parse bounded dictionary storage, skipping invalid entries and capping the entry count. */
     private fun parseDictionary(raw: String): List<DictEntry> {
         if (raw.length > MAX_DICT_BYTES || raw.toByteArray(Charsets.UTF_8).size > MAX_DICT_BYTES) return emptyList()
         return raw.lineSequence().mapNotNull { line ->
@@ -125,9 +134,11 @@ class VoiceConfig(private val context: Context) {
         values[KEY_DICT] = raw
     }
 
+    /** Validate and upsert one dictionary entry through the batch transaction. */
     fun addDictEntry(word: String, spoken: String, caseSensitive: Boolean = false): Boolean =
         addDictEntries(listOf(DictEntry(word, spoken, caseSensitive)))
 
+    /** Remove case-insensitive word matches from the persisted dictionary in one transaction. */
     fun removeDictEntry(word: String) {
         store.update { values ->
             values[KEY_DICT] = parseDictionary(values[KEY_DICT] as? String ?: "")

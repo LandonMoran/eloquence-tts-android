@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 
 class CheckVoiceData : Activity() {
+    /** Return the shipped voice inventory to Android's voice-data checker and finish. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val result = Intent()

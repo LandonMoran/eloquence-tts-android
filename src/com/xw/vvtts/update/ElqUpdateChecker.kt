@@ -119,6 +119,7 @@ object ElqUpdateChecker {
         }
     }
 
+    /** Require a higher Android code and, when both names parse, a higher semantic version. */
     internal fun shouldOfferUpdate(localName: String?, localCode: Long, tag: String?, releaseCode: Long): Boolean {
         if (releaseCode <= localCode) return false
         val latest = parseSemver(tag)
@@ -156,10 +157,13 @@ object ElqUpdateChecker {
     }
 
     internal data class SemVer(val major: Long, val minor: Long, val patch: Long): Comparable<SemVer> {
+        /** Compare semantic versions by major, minor, then patch components. */
         override fun compareTo(other: SemVer): Int = compareValuesBy(this, other, { it.major }, { it.minor }, { it.patch })
+        /** Pack components in base 1000; parsed components are restricted to 0 through 999. */
         fun packed(): Long = major * 1_000_000L + minor * 1_000L + patch
     }
 
+    /** Parse an optional v-prefixed major.minor[.patch] version with components at most 999. */
     internal fun parseSemver(tag: String?): SemVer? {
         val match = Regex("""^[vV]?(\d+)\.(\d+)(?:\.(\d+))?$""").matchEntire(tag?.trim() ?: "") ?: return null
         val parts = match.groupValues.drop(1).map { it.ifEmpty { "0" }.toLongOrNull() ?: return null }
@@ -201,6 +205,7 @@ object ElqUpdateChecker {
         return out
     }
 
+    /** Return the first available APK URL in device ABI preference order, or null. */
     private fun pickAsset(assets: List<GitHubAsset>): String? {
         val candidates = assetCandidates(Build.SUPPORTED_ABIS?.toList() ?: emptyList())
         for (want in candidates) {
