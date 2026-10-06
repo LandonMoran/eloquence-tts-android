@@ -20,6 +20,9 @@
 #include <jni.h>
 #include <android/log.h>
 #include <stdint.h>
+#include <stdatomic.h>
+#include "eci_compat.h"
+#include "pcm_limits.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -57,7 +60,7 @@ extern int et_synthesize(void *h);
 /* Hard ceiling on accumulated engine-rate PCM (in samples): keeps every
  * later size_t multiply within size_t/jsize bounds and caps the resampler's
  * input so its 4x output always fits a jsize short array (INT32_MAX(. */
-#define VV_MAX_PCM_SAMPLES ((size_t)INT32_MAX / VV_RSP_PHASES)
+/* Shared with the oracle allocator; bounded before allocation. */
 
 /* Modified Bessel I0 (series, 15 terms plenty for x <=  16(. */
 static float vv_rsp_bessel_i0(float x) {
@@ -144,6 +147,14 @@ static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *out
     *outn = out_n;
     return  0;
 }
+static void vv_fade_edges(short *pcm, size_t n) {
+    size_t fade = n / 2 < 88 ? n / 2 : 88;
+    for (size_t i = 0; i < fade; i++) {
+        pcm[i] = (short)((int)pcm[i] * (int)i / (int)fade);
+        pcm[n - 1 - i] = (short)((int)pcm[n - 1 - i] * (int)i / (int)fade);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 
 typedef struct {
@@ -153,18 +164,29 @@ typedef struct {
     short  *pcm;                /* accumulated waveform */
     size_t  pcmLen, pcmCap;
     void   *text;               /* text kept alive for the engine's thread */
-    int     synthBusy;
-    volatile int cancel; /* set by stop/shutdown to abort the wait loop fast */
-    volatile int fatal;  /* set by the callback on overflow/alloc failure: synthesis must fail, not degrade ( see vv_fail( ) */
-int     failed;      /* engine-state-invalidation flag (see vv_fail_session( */
-    int     retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
+    atomic_int synthBusy;
+    atomic_uint stopGeneration;
+    unsigned activeGeneration;
+    atomic_int cancel; /* set by stop/shutdown to abort the wait loop fast */
+    atomic_int fatal;  /* set by the callback on overflow/alloc failure: synthesis must fail, not degrade ( see vv_fail( ) */
+atomic_int failed;      /* engine-state-invalidation flag (see vv_fail_session( */
+    atomic_int retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
+
+static int vv_usable(const VvtsSession *s) {
+    return s && s->hECI && !s->failed && !s->retired;
+}
+
+static int vv_cancelled(const VvtsSession *s) {
+    return s->cancel || atomic_load(&s->stopGeneration) != s->activeGeneration;
+}
 
 static void vv_fail_session(VvtsSession *s);  /* poison late-alloc-failure path (realloc fail below( */
 
 /* Fatal callback error: flag the session so the wait loop stops fast (cancel)
  * and nativeSynthesize fails instead of returning partial or rate-mismatched audio. */
 static int vv_fail(VvtsSession *s) {
+    s->failed = 1;
     s->fatal =  1;
     s->cancel =  1;
     return eciDataProcessed;
@@ -177,7 +199,7 @@ static int vv_fail(VvtsSession *s) {
  * Kotlin side already serialises with its synthesis lock). */
 static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     VvtsSession *s = (VvtsSession *)data;
-    if (s->failed || message != eciWaveformBuffer)
+    if (!vv_usable(s) || vv_cancelled(s) || message != eciWaveformBuffer)
         return eciDataProcessed;
     if (param < 0) return eciDataProcessed;
     {
@@ -224,7 +246,12 @@ static void vv_wait_till_done(VvtsSession *s) {
      * rather than hanging the synthesis thread forever. */
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
     int iters = 0;
+    int stopSent = 0;
     while (s->hECI && eciSpeaking(s->hECI) && iters < VV_DRAIN_MAX_ITERS) {
+        if (vv_cancelled(s) && !stopSent) {
+            if (!eciStop(s->hECI)) s->failed = 1;
+            stopSent = 1;
+        }
         /* Polling is what collects the engine's queued samples: the engine
          * posts chunks into the app queue and only a poll delivers them, so
          * a poll must keep coming until the engine reports quiet.  Keep the
@@ -234,22 +261,9 @@ static void vv_wait_till_done(VvtsSession *s) {
         iters++;
     }
     if (s->hECI && eciSpeaking(s->hECI)) {
-            if (s->cancel) {
-                /* Cancellation is an abort request, not a wedge: stop polling
-                 * now and leave the session alive so shutdown can prove the engine
-                 * quiet BEFORE freeing (or a later synth can settle into it). */
-                __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_till_done cancelled: session kept alive");
-            } else {
-                /* Engine wedged: never drive this session again (its thread may still
-                 * own text/pcm).  Keep the handle so shutdown can prove the engine
-                 * quiet BEFORE freeing -- NULLing it here makes shutdown skip its
-                 * drain and free live memory the worker still owns (use-after-free). */
-                __android_log_print(ANDROID_LOG_ERROR, "SPD", "wait_till_done timeout: session retired");
-                s->retired =   1;
-            }
-        }
+        s->retired = 1; // Never reuse buffers while the engine may still own them.
+    }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
-    s->synthBusy =  0;
 }
 
 /* vv_settle: bounded poll used when re-entering synthesis right after a
@@ -258,15 +272,13 @@ static void vv_wait_till_done(VvtsSession *s) {
  * from two threads concurrently, so wait for the engine to go quiet before
  * touching text/pcm again. */
 static int vv_settle(VvtsSession *s) {
-    int i;
-    for (i =   0; i < VV_DRAIN_MAX_ITERS && s->hECI && eciSpeaking(s->hECI) && !s->cancel; i++) {
-        struct timespec ts = {0, 500000L}; /* 0.5 ms: poll = collect, keep it short */
+    for (int i = 0; i < VV_DRAIN_MAX_ITERS; i++) {
+        if (!eciSpeaking(s->hECI)) return 1;
+        struct timespec ts = {0, 500000L};
         nanosleep(&ts, NULL);
     }
-    /* Only a proven !eciSpeaking (or a cancel,, which the caller supercedes) may
-     * proceed; a full drain-length wait without quiet means the engine thread
-     * is wedged -- driving it again would corrupt state (#137(#138(#139(. */
-    return (s->cancel || !s->hECI || !eciSpeaking(s->hECI)) ? 1 :  0;
+    s->retired = 1;
+    return 0;
 }
 
 /* The engine emits short lead-in/trailing silence around every utterance;
@@ -283,9 +295,19 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
     if (n - lead < 16) return;
     size_t tail = 0;
     while (tail < n - 1 && tail < cap && pcm[n - 1 - tail] > -TH && pcm[n - 1 - tail] < TH) tail++;
+    // Keep 2 ms of natural padding, then taper 2 ms to zero at both ends.
+    // This avoids threshold discontinuities without restoring fixed engine pauses.
+    const size_t pad = 22;
+    lead = lead > pad ? lead - pad : 0;
+    tail = tail > pad ? tail - pad : 0;
     size_t keep = n - lead - tail;
     if (keep < 16) return;
-    for (size_t k = 0; k < keep; k++) pcm[k] = pcm[lead + k];
+    memmove(pcm, pcm + lead, keep * sizeof(short));
+    size_t fade = keep / 2 < pad ? keep / 2 : pad;
+    for (size_t k = 0; k < fade; k++) {
+        pcm[k] = (short)((int)pcm[k] * (int)k / (int)fade);
+        pcm[keep - 1 - k] = (short)((int)pcm[keep - 1 - k] * (int)k / (int)fade);
+    }
     *pn = keep;
 }
 
@@ -309,32 +331,13 @@ static int vv_dialect_shipped(int32_t dialect) {
     case 0x30000: case 0x30001:  /* frfr, frca */
     case 0x40000:                /* dede */
     case 0x50000:                /* itit */
+    case 0x70000: case 0x90000: /* ptb, fin */
     case 0x80000:                /* jajp */
     case 0x110000:               /* plpl */
     case 0x60000:                /* chs -- linked; synthesis is oracle-fed */
         return 1;
     default:
         return 0;
-    }
-}
-
-/* Clinch: pitch range.  openevv voice params are 0..100 for pitch baseline,
- * the Kotlin preset table sends 40..120 (Apple's range); clamp at the bridge
- * so we never hand the engine a value it does not understand. */
-static int vv_clamp_voice_param(int param, int value) {
-    switch (param) {
-    case eciPitchBaseline:
-        if (value < 0) return 0;
-        if (value > 100) return 100;
-        return value;
-    case eciSpeed:
-        if (value < 0) return 0;
-        if (value > 250) return 250;   /* openevv: 0..250 */
-        return value;
-    default:
-        if (value < 0) return 0;
-        if (value > 100) return 100;
-        return value;
     }
 }
 
@@ -357,11 +360,13 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         free(s);
         return 0;
     }
-    eciRegisterCallback(s->hECI, vv_cb, s);
-    eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk);  /* callback first: engine
-                                                           * refuses a buffer until it has
-                                                           * somewhere to report samples */
-    eciSetParam(s->hECI, eciSampleRate, 1); /* 11,025 Hz, the app's rate */
+    if (!vv_register_callback(s->hECI, vv_cb, s) ||
+        !eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk) ||
+        eciSetParam(s->hECI, eciSampleRate, 1) < 0) {
+        // No synthesis has started. Retain callback storage if cleanup refuses.
+        if (!eciDelete(s->hECI)) free(s);
+        return 0;
+    }
     return (jlong)(intptr_t)s;
 }
 
@@ -377,8 +382,7 @@ static void vv_fail_session(VvtsSession *s) {
      * eciStop/eciDelete it; only the reusable state is torn down here, so
      * a later call on the same handle answers the sentinel instead. */
     s->failed = 1;
-    s->pcmLen = 0;
-    s->synthBusy = 0;
+    /* Live text/PCM are left intact until settlement or shutdown. */
 }
 
 static jshortArray vv_empty_result(JNIEnv *env) {
@@ -387,16 +391,14 @@ static jshortArray vv_empty_result(JNIEnv *env) {
 }
 /* ------------------------------------------------------------------ */
 
-JNIEXPORT jshortArray JNICALL
-Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
+static jshortArray vv_synthesize(
         JNIEnv *env, jclass cls, jlong handle, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
     VvtsSession *s = vv_find(env, handle);
     if (!s) return NULL;
     if (s->failed) return vv_empty_result(env);
-    if (s->retired) return NULL; /* engine wedge: never re-drive this session */
+    if (s->retired) return vv_empty_result(env); /* engine wedge: never re-drive this session */
     if (!s->hECI) return NULL;
-    if (s->synthBusy) return NULL; /* #139: native single-active-synthesis guard: never drive a busy session, even when a stop/shutdown race bypasses the Kotlin lock */
     if (!text) return NULL;
     /* #113: a handle is initialized for one dialect; synthesizing text marked
      * for another would silently mix language modules and param sets. Refuse
@@ -411,7 +413,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     const char *operation = "GetArrayLength";
     jsize len = (*env)->GetArrayLength(env, text);
     if ((*env)->ExceptionCheck(env)) goto failed;
-    if (len <= 0) return NULL;
+    if (len <= 0 || (size_t)len > VV_MAX_TEXT_BYTES) return NULL;
 
     operation = "malloc text buffer";
     void *buf = malloc((size_t)len + 1);
@@ -430,16 +432,16 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
      * Western set for the shipped languages -- matching the 1252 path the
      * app already uses.  The engine copies what it needs of the text, but
      * we keep it alive for the length of the call to be safe. */
-    if (s->text) free(s->text);
+    operation = "vv_settle";
+    if (!vv_settle(s) || !vv_usable(s)) {
+        free(buf);
+        return vv_empty_result(env);
+    }
+    if (vv_cancelled(s)) { free(buf); return NULL; }
+    free(s->text);
     s->text = buf;
     s->pcmLen = 0;
-
-    /* A stop may have aborted the previous wait loop: re-sync with the
-     * engine's thread before we touch text/pcm for the new utterance. */
-    s->cancel =  0;
-    s->fatal =  0;
-    operation = "vv_settle";
-    if (!vv_settle(s) || s->failed) goto failed;
+    s->fatal = 0;
 
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
@@ -475,6 +477,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     return NULL;
     }
     free(pcm);
+    vv_fade_edges(rs, outLen);
     pcm = rs;
     samples = outLen;
         free(s->pcm);
@@ -487,7 +490,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         operation = "SetShortArrayRegion (oracle)";
         (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
         if ((*env)->ExceptionCheck(env)) goto failed;
-        return out;
+        return vv_cancelled(s) ? NULL : out;
 }
 
     operation = "eciClearInput";
@@ -510,26 +513,22 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
            __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
            return NULL;
        }
-       s->synthBusy = 1;
+       if (vv_cancelled(s)) return NULL;
        struct timespec st1, st2, st3;
        clock_gettime(CLOCK_MONOTONIC, &st1);
        int synthRet = et_synthesize(s->hECI);
        if (!synthRet) {
     /* #136: a rejected synthesis must be terminal for this request;
     * never let stale PCM escape as a normal result. */
-    s->synthBusy =  0;   /* failure is terminal: clear busy before returning */
+
     __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_synthesize failed (%d): synthesis terminal (#136)", synthRet);
     return NULL;
     }
     clock_gettime(CLOCK_MONOTONIC, &st2);
     operation = "vv_wait_till_done";
     vv_wait_till_done(s);
-    if (s->fatal) {
-    s->pcmLen =   0;   /* fail-closed: an overflow/alloc failure must abort the utterance, never ship partial PCM as success */
-    return NULL;
-    }
-    s->synthBusy = 0;   /* #139: clear busy once the session has drained: success must not poison later synthesis */
-    if (s->cancel) return NULL;
+    if (s->fatal) return vv_empty_result(env);
+    if (vv_cancelled(s)) return s->retired || s->failed ? vv_empty_result(env) : NULL;
     clock_gettime(CLOCK_MONOTONIC, &st3);
     long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
     long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
@@ -540,7 +539,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
          * Return failure WITHOUT reading, trimming or resampling PCM; the
          * session stays cached until shutdown reclaims it safely. */
         __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: session retired; returning null");
-        return NULL;
+        return vv_empty_result(env);
     }
     if (s->pcmLen == 0) return NULL;
     short *rs = NULL;
@@ -553,6 +552,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "44.1k resampler failed: refusing to return 11.025k PCM (#137)");
         return NULL;
     }
+    vv_fade_edges(rs, outLen);
     operation = "NewShortArray";
     jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);
     if (!out || (*env)->ExceptionCheck(env)) {
@@ -563,7 +563,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     (*env)->SetShortArrayRegion(env, out, 0, (jsize)outLen, rs);
     free(rs);
     if ((*env)->ExceptionCheck(env)) goto failed;
-    return out;
+    return vv_cancelled(s) ? NULL : out;
 
 failed:
     __android_log_print(ANDROID_LOG_ERROR, "VvttsCore",
@@ -574,20 +574,39 @@ failed:
     return vv_empty_result(env);
 }
 
+JNIEXPORT jshortArray JNICALL
+Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
+        JNIEnv *env, jclass cls, jlong handle, jint dialect,
+        jbyteArray text, jint charsetId, jstring outPath) {
+    VvtsSession *s = vv_find(env, handle);
+    if (!s) return NULL;
+    unsigned generation = atomic_load(&s->stopGeneration);
+    int expected = 0;
+    if (!atomic_compare_exchange_strong(&s->synthBusy, &expected, 1)) return NULL;
+    s->activeGeneration = generation;
+    // Never clear stopGeneration: a stop racing this start must remain observable.
+    jshortArray result = vv_synthesize(env, cls, handle, dialect, text, charsetId, outPath);
+    atomic_store(&s->synthBusy, 0);
+    return result;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param, jint value) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
-    return eciSetVoiceParam(s->hECI, voice, param,
-                            vv_clamp_voice_param(param, value));
+    if (!vv_usable(s)) return -1;
+    if (voice != 0 || param < 0 || param >= eciNumVoiceParams) return -1;
+    int maximum = param == eciSpeed ? 250 : param == eciGender ? 1 : 100;
+    if (value < 0 || value > maximum) return -1;
+    return eciSetVoiceParam(s->hECI, voice, param, value);
 }
 
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeGetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
+    if (!vv_usable(s)) return -1;
+    if (voice < 0 || voice > ECI_LAST_VOICE || param < 0 || param >= eciNumVoiceParams) return -1;
     return eciGetVoiceParam(s->hECI, voice, param);
 }
 
@@ -595,11 +614,17 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
         JNIEnv *env, jclass cls, jlong handle, jint param, jint value) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI || s->retired) return -1;
-    /* #73: never hand raw values to the engine. Reject unknown param ids and
-     * clamp ranges exactly like the voice-param path. */
-    if (param < 0 || param >= eciNumVoiceParams) return -1;
-    return eciSetParam(s->hECI, param, vv_clamp_voice_param(param, value));
+    if (!vv_usable(s) || param < 0 || param >= eciNumParams) return -1;
+    // Use the engine's authoritative ranges; its setter also rejects reserved
+    // indices, invalid rates and unsupported dialect changes. Never voice-clamp.
+    extern const int32_t ev_paramRange[18][2];
+    if (param == 11 || param == 17 || value < ev_paramRange[param][0] ||
+        value > ev_paramRange[param][1]) return -1;
+    // The bridge owns encoding, rate conversion and voice parameter units.
+    if ((param == eciSampleRate && value != 1) ||
+        (param == eciLanguageDialect && value != s->dialect) ||
+        (param == eciRealWorldUnits && value != 0)) return -1;
+    return eciSetParam(s->hECI, param, value);
 }
 
 /* The app's presets are numbered like the old Apple CSV (which skips 5);
@@ -610,24 +635,20 @@ JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetStandardVoice(
         JNIEnv *env, jclass cls, jlong handle, jint voiceNumber) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return -1;
-    {
-        int from = voiceNumber;
-        if (from < 1) from = 1;
-        if (from > 8) from = 8;
-        return eciCopyVoice(s->hECI, from, 0);
-    }
+    if (!vv_usable(s)) return -1;
+    if (voiceNumber < 1 || voiceNumber > ECI_PRESET_VOICES) return -1;
+    return eciCopyVoice(s->hECI, voiceNumber, 0) ? 1 : -1;
 }
 
 JNIEXPORT void JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
     VvtsSession *s = vv_find(env, handle);
-    if (!s || !s->hECI) return;
-    s->cancel = 1; /* request a stop:the wait loop aborts fast; the worker
-                             * drains later via settle/shutdown so the engine
-                             * goes quiet before any free. */
-    eciStop(s->hECI); /* stops handing samples; the thread still settles */
+    if (!vv_usable(s)) return;
+    // The owning synthesis thread performs eciStop while polling. Calling the
+    // legacy engine itself from the stop thread races its non-atomic queue state.
+    atomic_fetch_add(&s->stopGeneration, 1);
+
 }
 
 JNIEXPORT void JNICALL
@@ -652,7 +673,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
             __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown: session still busy; retaining session (leak-once)");
             return;
         }
-        eciDelete(s->hECI);
+        if (eciDelete(s->hECI)) return; // Failed cleanup still owns callback storage.
         s->hECI = NULL;
     }
     free(s->text);

@@ -16,6 +16,7 @@
  */
 
 #include "chs_oracle_synth.h"
+#include "pcm_limits.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -58,7 +59,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
 
     /* Reject absurd lengths up front: the walk is O(n) and n is untrusted
      * JNI input; nothing real is anywhere near a GiB, sot bail early. */
-    if (n > (1UL << 30)) return  0;
+    if (!src || n > VV_MAX_TEXT_BYTES) return  0;
 
     /* Pass 1: total byte length of every match. */
     for (i = 0; i < n;) {
@@ -68,7 +69,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
             if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
-            if (ln > SIZE_MAX - total) return 0;  /* checksum: reject oversized input early */
+            if (ln > VV_MAX_PCM_SAMPLES * sizeof(short) - total) return 0;  /* checksum: reject oversized input early */
             total += ln;
         }
     }

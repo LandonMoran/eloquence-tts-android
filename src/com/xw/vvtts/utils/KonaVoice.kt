@@ -34,6 +34,9 @@ class KonaVoice {
         val vol: Int,
         val vocalTract: Int,
     ) {
+        /** openevv standard rows: Reed, Shelley, Sandy, Rocko, Eddy, Flo, Grandma, Grandpa. */
+        val nativeVoiceNumber: Int get() = if (eciVoiceNumber == 9) 5 else eciVoiceNumber
+
         /** Get a value by ECI voice param number */
         fun param(eciParam: Int): Int {
             return when (eciParam) {

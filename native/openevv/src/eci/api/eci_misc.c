@@ -225,9 +225,8 @@ int STDCALL es_pause(OldInst *h, int32_t on)
     return setECIerror(api_pause(OI_NEW(inst), on), inst) >= 0;
 }
 
-/* End an instance and give back everything it holds. Answers nought
-   always. */
-int STDCALL es_delete(OldInst *h)
+/* Checked destruction for the Android bridge: refusal retains ownership. */
+int es_delete_checked(OldInst *h)
 {
     OldInst *inst;
 
@@ -240,7 +239,10 @@ int STDCALL es_delete(OldInst *h)
     if (!inst)
         return 0;
 
-    api_delete(OI_NEW(inst));
+    if (api_delete(OI_NEW(inst)) != 0) {
+        OI_BUSY(inst) = 0;
+        return 0;
+    }
 
     if (OI_DICT_XLAT(inst))
         OI_DICT_XLAT(inst) = 0;
@@ -259,6 +261,13 @@ int STDCALL es_delete(OldInst *h)
 
     eo_clearManualQueue(inst);
     free(inst);
+    return 1;
+}
+
+/* Preserve the legacy ABI, whose documented result is always zero. */
+int STDCALL es_delete(OldInst *h)
+{
+    es_delete_checked(h);
     return 0;
 }
 

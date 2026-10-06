@@ -158,7 +158,8 @@ object ElqUpdateInstaller {
             return Result.Failed(null, t.message ?: t.javaClass.simpleName)
         }
         runCatching { appContext.unregisterReceiver(receiver) }
-        if (committed) runCatching { pm.packageInstaller.abandonSession(sessionId) }
+        // The platform still needs the committed session while confirmation is shown.
+        if (committed && result !is Result.UserActionRequired) runCatching { pm.packageInstaller.abandonSession(sessionId) }
         return result ?: Result.Failed(null, "install timed out")
     }
 
@@ -185,16 +186,20 @@ object ElqUpdateInstaller {
     }
 /**
      * Accepts only confirmation intents scoped to this package, issued by the platform
-     * installer, or implicit (resolved by the system). Anything else is an untrusted
+     * installer after resolving and pinning the component. Anything else is an untrusted
      * intent that could redirect the user to a malicious confirmation flow.
      */
     private fun isTrustedConfirmIntent(context: Context, confirm: Intent?): Boolean {
         if (confirm == null) return false
-        val pkg = confirm.`package`
-        if (pkg == null) return true
-        if (pkg == context.packageName) return true
-        return pkg == "android" ||
-            pkg == "com.android.packageinstaller" ||
-            pkg == "com.google.android.packageinstaller"
+        val allowed = setOf(context.packageName, "android", "com.android.packageinstaller", "com.google.android.packageinstaller")
+        if (confirm.`package` != null && confirm.`package` !in allowed) return false
+        if (confirm.component != null && confirm.component!!.packageName !in allowed) return false
+        val activity = context.packageManager.resolveActivity(confirm, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo ?: return false
+        if (activity.packageName !in allowed) return false
+        if (activity.packageName != context.packageName &&
+            activity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0) return false
+        // Pin the checked resolution so launch cannot resolve to a different component.
+        confirm.component = android.content.ComponentName(activity.packageName, activity.name)
+        return true
     }
 }

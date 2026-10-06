@@ -2,150 +2,150 @@ package com.xw.vvtts.update
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
 import java.io.File
+import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** UI ownership stays on the main thread. Workers retain only application context
+ * and a weak owner, and stale generations cannot dismiss or update another flow. */
 object UpdateActions {
+    private val main = Handler(Looper.getMainLooper())
+    private class Flow(activity: Activity) {
+        val owner = WeakReference(activity)
+        val cancelled = AtomicBoolean(false)
+        var worker: Thread? = null
+    }
+    private class ProgressUi(val dialog: AlertDialog, val message: TextView?)
+    private var current: Flow? = null
+    private var currentDialog: ProgressUi? = null
 
-    /** Re-entrancy guard for the download flow. */
-    private val downloadBusy = AtomicBoolean(false)
-
-    /** The in-flight progress dialog; dying activities dismiss it via dismissFor((). */
-    @Volatile private var currentDialog: ProgressUi? = null
-
-    /** Bindings for the in-flight progress dialog: owner activity + message view. */
-    private class ProgressUi(val owner: Activity, val dialog: AlertDialog, val message: TextView)
-
-    /** Returns whether this activity is neither finishing nor destroyed. */
     private fun Activity.alive() = !isFinishing && !isDestroyed
 
-    /** Builds a legacy-free progress dialog (spinner + message) bound to an activity. */
-    private fun newProgress(activity: Activity, msg: String): ProgressUi {
+    private fun progress(activity: Activity, message: String) {
+        currentDialog?.dialog?.dismiss()
+        val text = TextView(activity).apply { this.text = message }
         val density = activity.resources.displayMetrics.density
-        val message = TextView(activity).apply { text = msg }
-        val bar = ProgressBar(activity, null, android.R.attr.progressBarStyle)
-        val wrap = LinearLayout(activity).apply {
+        val layout = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((24 * density).toInt(), (12 * density).toInt(), (24 * density).toInt(), (12 * density).toInt())
-            addView(message)
-            addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(text)
+            addView(ProgressBar(activity))
         }
-        val dialog = AlertDialog.Builder(activity)
-            .setView(wrap)
-            .setCancelable(false)
-            .create()
-        val ui = ProgressUi(activity, dialog, message)
+        val dialog = AlertDialog.Builder(activity).setView(layout).setCancelable(false).create()
+        currentDialog = ProgressUi(dialog, text)
         dialog.show()
-        return ui
     }
 
-    /** Clears the global reference iff it still refers to [ui], then dismisses its dialog. */
-    private fun clearCurrent(ui: ProgressUi) {
-        if (currentDialog === ui) currentDialog = null
-        runCatching { ui.dialog.dismiss() }
+    private fun finish(flow: Flow) {
+        if (current !== flow) return
+        currentDialog?.dialog?.dismiss()
+        currentDialog = null
+        current = null
     }
 
-    /** If a progress dialog is bound to this activity, dismiss it (call from onDestroy(. */
     fun dismissFor(activity: Activity) {
-        val d = currentDialog
-        if (d != null && d.owner === activity) {
-            clearCurrent(d)
+        val flow = current ?: return
+        if (flow.owner.get() !== activity) return
+        flow.cancelled.set(true)
+        flow.owner.clear()
+        flow.worker?.interrupt()
+        finish(flow)
+    }
+
+    private fun post(flow: Flow, action: (Activity) -> Unit) {
+        main.post {
+            if (current === flow && !flow.cancelled.get()) {
+                val owner = flow.owner.get()
+                if (owner != null && owner.alive()) action(owner) else finish(flow)
+            }
         }
     }
 
-    /** Shows progress while checking for updates in a background thread, then offers an available update. */
     fun showCheckDialog(activity: Activity) {
-        if (!activity.alive()) return
-        val progress = newProgress(activity, activity.getString(R.string.checking_updates))
-        currentDialog = progress
-        Thread {
-            val res = ElqUpdateChecker.check(activity)
-            activity.runOnUiThread {
-                if (!activity.alive()) { clearCurrent(progress); return@runOnUiThread }
-                clearCurrent(progress)
-                if (res.error != null) {
-                    Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, res.error), Toast.LENGTH_LONG).show()
-                    return@runOnUiThread
-                }
-                if (!res.hasUpdate) {
-                    Toast.makeText(activity, activity.getString(R.string.up_to_date), Toast.LENGTH_SHORT).show()
-                    return@runOnUiThread
-                }
-                AlertDialog.Builder(activity)
-                    .setTitle(activity.getString(R.string.update_available_fmt, res.latestTag ?: ""))
-                    .setMessage(res.releaseNotes ?: "")
-                    .setPositiveButton(if (res.downloadUrl != null) activity.getString(R.string.download_install) else activity.getString(R.string.update_open_release)) { _, _ ->
-                        if (res.downloadUrl != null) {
-                            startUpdateDownload(activity, res.downloadUrl)
-                        } else if (res.htmlUrl != null) {
-                            runCatching {
-                                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.htmlUrl ?: "")))
-                            }
-                        }
-                    }
-                    .setNegativeButton(activity.getString(R.string.cancel), null)
-                    .show()
-            }
-        }.start()
+        if (!activity.alive() || current != null) return
+        val flow = Flow(activity)
+        val app = activity.applicationContext
+        current = flow
+        progress(activity, activity.getString(R.string.checking_updates))
+        flow.worker = Thread {
+            val result = ElqUpdateChecker.check(app)
+            post(flow) { owner -> showResult(owner, flow, result) }
+        }.apply { name = "update-check"; isDaemon = true; start() }
     }
 
-    /** Downloads an APK and requests installation in a background thread, presenting progress and the result. */
-    private fun startUpdateDownload(activity: Activity, url: String?) {
-        if (url == null) {
-            Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "no download link"), Toast.LENGTH_LONG).show()
+    private fun showResult(activity: Activity, flow: Flow, result: ElqUpdateChecker.UpdateResult) {
+        currentDialog?.dialog?.dismiss()
+        currentDialog = null
+        if (result.error != null || !result.hasUpdate) {
+            val message = if (result.error != null) activity.getString(R.string.update_failed_fmt, result.error)
+                else activity.getString(R.string.up_to_date)
+            Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+            finish(flow)
             return
         }
-        if (!activity.alive()) return
-        if (!downloadBusy.compareAndSet(false, true)) return
-        val progress = newProgress(activity, activity.getString(R.string.update_downloading_fmt, 0))
-        currentDialog = progress
-        Thread {
-            try {
-                val apk = File(activity.cacheDir, "elq-update.apk")
-            val ok = ElqUpdateDownloader.download(url, apk) { done, total ->
-                val pct = if (total > 0) (done * 100 / total).toInt() else 0
-                activity.runOnUiThread { progress.message.text = activity.getString(R.string.update_downloading_fmt, pct) }
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle(activity.getString(R.string.update_available_fmt, result.latestTag ?: ""))
+            .setMessage(result.releaseNotes ?: "")
+            .setPositiveButton(if (result.downloadUrl != null) R.string.download_install else R.string.update_open_release) { _, _ ->
+                if (result.downloadUrl != null) startDownload(activity, flow, result.downloadUrl)
+                else {
+                    result.htmlUrl?.let { runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } }
+                    finish(flow)
+                }
             }
-            if (!ok) {
-                activity.runOnUiThread {
+            .setNegativeButton(R.string.cancel) { _, _ -> finish(flow) }
+            .setOnCancelListener { finish(flow) }.create()
+        currentDialog = ProgressUi(dialog, null)
+        dialog.show()
+    }
 
-                    clearCurrent(progress)
-                    Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, "download failed"), Toast.LENGTH_LONG).show()
+    private fun startDownload(activity: Activity, flow: Flow, url: String) {
+        if (current !== flow || !activity.alive()) return
+        progress(activity, activity.getString(R.string.update_downloading_fmt, 0))
+        // A separate function prevents the worker closure from capturing the Activity.
+        download(activity.applicationContext, flow, url)
+    }
+
+    private fun download(app: Context, flow: Flow, url: String) {
+        flow.worker = Thread {
+            var apk: File? = null
+            try {
+                val file = File.createTempFile("elq-update-", ".apk", app.cacheDir)
+                apk = file
+                val ok = ElqUpdateDownloader.download(url, file) { done, total ->
+                    if (flow.cancelled.get()) throw InterruptedException("Update owner destroyed")
+                    val percent = if (total > 0) (done * 100 / total).toInt() else 0
+                    post(flow) { owner -> currentDialog?.message?.text = owner.getString(R.string.update_downloading_fmt, percent) }
                 }
-                return@Thread
-            }
-            val result = ElqUpdateInstaller.install(activity, apk)
-                if (result is ElqUpdateInstaller.Result.UserActionRequired) {
-                    val conf = result.confirmIntent
-                    if (conf != null) activity.runOnUiThread {
-                        if (activity.alive()) runCatching { activity.startActivity(conf) }
-                    }
-                }
-                activity.runOnUiThread {
-                    if (!activity.alive()) { clearCurrent(progress); apk.delete(); return@runOnUiThread }
-                    clearCurrent(progress)
-                    apk.delete()
+                if (flow.cancelled.get()) return@Thread
+                val result = if (ok) ElqUpdateInstaller.install(app, file)
+                    else ElqUpdateInstaller.Result.Failed(null, "download failed")
+                post(flow) { owner ->
+                    finish(flow)
                     when (result) {
-                        is ElqUpdateInstaller.Result.Success -> {
-                            Toast.makeText(activity, activity.getString(R.string.update_install_ok), Toast.LENGTH_SHORT).show()
-                        }
-                        is ElqUpdateInstaller.Result.Failed -> {
-                            Toast.makeText(activity, activity.getString(R.string.update_failed_fmt, result.message), Toast.LENGTH_LONG).show()
-                        }
-                        is ElqUpdateInstaller.Result.UserActionRequired -> {}
+                        is ElqUpdateInstaller.Result.UserActionRequired -> result.confirmIntent?.let { runCatching { owner.startActivity(it) } }
+                        is ElqUpdateInstaller.Result.Success -> Toast.makeText(owner, R.string.update_install_ok, Toast.LENGTH_SHORT).show()
+                        is ElqUpdateInstaller.Result.Failed -> Toast.makeText(owner, owner.getString(R.string.update_failed_fmt, result.message), Toast.LENGTH_LONG).show()
                     }
+                }
+            } catch (e: Exception) {
+                post(flow) { owner ->
+                    finish(flow)
+                    Toast.makeText(owner, owner.getString(R.string.update_failed_fmt, e.message ?: "update failed"), Toast.LENGTH_LONG).show()
                 }
             } finally {
-                downloadBusy.set(false)
+                apk?.delete()
             }
-        }.start()
-
+        }.apply { name = "update-download"; isDaemon = true; start() }
     }
 }

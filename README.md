@@ -1,13 +1,13 @@
 # Eloquence TTS for Android
 
-经典老头子语音 vvtts 的安卓移植版，基于 Apple tvOS 18 运行时提取的 Eloquence 引擎，支持 **14 种语言 + 8 个发音角色**，内置多语言自动检测与零延迟实时切换。
+经典老头子语音 vvtts 的安卓移植版，基于仓库内置的 openevv C 引擎，支持 **14 种语言 + 8 个发音角色**，内置多语言自动检测与零延迟实时切换。
 
 
 
 ## 特性
 
-- **14 种语言**：简体中文、繁体中文（台湾）、日文、韩文、英式/美式英语、德语、法语（法国/加拿大）、西班牙语（西班牙/墨西哥）、意大利语、葡萄牙语（巴西）、芬兰语
-- **8 个发音角色**：Reed / Sandy / Glen / Rocko / Bobby / Shelly / Grandpa / Grandma，通过 ECI voice param 机制切换
+- **14 种语言**：简体中文、日文、波兰语、英式/美式英语、德语、法语（法国/加拿大）、西班牙语（西班牙/美国/墨西哥）、意大利语、葡萄牙语（巴西）、芬兰语
+- **8 个发音角色**：Reed / Shelley / Sandy / Rocko / Flo / Grandma / Grandpa / Eddy，通过 ECI voice param 机制切换
 - **多语言自动检测**：Unicode 规则 → 内存 n-gram 统计 → Lingua 三层检测，混合语言文本自动分片，各用各的引擎朗读
 - **自动更新**：基于 GitHub Releases 的检查/下载/安装通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）
 - **能力清单**：支持的语言 /  发音角色 /  能力唯一事实源见 `docs/languages-voices-capabilities.md`
@@ -39,26 +39,15 @@
 
 ## 构建
 
-依赖环境：Linux + Android SDK（含 `aapt`、`d8`、`zipalign`、`apksigner`）+ JDK 11+。
+Android APK/NDK builds run in GitHub Actions (`.github/workflows/build.yml`), using JDK 17 and Android API 34. Do not run Android builds locally. CI publishes arm64, arm32, universal and test-only x86_64 artifacts after ABI auditing.
 
-```bash
-# 重建 zh-CN oracle 语音库（可选，改过 oracle/table 后执行）
-python3 oracle/merge_build.py
-./build_native.sh
-
-# 构建 APK
-bash build.sh
-```
-
-产物为 `vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`。
-
-
+Host checks and the issue/audit map are documented in [docs/repository-audit.md](docs/repository-audit.md). `tools/prepare_assets.py --verify` checks generated model/bridge content. Release signing uses the protected `release` environment; configure required reviewers, protected tag restrictions, and signing secrets there before releasing.
 
 ## 技术实现
 
 ### 引擎来源
 
-语音数据提取自 **tvOS 18.2 Simulator Runtime** 中的 Eloquence dylib，通过 [apple-eloquence-elf](https://github.com/Mudb0y/Apple-Eloquence-ELF) 的 `macho2elf.py` 转换为 Android 可加载的 ELF `.so`**
+The APK statically links the vendored `native/openevv` engine and JNI bridge into `libvvtts_core.so`. Historical Apple extraction tools and reference data remain in the repository, but converted Apple dylibs are not loaded by this runtime.
 
 参考的开源项目：
 - [Mudb0y/Apple-Eloquence-ELF](https://github.com/Mudb0y/Apple-Eloquence-ELF)

@@ -12,7 +12,7 @@
          (ElqUpdateInstaller registers its receiver with this permission
          on devices below Android 13, where RECEIVER_NOT_EXPORTED is absent). -->
     <permission
-        android:name="com.xw.vvttts.permission.INSTALL_STATUS"
+        android:name="com.xw.vvtts.permission.INSTALL_STATUS"
         android:protectionLevel="signature" />
 
     <application
@@ -36,7 +36,6 @@
             android:exported="true"
             android:process=":tts"
             android:stopWithTask="false"
-            android:permission="android.permission.BIND_TEXT_TO_SPEECH"
             android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.TTS_SERVICE" />
@@ -52,7 +51,7 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".ui.CheckVoiceData" android:exported="true" android:permission="android.permission.BIND_TEXT_TO_SPEECH">
+        <activity android:name=".ui.CheckVoiceData" android:exported="true">
             <intent-filter>
                 <action android:name="android.speech.tts.engine.CHECK_TTS_DATA" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -63,7 +62,7 @@
             android:exported="false"
             android:theme="@style/Theme.Vvtts" />
 
-        <activity android:name=".ui.GetSampleText" android:exported="true" android:permission="android.permission.BIND_TEXT_TO_SPEECH">
+        <activity android:name=".ui.GetSampleText" android:exported="true">
             <intent-filter>
                 <action android:name="android.speech.tts.engine.GET_SAMPLE_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -1,0 +1,103 @@
+# Repository audit and issue resolution
+
+## Publication status
+
+The application changes can be pushed with the available repository permission. Workflow changes are kept in a separate companion patch because GitHub rejected workflow updates from the current credential. CI/signing/oracle-workflow claims below describe the complete prepared change set; those workflow fixes remain pending until that patch is applied with workflow-write permission. The two workflow-specific contract tests will fail on the application-only branch until then.
+
+## Scope and limits
+
+This pass inventoried 2,277 tracked paths at base `7e20b6b4c1084fd2b4a2b3a5d605ffaf1669ed63`. Review focused on the executable Android application, JNI/ECI boundary, native ownership, settings, update/install flow, build/release workflows and source generators. Model/resource data received format and regeneration checks. Historical `oracle/rom_lift` decompilation, Ghidra output, vendored binaries and language tables were inventoried and inspected by role; they were **not individually proven correct or all manually reviewed line by line**.
+
+The source scan parsed 85 valid Python files, 52 JSON files and 20 XML files, and checked 11 shell scripts; the only Python syntax failure was an obsolete, unused `wt228_splice.py` migration script, now removed. Native C syntax checks passed for 316 translation units; unshipped Traditional Chinese/Korean lack generated rule headers, and the Windows port is outside the Android target. Actual Android compilation and APK validation run in CI, as required by this repository.
+
+## Open issues
+
+All 45 issues open at the start of this work are mapped below. Closing keywords belong to the replacement PR, so issues close upon merge.
+
+| Issue | Change | Verification |
+|---|---|---|
+| [#239](https://github.com/LandonMoran/eloquence-tts-android/issues/239) eliminate crackle from abrupt short-utterance PCM boundaries | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#242](https://github.com/LandonMoran/eloquence-tts-android/issues/242) correct install-status signature permission declaration | Update flow ownership, Long/semantic versions, confirmation resolution and signature permission | Host updater/versions; permission contract; device installer check outstanding |
+| [#243](https://github.com/LandonMoran/eloquence-tts-android/issues/243) derive CHECK_TTS_DATA voice list from the single voice registry | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#244](https://github.com/LandonMoran/eloquence-tts-android/issues/244) fail engine initialization when ECI setup calls fail | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#245](https://github.com/LandonMoran/eloquence-tts-android/issues/245) reject control calls on failed or retired synthesis sessions | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#246](https://github.com/LandonMoran/eloquence-tts-android/issues/246) make dialect configuration match the shipped native registry | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#247](https://github.com/LandonMoran/eloquence-tts-android/issues/247) fail the current utterance when required voice configuration writes fail | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#248](https://github.com/LandonMoran/eloquence-tts-android/issues/248) make stop cancellation generation-safe | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#249](https://github.com/LandonMoran/eloquence-tts-android/issues/249) reject invalid voice numbers instead of silently clamping them | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#250](https://github.com/LandonMoran/eloquence-tts-android/issues/250) preserve ECI failure results in the compatibility shim | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#251](https://github.com/LandonMoran/eloquence-tts-android/issues/251) validate PackageInstaller confirmation intent resolution | Update flow ownership, Long/semantic versions, confirmation resolution and signature permission | Host updater/versions; permission contract; device installer check outstanding |
+| [#252](https://github.com/LandonMoran/eloquence-tts-android/issues/252) prevent semantic-version packing overflow and use one comparison result | Update flow ownership, Long/semantic versions, confirmation resolution and signature permission | Host updater/versions; permission contract; device installer check outstanding |
+| [#253](https://github.com/LandonMoran/eloquence-tts-android/issues/253) make Lingua preload lifecycle-owned and cancellable | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#254](https://github.com/LandonMoran/eloquence-tts-android/issues/254) correctly cache parsed VoiceConfig XML and avoid reparsing every utterance | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#255](https://github.com/LandonMoran/eloquence-tts-android/issues/255) fall back to device-protected preferences when credential storage is inaccessible | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#256](https://github.com/LandonMoran/eloquence-tts-android/issues/256) serialize mirrored preference rollback to prevent lost concurrent settings | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#257](https://github.com/LandonMoran/eloquence-tts-android/issues/257) settle a previous synthesis before replacing session-owned text and PCM state | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#258](https://github.com/LandonMoran/eloquence-tts-android/issues/258) validate engine parameters against ECI parameter count and ranges | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#259](https://github.com/LandonMoran/eloquence-tts-android/issues/259) reconcile Kotlin pitch range with native ECI pitch clamping | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#260](https://github.com/LandonMoran/eloquence-tts-android/issues/260) keep version-code arithmetic in Long end-to-end | Update flow ownership, Long/semantic versions, confirmation resolution and signature permission | Host updater/versions; permission contract; device installer check outstanding |
+| [#261](https://github.com/LandonMoran/eloquence-tts-android/issues/261) invalidate generated models.elqm when the packer changes | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#262](https://github.com/LandonMoran/eloquence-tts-android/issues/262) rebuild lingua-slim when the ElqmBridge source changes | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#263](https://github.com/LandonMoran/eloquence-tts-android/issues/263) scope production signing secrets to release builds | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#264](https://github.com/LandonMoran/eloquence-tts-android/issues/264) remove fallback signing passwords from build-apk workflow | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#265](https://github.com/LandonMoran/eloquence-tts-android/issues/265) cap Chinese oracle PCM allocation before malloc | JNI admission/cancellation, bounded buffers, checked ECI compatibility and PCM edges | ASan/UBSan bridge, oracle and compatibility suites |
+| [#266](https://github.com/LandonMoran/eloquence-tts-android/issues/266) bound imported/stored dictionary size and stream SAF imports | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#267](https://github.com/LandonMoran/eloquence-tts-android/issues/267) cache compiled user-dictionary rules between utterances | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#268](https://github.com/LandonMoran/eloquence-tts-android/issues/268) fall back to preset defaults for invalid stored voice parameters | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#269](https://github.com/LandonMoran/eloquence-tts-android/issues/269) clamp persisted VoiceProfile preset IDs before exposing them | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#270](https://github.com/LandonMoran/eloquence-tts-android/issues/270) actually apply the persisted DSP mode or remove the dead setting | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#271](https://github.com/LandonMoran/eloquence-tts-android/issues/271) remove or quarantine dead legacy synthesis paths and unused state | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#272](https://github.com/LandonMoran/eloquence-tts-android/issues/272) check and handle native sample-rate parameter failures | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#273](https://github.com/LandonMoran/eloquence-tts-android/issues/273) atomically mirror language settings into device-protected storage | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+| [#274](https://github.com/LandonMoran/eloquence-tts-android/issues/274) return language-appropriate sample text from GET_SAMPLE_TEXT | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#275](https://github.com/LandonMoran/eloquence-tts-android/issues/275) normalize ISO-3 language codes before onLoadLanguage warmup | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#276](https://github.com/LandonMoran/eloquence-tts-android/issues/276) correct VvttsCore engine-parameter documentation | Correct native parameter documentation | Source/native range audit |
+| [#277](https://github.com/LandonMoran/eloquence-tts-android/issues/277) unregister preference listeners when VvTtsService is destroyed | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#278](https://github.com/LandonMoran/eloquence-tts-android/issues/278) serialize concurrent update-check flows before replacing currentDialog | Update flow ownership, Long/semantic versions, confirmation resolution and signature permission | Host updater/versions; permission contract; device installer check outstanding |
+| [#279](https://github.com/LandonMoran/eloquence-tts-android/issues/279) preserve literal symbols after Chinese normalization budget is exhausted | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#280](https://github.com/LandonMoran/eloquence-tts-android/issues/280) verify release APK universal-asset ABI contents match updater expectations | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#281](https://github.com/LandonMoran/eloquence-tts-android/issues/281) avoid retaining destroyed SettingsActivity through background update workers | Update flow ownership, Long/semantic versions, confirmation resolution and signature permission | Host updater/versions; permission contract; device installer check outstanding |
+| [#282](https://github.com/LandonMoran/eloquence-tts-android/issues/282) restore non-blocking onStop cancellation after inline synthesis migration | Engine/service lifecycle, SynthesisBudget, VoiceRegistry, text normalization and dead-code removal | Full Kotlin compile; host lifecycle/voices/text; native/registry contracts |
+| [#283](https://github.com/LandonMoran/eloquence-tts-android/issues/283) make oracle-assemble consume artifacts from the oracle-fanout run | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#284](https://github.com/LandonMoran/eloquence-tts-android/issues/284) pin and integrity-check the external oracle decompile inputs | Pinned oracle inputs, validated fanout assembly, exact APK ABI checks, isolated signing and content fingerprints | Contracts, actionlint, regenerated asset comparison; Android CI |
+| [#285](https://github.com/LandonMoran/eloquence-tts-android/issues/285) make extra_logging use the same live settings source as the TTS service | MirroredPreferences, VoiceConfig/Profile, DictionaryImport; atomic CE/DE writes, cache, validation and bounded imports | Host preferences/dictionary regressions |
+
+## Existing pull requests reviewed
+
+- **#240**: retained the PCM boundary fix and corrected its tail fade, which left the last sample unchanged. Fade is also applied after resampling so emitted endpoints are exactly zero. Tiny buffers are covered by native regression tests.
+- **#241**: incorporated the Direct Boot constructor fix into shared preference access, with inaccessible-CE fallback, atomic mirrored updates and serialization across processes.
+- **#286**: incorporated the synthesis work budget so playback pacing does not exhaust the watchdog. The measurement is elapsed time waiting for synthesis, not CPU time.
+
+These changes supersede those three PRs. Their branches must be rechecked before closing them after the replacement PR is published.
+
+## Additional findings addressed
+
+- Replaced unsafe manual voice-slot indexing with the engine's canonical getter/copy functions; retained engine-owned allocation cleanup.
+- Mapped Eddy's historical CSV row 9 to native standard row 5; preserved other presets.
+- Enabled Latin cache reuse by comparing ThreadLocal values, rather than the ThreadLocal object.
+- Applied dictionary rules to Chinese and used the shipped Polish module's UTF-8 input encoding.
+- Removed nonexistent Android binding permissions that prevented system TTS discovery activities from being launched.
+- Preserved PackageInstaller sessions while user confirmation is pending.
+- Removed unsupported voice choices and corrected runtime/build documentation.
+
+## Running checks
+
+- `bash tests/native/run.sh`: JDK headers, GCC, ASan and UBSan required.
+- `bash tests/host/run.sh`: set `ANDROID_JAR`, `KOTLINC_CP` (Kotlin 1.9.25) and `KXML_JAR` (kxml2 2.3.0). Compiles all application Kotlin and runs preferences, dictionary, voice/version, service lifecycle and updater ownership regressions. CI supplies these dependencies.
+- `python3 tests/contracts.py`: native/registry parity, permission/signing contracts, malformed oracle pieces and exact APK ABI fixtures.
+- `python3 tools/prepare_assets.py --verify`: regenerate models and the Lingua bridge and compare content.
+- `python3 tools/audit_apk_abis.py`: inspect the four built APKs; CI runs this before upload. The universal artifact includes arm64-v8a, armeabi-v7a and x86_64.
+
+## Release checks requiring a device or repository administration
+
+Listen to short speech in all shipped languages; stress rapid TalkBack stop/restart and preset changes; verify speech after a reboot before first unlock; install an actual signed upgrade through the platform confirmation flow. Host stubs and sanitizers do not establish these hardware/system behaviors.
+
+Configure the GitHub `release` environment with required reviewers, protected tag restrictions, and the production signing secrets. No production signing secret is used in ordinary branch/PR builds. This patch does not change repository environment protection settings.
+
+## Follow-up audit
+
+- Credential storage can throw from `Context.dataDir` even when UserManager reports unlocked. Reads now catch path-resolution failure before trying device storage; writes report failure rather than throwing out of the settings API.
+- Dictionary import uses strict UTF-8/UTF-16 decoding, rejects malformed sequences and closes the stream, preventing silent replacement-character corruption.
+- APK auditing rejects duplicate native-library ZIP entries, whose different payloads could otherwise collapse into one set entry and evade the exact-content check.
+
+The follow-up adds regressions for all three cases.

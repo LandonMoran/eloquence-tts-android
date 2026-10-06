@@ -186,13 +186,14 @@ class TextNormalizer {
                     // A run of identical symbols reads once, not once per char(#185(:
                     // "!!!!" -> 感叹号 (not 感叹号×4), "——" -> 破折号.
                     if (runChar == c) continue
-                    runChar = c
                     if (expanded + name.length <= MAX_NORMALIZED_CHARS) {
+                        runChar = c
                         sb.append(name)
                         expanded += name.length
                     } else {
                         // Budget exhausted:keep the symbol literal so the output length
                         // stays tied to the input instead of amplifying (#87,#103(.
+                        runChar = null
                         sb.append(c)
                     }
                 } else {

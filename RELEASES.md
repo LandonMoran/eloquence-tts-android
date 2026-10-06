@@ -1,13 +1,13 @@
-# Release Notes — v1.0
+# Release contract
 
-> 首个正式发布。版本策略：1.0 → versionCode 2000000001（沿用 r37 占位版（versionCode 2000000000）之后的编号，首个正式版起每次发布 versionCode +1），tag 采用语义化版本并内嵌可解析 versionCode 数字串（如 `v1.0.0+2000000001`）。APK 从 GitHub Releases 直接分发（非 Play 商店）。
+- Tags use `vMAJOR.MINOR.PATCH` (each component 0–999), for example `v1.0.1`; `v1.0` is also accepted. Numeric tags may carry a nonnegative Long version code. Arbitrary embedded numbers and overflowing components are rejected.
+- Android versionCode must increase independently; the updater compares semantic tags against versionName when both parse.
+- Asset names are `vvtts-arm64-v8a.apk`, `vvtts-armeabi-v7a.apk`, `vvtts-universal.apk`; x86_64 also has a test APK. Unknown ABIs use the release page, not an incompatible download.
+- Ordinary CI uses temporary signing keys. `release.yml` signs tag builds using secrets scoped to the protected `release` environment. Configure reviewers and tag restrictions before use. A release signed with a different key cannot upgrade an existing installation.
 
-## 📦 发布 / 版本契约
+## Historical v1.0 notes
 
-- **Tag 语义**：语义化版本（如 `v1.0.0+2000000001` —— tag 内必须包含可被 `parseVersionCode` 识别的 4 位以上数字串，否则自动更新无法解析版本号），每次发布打对应 tag 并在本文件补发布说明。
-- **versionCode 单调递增**：r37 占位版 `2000000000` 之后，首个正式版 `2000000001`，此后每次发布 `+1`，严禁回退（设备以 versionCode 判定降级,更低版本号不被接受为升级）。
-- **分发通道**：GitHub Releases 直接分发 APK，非 Play 商店；自动更新按设备 ABI 优先匹配 ABI 专属 APK，缺失时回退 `vvtts-universal.apk`；两资产均缺失时方才打开 Releases 页。
-- **资产命名契约**：`pickAsset` 精确匹配文件名（`vvtts-arm64-v8a.apk` / `vvtts-armeabi-v7a.apk` / `vvtts-universal.apk`）,发布物文件名不得改动（详见"已知限制"）。
+The notes below describe the original release. Current supported languages are defined by `VoiceRegistry.kt`; current fixes and test limits are in `docs/repository-audit.md`.
 
 ## ✨ 新特性
 
