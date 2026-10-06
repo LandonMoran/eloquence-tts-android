@@ -94,6 +94,9 @@ class VvttsCore {
             }
         }
 
+        /** Transfers ownership to native cleanup. The public ID is revoked;
+         * active calls retain it until return and refused ECI deletes are retried
+         * by the process cleanup queue, even after this Kotlin owner is gone. */
         @JvmStatic
         fun shutdown(handle: Long) {
             try {

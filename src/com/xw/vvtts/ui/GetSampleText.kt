@@ -19,6 +19,8 @@ class GetSampleText : Activity() {
         // Unsupported locales/variants return no sample; do not mislabel English.
         val supported = voice != null && intent.getStringExtra("variant").isNullOrEmpty()
         if (supported) result.putExtra("sampleText", com.xw.vvtts.engine.VoiceRegistry.sample(voice!!))
+        // Android Settings onSampleTextReceived checks LANG_AVAILABLE (0),
+        // not Activity.RESULT_OK (-1). Keep the TTS sample result contract.
         setResult(if (supported) android.speech.tts.TextToSpeech.LANG_AVAILABLE
             else android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED, result)
         finish()

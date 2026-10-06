@@ -321,7 +321,66 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
 static pthread_mutex_t vv_registry_lock = PTHREAD_MUTEX_INITIALIZER;
 static VvtsSession *vv_sessions;
 static jlong vv_next_id = 1;
-static void vv_destroy(VvtsSession *s);
+static int vv_destroy(VvtsSession *s);
+
+/* Once removed from the public registry, cleanup owns the whole session,
+ * including callback storage. A refused delete is retried after quiescence. */
+static pthread_mutex_t vv_cleanup_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t vv_cleanup_ready = PTHREAD_COND_INITIALIZER;
+static VvtsSession *vv_cleanup_queue;
+static unsigned vv_pending_cleanup;
+static int vv_cleanup_started;
+
+static void *vv_cleanup_worker(void *unused) {
+    (void)unused;
+    for (;;) {
+        pthread_mutex_lock(&vv_cleanup_lock);
+        while (!vv_cleanup_queue) pthread_cond_wait(&vv_cleanup_ready, &vv_cleanup_lock);
+        VvtsSession *s = vv_cleanup_queue;
+        vv_cleanup_queue = s->next;
+        pthread_mutex_unlock(&vv_cleanup_lock);
+        int freed = vv_destroy(s);
+        pthread_mutex_lock(&vv_cleanup_lock);
+        if (freed) --vv_pending_cleanup;
+        else {
+            // Append so one wedged session cannot starve other retired sessions.
+            VvtsSession **tail = &vv_cleanup_queue;
+            while (*tail) tail = &(*tail)->next;
+            s->next = NULL;
+            *tail = s;
+        }
+        pthread_mutex_unlock(&vv_cleanup_lock);
+        if (!freed) {
+            struct timespec delay = {0, 100000000L};
+            nanosleep(&delay, NULL);
+        }
+    }
+    return NULL;
+}
+
+static int vv_start_cleanup(void) {
+    pthread_mutex_lock(&vv_cleanup_lock);
+    if (!vv_cleanup_started) {
+        pthread_t thread;
+        if (!pthread_create(&thread, NULL, vv_cleanup_worker, NULL)) {
+            pthread_detach(thread);
+            vv_cleanup_started = 1;
+        }
+    }
+    int ready = vv_cleanup_started;
+    pthread_mutex_unlock(&vv_cleanup_lock);
+    return ready;
+}
+
+static void vv_dispose(VvtsSession *s) {
+    if (vv_destroy(s)) return;
+    pthread_mutex_lock(&vv_cleanup_lock);
+    s->next = vv_cleanup_queue;
+    vv_cleanup_queue = s;
+    ++vv_pending_cleanup;
+    pthread_cond_signal(&vv_cleanup_ready);
+    pthread_mutex_unlock(&vv_cleanup_lock);
+}
 
 static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
     (void)env;
@@ -339,7 +398,7 @@ static void vv_release(VvtsSession **reference) {
     pthread_mutex_lock(&vv_registry_lock);
     int destroy = --s->references == 0 && s->closing;
     pthread_mutex_unlock(&vv_registry_lock);
-    if (destroy) vv_destroy(s);
+    if (destroy) vv_dispose(s);
 }
 
 static void vv_unlock(pthread_mutex_t **lock) {
@@ -384,6 +443,7 @@ static int vv_dialect_shipped(int32_t dialect) {
 JNIEXPORT jlong JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         JNIEnv *env, jclass cls, jstring configDir, jstring libDir, jint dialect) {
+    if (!vv_start_cleanup()) return 0;
     VvtsSession *s = (VvtsSession *)calloc(1, sizeof(VvtsSession));
     if (!s) return 0;
     /* configDir and libDir are legacy from the Apple-libs era; openevv
@@ -394,27 +454,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         free(s);
         return 0;
     }
+    if (pthread_mutex_init(&s->operation, NULL)) { free(s); return 0; }
     s->hECI = eciNewEx((int)dialect);
     s->dialect = (int32_t)dialect;
     if (!s->hECI) {
+        pthread_mutex_destroy(&s->operation);
         free(s);
         return 0;
     }
     if (!vv_register_callback(s->hECI, vv_cb, s) ||
         !eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk) ||
         eciSetParam(s->hECI, eciSampleRate, 1) < 0) {
-        // No synthesis has started. Retain callback storage if cleanup refuses.
-        if (!eciDelete(s->hECI)) free(s);
-        return 0;
-    }
-    if (pthread_mutex_init(&s->operation, NULL)) {
-        if (!eciDelete(s->hECI)) free(s);
+        vv_dispose(s);
         return 0;
     }
     pthread_mutex_lock(&vv_registry_lock);
     if (vv_next_id == INT64_MAX) {
         pthread_mutex_unlock(&vv_registry_lock);
-        vv_destroy(s);
+        vv_dispose(s);
         return 0;
     }
     s->id = vv_next_id++;
@@ -727,10 +784,10 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     }
     pthread_mutex_unlock(&vv_registry_lock);
     // An active call retains ownership and performs destruction on return.
-    if (destroy) vv_destroy(s);
+    if (destroy) vv_dispose(s);
 }
 
-static void vv_destroy(VvtsSession *s) {
+static int vv_destroy(VvtsSession *s) {
     if (s->hECI) {
         s->cancel = 1; /* let a concurrent wait loop abort fast */
         eciStop(s->hECI);
@@ -743,18 +800,17 @@ static void vv_destroy(VvtsSession *s) {
             nanosleep(&ts, NULL);
         }
         if (eciSpeaking(s->hECI)) {
-            /* Wedged for real: the worker thread still owns the session.
-             * Take one leak per hang instead of a use-after-free. */
-            __android_log_print(ANDROID_LOG_ERROR, "SPD", "shutdown: session still busy; retaining session (leak-once)");
-            return;
+            // Cleanup keeps ownership and retries; never free live callback data.
+            return 0;
         }
-        if (eciDelete(s->hECI)) return; // Failed cleanup still owns callback storage.
+        if (eciDelete(s->hECI)) return 0; // Failed cleanup still owns callback storage.
         s->hECI = NULL;
     }
     free(s->text);
     free(s->pcm);
     pthread_mutex_destroy(&s->operation);
     free(s);
+    return 1;
 }
 
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {

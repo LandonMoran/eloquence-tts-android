@@ -30,11 +30,11 @@ object VoiceRegistry {
 
     fun find(language: String?, country: String? = null): CapableVoice? {
         val lang = normalizeLanguage(language)
-        if (lang == "zh" && (country.equals("TW", true) || country.equals("TWN", true))) return null
         val candidates = voices.filter { it.locale.language == lang }
+        if (country.isNullOrEmpty()) return candidates.firstOrNull()
         return candidates.firstOrNull {
             it.locale.country.equals(country, true) || it.locale.isO3Country.equals(country, true)
-        } ?: candidates.firstOrNull()
+        }
     }
 
     fun sample(voice: CapableVoice): String = when (voice.locale.language) {

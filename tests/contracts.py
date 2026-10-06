@@ -6,6 +6,9 @@ import re
 import tempfile
 import unittest
 import zipfile
+import sys
+from unittest.mock import patch
+from types import SimpleNamespace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +48,53 @@ class Contracts(unittest.TestCase):
             else:
                 self.assertNotRegex(text,r'secrets\.(KEYSTORE_B64|KS_PASS|KEY_PASS)')
             self.assertNotIn('eloquence-ci',text)
+
+    def test_release_publication_helper(self):
+        with patch.dict(sys.modules, {'audit_apk_abis': module('audit_apk_abis')}):
+            publisher = module('publish_release')
+        # Workflow installation is deferred (#288). This test exercises the
+        # publication helper only; it does not establish CI integration.
+        self.assertEqual(set(publisher.ASSETS), {'vvtts-arm64-v8a.apk', 'vvtts-armeabi-v7a.apk', 'vvtts-universal.apk'})
+        badging = "package: name='com.xw.vvtts' versionCode='2000000003' versionName='1.0.2'"
+        self.assertEqual(publisher.package_version(badging), (2000000003, '1.0.2'))
+        self.assertEqual(publisher.package_version(badging+" versionCodeMajor='1'")[0], (1 << 32)+2000000003)
+        with self.assertRaises(ValueError):
+            publisher.package_version(badging.replace('com.xw.vvtts','other.package'))
+        calls = []
+        def command(*args):
+            calls.append(args)
+            if args[0]=='aapt': return badging
+            if args[:3]==('gh','release','edit'):
+                notes=Path(args[args.index('--notes-file')+1]).read_text()
+                self.assertIn('Existing notes', notes)
+                self.assertEqual(notes.count('android-version-code:'), 1)
+                self.assertIn('android-version-code: 2000000003', notes)
+            return ''
+        with patch.object(publisher, 'audit'), patch.object(publisher, 'run', side_effect=command), patch.object(publisher.subprocess, 'run') as lookup:
+            lookup.return_value=SimpleNamespace(returncode=0,stdout=json.dumps({'body':'Existing notes\n<!-- android-version-code: 1 -->','isDraft':False}))
+            publisher.publish('v1.0.2','signed','aapt')
+            upload=next(c for c in calls if c[:3]==('gh','release','upload'))
+            self.assertEqual(upload[4:-1],tuple('signed/'+name for name in publisher.ASSETS))
+            self.assertEqual(upload[-1],'--clobber')
+            self.assertEqual(calls[-1][-1],'--draft=false')
+            calls.clear()
+            with self.assertRaises(ValueError): publisher.publish('v1.0.3','signed','aapt')
+            self.assertFalse(any(c[0]=='gh' for c in calls))
+            lookup.return_value=SimpleNamespace(returncode=1,stderr='authentication failed')
+            with self.assertRaises(RuntimeError): publisher.publish('v1.0.2','signed','aapt')
+            self.assertFalse(any(c[0]=='gh' for c in calls))
+            lookup.return_value=SimpleNamespace(returncode=1,stderr='release not found')
+            calls.clear()
+            # A new release is created as draft before upload and published last.
+            def fresh_command(*args):
+                calls.append(args)
+                return badging if args[0]=='aapt' else ''
+            with patch.object(publisher,'run',side_effect=fresh_command):
+                publisher.publish('v1.0.2','signed','aapt')
+            create=next(i for i,c in enumerate(calls) if c[:3]==('gh','release','create'))
+            upload=next(i for i,c in enumerate(calls) if c[:3]==('gh','release','upload'))
+            self.assertIn('--draft',calls[create]); self.assertIn('--verify-tag',calls[create])
+            self.assertLess(create,upload)
 
     def test_apk_exact_abis(self):
         audit=module('audit_apk_abis')

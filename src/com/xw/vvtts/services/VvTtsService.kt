@@ -164,15 +164,8 @@ class VvTtsService : TextToSpeechService() {
         } catch (ignore: Throwable) {
         }
         ngramLoadThread = null
-        // No aggressive shutdown: TextToSpeechService gets created/destroyed,
-        // aggressive shutdown would force the native engine to reload repeatedly (process restarts are expensive).)
-        // Let GC reclaim; a leaked engine handle is acceptable (the handle lives as long as the service process etc.).
-        // No executor anymore: synthesis is synchronous within onSynthesizeText(),
-        // so teardown just drops queued work via the generation bump above.
-        try {
-            currentEngine()?.stop()
-        } catch (ignore: Throwable) {
-        }
+        val retiringEngine = synchronized(engineRefLock) { engine.also { engine = null } }
+        if (retiringEngine != null) releaseProcessEngine(retiringEngine)
         cleanupExecutor.shutdown()
         registeredPrefs.forEach { it.unregisterOnSharedPreferenceChangeListener(onPrefsChanged) }
         registeredPrefs.clear()
@@ -931,38 +924,38 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                         private fun isNumericRunChar(c: Char): Boolean =
                             c.isDigit() || c == ':' || c == '/' || c == '-' || c == '.' || c == '．'
 
-            // === Process-scoped engine reuse ===
-            // TextToSpeechService is created/destroyed each time the framework binds the
-            // engine (TalkBack swipe bursts re-bind constantly(. A per-onCreate engine
-            // would tear down warm LPC handles and every re-bind would re-pay the full
-            // native eciNewEx voice-bank load — the big hover-to-speech delay after any
-            // pause. Holding one engine per process keeps all dialects warm: re-binds
-            // reuse live handles, first-swipe-after-idle latency drops to near zero.
-
+            // Rebound services may overlap. Count owners under engineLock so the
+            // last service releases native resources without closing a new owner's engine.
             private val engineLock = Any()
-            @Volatile private var processEngine: EloquenceEngine? = null
-            // #16: serialization lock for concurrent engine ops (stop/synthesizeCore/
-            // warmupDialect( must be process-scoped too — a per-instance lock would
-            // let tworebound instances race the same shared native engine (calling
-            // stop() while another instance synthesizes(.
-            private val engineCallLock = Any()
+            private var processEngine: EloquenceEngine? = null
+            private var processEngineOwners = 0
 
+            private fun acquireProcessEngine(ctx: Context): EloquenceEngine? = synchronized(engineLock) {
+                processEngine?.takeIf { it.isInitialized() }?.let {
+                    processEngineOwners++
+                    return@synchronized it
+                }
+                processEngine = null
+                processEngineOwners = 0
+                val fresh = EloquenceEngine(ctx)
+                if (fresh.initialize()) {
+                    processEngine = fresh
+                    processEngineOwners = 1
+                    fresh
+                } else {
+                    fresh.shutdown()
+                    null
+                }
+            }
 
-            private fun acquireProcessEngine(ctx: Context): EloquenceEngine? {
-                processEngine?.let { if (it.isInitialized()) return it }
-                synchronized(engineLock) {
-                    val cur = processEngine
-                    if (cur != null && cur.isInitialized()) return cur
-                    // The cached engine is dead or never initialized (e.g. a native
-                    // crash left it unusable): drop the reference BEFORE rebuilding so
-                    // a concurrent reader never hands out the stale engine.
-                    processEngine = null
-                    val fresh = EloquenceEngine(ctx)
-                    if (fresh.initialize()) {
-                        processEngine = fresh
-                        return fresh
-                    }
-                    return null
+            private fun releaseProcessEngine(owned: EloquenceEngine) {
+                val lastOwner = synchronized(engineLock) {
+                    if (processEngine !== owned) true
+                    else if (--processEngineOwners > 0) false
+                    else { processEngine = null; true }
+                }
+                if (lastOwner) {
+                    try { owned.stop() } finally { owned.shutdown() }
                 }
             }
 

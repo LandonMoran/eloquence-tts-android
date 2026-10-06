@@ -89,7 +89,7 @@ object ElqUpdateChecker {
             // actually-newer release published earlier (a lower-version release may be
             // published later ). Tie-break on newer publishedAt..
             val target = stable
-                .mapNotNull { rel -> parseVersionCode(rel.tagName)?.let { it to rel } }
+                .mapNotNull { rel -> releaseVersionCode(rel.tagName, rel.body)?.let { it to rel } }
                 .maxWithOrNull(
                     compareBy<Pair<Long, GitHubRelease>> { it.first }
                         .thenBy { it.second.publishedAt ?: "" }
@@ -98,11 +98,8 @@ object ElqUpdateChecker {
             if (target == null) {
                 return UpdateResult(currentVersionCode = localVersionCode, error = "No stable release found")
             }
-            val latestCode = parseVersionCode(target.tagName) ?: -1
-            val latestSemVer = parseSemver(target.tagName)
-            val localSemVer = parseSemver(pkg?.versionName)
-            val hasUpdate = if (latestSemVer != null && localSemVer != null)
-                latestSemVer > localSemVer else latestCode > localVersionCode
+            val latestCode = releaseVersionCode(target.tagName, target.body) ?: -1
+            val hasUpdate = shouldOfferUpdate(pkg?.versionName, localVersionCode, target.tagName, latestCode)
             val apkUrl = pickAsset(target.assets)
             return UpdateResult(
                 // Keep release-page fallback available when no compatible APK exists.
@@ -120,6 +117,28 @@ object ElqUpdateChecker {
         } finally {
             runCatching { conn?.disconnect() }
         }
+    }
+
+    internal fun shouldOfferUpdate(localName: String?, localCode: Long, tag: String?, releaseCode: Long): Boolean {
+        if (releaseCode <= localCode) return false
+        val latest = parseSemver(tag)
+        val current = parseSemver(localName)
+        return latest == null || current == null || latest > current
+    }
+
+    /** Semantic tags cannot encode the independently assigned Android code.
+     * release.yml publishes this marker from the signed APK manifests. Legacy
+     * numeric tags already declare a code; semantic releases without it fail closed. */
+    internal fun releaseVersionCode(tag: String?, notes: String?): Long? {
+        val value = tag?.trim() ?: return null
+        val numeric = value.toLongOrNull()?.takeIf { it >= 0 && value.all(Char::isDigit) }
+        if (numeric == null && parseSemver(value) == null) return null
+        val markers = Regex("""<!-- android-version-code: ([0-9]+) -->""").findAll(notes.orEmpty()).toList()
+        if (notes.orEmpty().contains("android-version-code:")) {
+            if (markers.size != 1 || notes.orEmpty().split("android-version-code:").size != 2) return null
+            return markers.single().groupValues[1].toLongOrNull()?.takeIf { it >= 0 }
+        }
+        return numeric
     }
 
     /**

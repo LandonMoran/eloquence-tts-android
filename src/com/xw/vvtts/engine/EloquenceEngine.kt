@@ -79,6 +79,9 @@ class EloquenceEngine(context: Context) {
     @Synchronized
     fun initialize(): Boolean {
         if (initialized) return true
+        if (retireExecutor.isShutdown) retireExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "elq-retire").apply { isDaemon = true }
+        }
         // Prepare storage and schedule optional native warmup. Native readiness is checked per request.
         try {
             val info: ApplicationInfo = appContext.applicationInfo
@@ -398,6 +401,7 @@ class EloquenceEngine(context: Context) {
             Thread.currentThread().interrupt()
             worker.executor.shutdownNow()
         }
+        retireExecutor.shutdown()
         synthWorker = SynthWorker()
         initialized = false
         }
@@ -426,7 +430,12 @@ class EloquenceEngine(context: Context) {
         val removed = synchronized(handleLock) { worker.handles.remove(dialect, handle) }
         if (removed) {
             worker.lastParamSig = null
-            retireExecutor.execute { VvttsCore.shutdown(handle) }
+            try {
+                retireExecutor.execute { VvttsCore.shutdown(handle) }
+            } catch (_: RejectedExecutionException) {
+                // Teardown closed the executor while this owning worker returned.
+                VvttsCore.shutdown(handle)
+            }
         }
     }
 

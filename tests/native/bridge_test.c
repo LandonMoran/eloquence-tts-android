@@ -4,7 +4,8 @@
 #include <stdatomic.h>
 #include "../../jni/vvtts_core.c"
 
-static int fail_setup, calls, stop_calls, deletes, polls, settling;
+static int fail_setup, calls, polls, settling;
+static atomic_int stop_calls, deletes, refuse_delete, reclaimed;
 static atomic_int waiting;
 static VvtsSession *active;
 static void *old_text;
@@ -15,7 +16,7 @@ const int32_t ev_paramRange[18][2] = {
     {0,INT32_MAX},{0,1},{0,1},{0,1},{2,INT32_MAX},{220,INT32_MAX},{0,INT32_MAX},{220,INT32_MAX},{0,0}
 };
 ECIHand eciNewEx(int dialect) { return (void *)1; }
-ECIHand eciDelete(ECIHand h) { deletes++; return NULL; }
+ECIHand eciDelete(ECIHand h) { deletes++; if (atomic_load(&refuse_delete)) return h; reclaimed++; return NULL; }
 int vv_register_callback(ECIHand h, ECICallback cb, void *data) { active = data; return fail_setup != 1; }
 int eciSetOutputBuffer(ECIHand h, int n, short *p) { return fail_setup != 2; }
 int eciSetParam(ECIHand h, int p, int v) { calls++; return fail_setup == 3 ? -1 : 1; }
@@ -76,6 +77,20 @@ static void *stop_thread(void *ignored) {
         SHUT(id);
     } else Java_com_xw_vvtts_core_VvttsCore_nativeStop(&env,NULL,active->id);
     return NULL;
+}
+
+static unsigned pending_cleanup(void) {
+    pthread_mutex_lock(&vv_cleanup_lock);
+    unsigned count = vv_pending_cleanup;
+    pthread_mutex_unlock(&vv_cleanup_lock);
+    return count;
+}
+
+static void await_cleanup(void) {
+    for (int i = 0; i < 500 && pending_cleanup(); ++i) {
+        struct timespec delay = {0, 10000000L}; nanosleep(&delay, NULL);
+    }
+    assert(pending_cleanup() == 0);
 }
 
 int main(void) {
@@ -148,6 +163,23 @@ int main(void) {
         assert(calls==count); SHUT(h);
     }
     fail_setup=0;
+    // Initial setup cannot publish an unusable handle, even if deletion refuses.
+    for (fail_setup=1; fail_setup<=3; ++fail_setup) {
+        int freed = reclaimed;
+        refuse_delete=1;
+        assert(INIT()==0);
+        assert(vv_sessions==NULL && pending_cleanup()==1);
+        // Callback storage remains valid and reachable by cleanup after init returns.
+        assert(active->hECI && reclaimed==freed);
+        refuse_delete=0; await_cleanup(); assert(reclaimed==freed+1);
+    }
+    fail_setup=0;
+    // A Kotlin shutdown transfers ownership, including failed deletes, to native.
+    h=INIT(); int freed=reclaimed; refuse_delete=1;
+    SHUT(h); assert(vv_sessions==NULL && pending_cleanup()==1);
+    SHUT(h); assert(pending_cleanup()==1);
+    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)==-1);
+    refuse_delete=0; await_cleanup(); assert(reclaimed==freed+1);
     short tiny[]={1000,-1000}; vv_fade_edges(tiny,2); assert(tiny[0]==0 && tiny[1]==0);
     assert(vv_dialect_shipped(0x70000) && vv_dialect_shipped(0x90000));
     puts("PASS native: setup failures, stop generations, settlement ownership, repeat synthesis, control guards, ranges, PCM edges");

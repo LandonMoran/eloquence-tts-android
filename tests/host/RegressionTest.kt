@@ -123,6 +123,18 @@ private fun versionsAndVoices() {
     check(ElqUpdateChecker.parseVersionCode("3000000000")==3000000000L)
     for (bad in listOf("1.1000.0","999999999999999999999999.1.0","1.2.3-beta","-1","r37"))
         check(ElqUpdateChecker.parseVersionCode(bad)==null)
+    val marker = "<!-- android-version-code: 2000000003 -->"
+    check(ElqUpdateChecker.releaseVersionCode("v1.0.2", marker)==2000000003L)
+    check(ElqUpdateChecker.releaseVersionCode("v1.0.2", null)==null)
+    check(ElqUpdateChecker.releaseVersionCode("3000000000", null)==3000000000L)
+    for (bad in listOf(marker+marker, "<!-- android-version-code: 999999999999999999999 -->", "<!-- android-version-code: -1 -->"))
+        check(ElqUpdateChecker.releaseVersionCode("v1.0.2", bad)==null)
+    for (code in listOf(1999999999L,2000000002L))
+        check(!ElqUpdateChecker.shouldOfferUpdate("1.0.1",2000000002L,"v1.0.2",code))
+    check(ElqUpdateChecker.shouldOfferUpdate("1.0.1",2000000002L,"v1.0.2",2000000003L))
+    check(!ElqUpdateChecker.shouldOfferUpdate("1.0.2",2000000002L,"v1.0.1",2000000003L))
+    check(!ElqUpdateChecker.shouldOfferUpdate("1.0.2",2000000002L,"v1.0.2",2000000003L))
+    check(ElqUpdateChecker.shouldOfferUpdate("legacy",2000000002L,"3000000000",3000000000L))
     check(ElqUpdateChecker.assetCandidates(listOf("x86")).isEmpty())
     check(ElqUpdateChecker.assetCandidates(listOf("x86_64"))==listOf("vvtts-universal.apk"))
     check(ElqUpdateChecker.assetCandidates(listOf("arm64-v8a")).first()=="vvtts-arm64-v8a.apk")
@@ -132,6 +144,12 @@ private fun versionsAndVoices() {
         check(VoiceRegistry.sample(voice).isNotBlank())
     }
     check(VoiceRegistry.find("kor")==null && VoiceRegistry.find("zh","TW")==null)
+    check(VoiceRegistry.find("spa", "ARG")==null)
+    check(VoiceRegistry.find("es", "AR")==null)
+    check(VoiceRegistry.find("eng", "ZZZ")==null)
+    check(VoiceRegistry.find("spa")?.voiceName=="es-ES")
+    check(VoiceRegistry.find("spa", "")?.voiceName=="es-ES")
+    check(VoiceRegistry.find("spa", "mex")?.voiceName=="es-MX")
     val engine=EloquenceEngine(Context())
     val pitch=engine.javaClass.getDeclaredMethod("mapUiPitchToKona",Int::class.java,Int::class.java).apply { isAccessible=true }
     check(KonaVoice.VOICES.map { it.nativeVoiceNumber } == listOf(1,2,3,4,6,7,8,5))
@@ -201,6 +219,72 @@ private fun warmupRetirement() {
     println("PASS warmup: queued retirement, shutdown during native open, explicit reinitialization")
 }
 
+private fun warmupSerializationAndDestroy() {
+    val boundary=com.xw.vvtts.core.VvttsCore::class.java
+    fun count(name:String)=(boundary.getField(name).get(null) as java.util.concurrent.atomic.AtomicInteger).get()
+    val engine=EloquenceEngine(Context()); check(engine.initialize())
+    val worker=field(engine,"synthWorker")!!
+    val executor=field(worker,"executor") as ExecutorService
+    executor.submit {}.get(2,TimeUnit.SECONDS)
+    val opens=count("opens"); val closes=count("closes")
+    val method=engine.javaClass.getDeclaredMethod("synthWithTimeout",kotlin.jvm.functions.Function1::class.java).apply { isAccessible=true }
+    val entered=CountDownLatch(1); val release=CountDownLatch(1)
+    val caller=Executors.newSingleThreadExecutor()
+    val pending=caller.submit<Any?> { method.invoke(engine, { _:Any ->
+        entered.countDown()
+        while (true) { try { release.await(); break } catch (_:InterruptedException) {} }
+        shortArrayOf(1)
+    }) }
+    check(entered.await(2,TimeUnit.SECONDS))
+    engine.warmupDialect(EloquenceEngine.DIALECT_FR_FR)
+    val barrier=executor.submit {}
+    checkFails { barrier.get(100,TimeUnit.MILLISECONDS) }
+    check(count("opens")==opens) { "Warmup overlapped synthesis" }
+    val service=VvTtsService(); set(service,"engine",engine)
+    service.onDestroy()
+    check(!engine.isInitialized() && field(service,"engine")==null)
+    check(count("closes")==closes) { "Teardown freed an active worker's handle" }
+    check((field(engine,"retireExecutor") as ExecutorService).isShutdown)
+    release.countDown(); check(pending.get(2,TimeUnit.SECONDS)==null)
+    check(executor.awaitTermination(2,TimeUnit.SECONDS))
+    check(count("closes")==closes+1)
+    check((field(worker,"handles") as Map<*,*>).isEmpty())
+    // Recreate in the same process and require a fresh usable engine.
+    val replacement=EloquenceEngine(Context()); check(replacement.initialize())
+    (field(field(replacement,"synthWorker")!!,"executor") as ExecutorService).submit {}.get(2,TimeUnit.SECONDS)
+    check(count("opens")==opens+1)
+    val recreated=VvTtsService(); set(recreated,"engine",replacement); recreated.onDestroy()
+    check(count("closes")==closes+2)
+    val acquire=VvTtsService.Companion.javaClass.getDeclaredMethod("acquireProcessEngine",Context::class.java).apply { isAccessible=true }
+    val shared=acquire.invoke(VvTtsService.Companion,Context()) as EloquenceEngine
+    check(acquire.invoke(VvTtsService.Companion,Context())===shared)
+    val first=VvTtsService(); set(first,"engine",shared)
+    val second=VvTtsService(); set(second,"engine",shared)
+    first.onDestroy(); check(shared.isInitialized()) { "Overlapping service lost its engine" }
+    second.onDestroy(); check(!shared.isInitialized())
+    caller.shutdown()
+    println("PASS ownership: warmup serialized, destroy during synthesis, native closure after return, service recreation")
+}
+
+private fun sampleActivity() {
+    for ((language,country) in listOf("deu" to "DEU", "jpn" to "JPN", "zho" to "CHN", "spa" to "MEX")) {
+        val activity=com.xw.vvtts.ui.GetSampleText()
+        activity.intent=android.content.Intent().putExtra("language",language).putExtra("country",country)
+        activity.javaClass.getDeclaredMethod("onCreate",android.os.Bundle::class.java).apply { isAccessible=true }.invoke(activity,null)
+        check(activity.resultCode==android.speech.tts.TextToSpeech.LANG_AVAILABLE)
+        check(activity.resultData.getStringExtra("sampleText")==VoiceRegistry.sample(VoiceRegistry.find(language,country)!!))
+        check(activity.finished)
+    }
+    for (intent in listOf(android.content.Intent().putExtra("language","spa").putExtra("country","ARG"),
+            android.content.Intent().putExtra("voiceName","missing"),
+            android.content.Intent().putExtra("variant","unsupported"))) {
+        val activity=com.xw.vvtts.ui.GetSampleText(); activity.intent=intent; activity.javaClass.getDeclaredMethod("onCreate",android.os.Bundle::class.java).apply { isAccessible=true }.invoke(activity,null)
+        check(activity.resultCode==android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED)
+        check(activity.resultData.getStringExtra("sampleText")==null)
+    }
+    println("PASS sample activity: Android Settings result contract, localized sample extra, unsupported requests")
+}
+
 private fun defender() {
     val dictionary=CrashCodeDefender.readCorpus(java.io.StringReader("# fixture\nUNCOSP\nIHOSTILE\n"))
     check(dictionary==setOf("uncosp","ihostile"))
@@ -226,6 +310,6 @@ private fun defender() {
 
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); lifecycle(); warmupRetirement(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
     finally { Context.root.deleteRecursively() }
 }
