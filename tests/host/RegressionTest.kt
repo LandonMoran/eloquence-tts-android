@@ -63,6 +63,17 @@ private fun preferences() {
     check(profile.getParam(8,1)==KonaVoice.byPreset(8).headSize)
     check(profile.getParam(8,2)==KonaVoice.byPreset(8).pitchBase)
     profileStore.edit { it.putInt("preset",0) }; check(profile.preset==1)
+    val bootStore=MirroredPreferences(context,"boot-edits")
+    check(bootStore.edit { it.putInt("value",1) })
+    UserManager.unlocked=false; Context.credentialUnavailable=true
+    check(bootStore.edit { it.putInt("value",2) })
+    UserManager.unlocked=true; Context.credentialUnavailable=false
+    val afterUnlock=MirroredPreferences(context,"boot-edits")
+    check(afterUnlock.getInt("value",0)==2) { "Unlocked CE replaced a newer Direct Boot edit" }
+    check(afterUnlock.edit { it.putInt("another",3) })
+    check(afterUnlock.getInt("value",0)==2)
+    check(File(Context.root,"ce/shared_prefs/boot-edits.xml").readText()==File(Context.root,"de/shared_prefs/boot-edits.xml").readText())
+    check(!File(Context.root,"de/files/boot-edits.direct-boot-dirty").exists())
     val config=VoiceConfig(context)
     config.setExtraLogging(false); check(!config.extraLogging)
     VoiceConfig(Context()).setExtraLogging(true); check(config.extraLogging)
@@ -77,6 +88,8 @@ private fun dictionary() {
     check(rules[0].first.containsMatchIn("Foo") && !rules[0].first.containsMatchIn("foo"))
     check(rules[1].first.containsMatchIn("BAR"))
     config.addDictEntry("new","entry"); check(config.compiledDictionary()!==rules)
+    check(config.addDictEntry("line\rword","spoken\rvalue"))
+    check(config.dictEntries().any { it.word=="line word" && it.spoken=="spoken value" })
     val before=config.dictEntries()
     checkFails { config.addDictEntries(listOf(DictEntry("x".repeat(129),"invalid"))) }
     check(config.dictEntries()==before)

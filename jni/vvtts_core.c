@@ -551,7 +551,7 @@ static jshortArray vv_synthesize(
         /* #134: a rejected clear means the previous input state is undefined;
          * never synthesize on top of it. */
         __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "eciClearInput failed: refusing to synthesize on stale input state (#134)");
-        return NULL;
+        goto failed;
     }
     /* The CLI probe's canonical order: an empty insert (index 4242( pushes
      * the current voice/environment params into the engine and is REQUIRED for
@@ -564,7 +564,7 @@ static jshortArray vv_synthesize(
            /* #135: a rejected text insertion must never be followed by
             * synthesis of stale/empty input; stop here and return failure. */
            __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
-           return NULL;
+           goto failed;
        }
        if (vv_cancelled(s)) return NULL;
        struct timespec st1, st2, st3;
@@ -575,7 +575,7 @@ static jshortArray vv_synthesize(
     * never let stale PCM escape as a normal result. */
 
     __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_synthesize failed (%d): synthesis terminal (#136)", synthRet);
-    return NULL;
+    goto failed;
     }
     clock_gettime(CLOCK_MONOTONIC, &st2);
     operation = "vv_wait_till_done";

@@ -106,8 +106,8 @@ class VoiceConfig(private val context: Context) {
         val current = parseDictionary(values[KEY_DICT] as? String ?: "").toMutableList()
         if (replacingWord != null) current.removeAll { it.word.equals(replacingWord, true) }
         for (entry in entries) {
-            val word = entry.word.trim().replace('\n', ' ').replace('|', ' ')
-            val spoken = entry.spoken.trim().replace('\n', ' ').replace('|', ' ')
+            val word = entry.word.trim().replace('\n', ' ').replace('\r', ' ').replace('|', ' ')
+            val spoken = entry.spoken.trim().replace('\n', ' ').replace('\r', ' ').replace('|', ' ')
             require(word.isNotEmpty() && word.length <= MAX_WORD_CHARS) { "Dictionary word exceeds $MAX_WORD_CHARS characters" }
             require(spoken.isNotEmpty() && spoken.length <= MAX_SPOKEN_CHARS) { "Dictionary replacement exceeds $MAX_SPOKEN_CHARS characters" }
             current.removeAll { it.word.equals(word, true) }

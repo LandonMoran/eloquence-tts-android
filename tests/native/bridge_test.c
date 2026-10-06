@@ -22,7 +22,7 @@ int eciSetParam(ECIHand h, int p, int v) { calls++; return fail_setup == 3 ? -1 
 int eciSetVoiceParam(ECIHand h, int v, int p, int x) { calls++; return 0; }
 int eciGetVoiceParam(ECIHand h, int v, int p) { calls++; return 50; }
 int eciCopyVoice(ECIHand h, int a, int b) { calls++; return fail_setup == 4 ? 0 : 1; }
-int eciClearInput(ECIHand h) { calls++; return 1; }
+int eciClearInput(ECIHand h) { calls++; return fail_setup != 5; }
 int eciStop(ECIHand h) { stop_calls++; atomic_store(&waiting, 0); return 1; }
 int eciSpeaking(ECIHand h) {
     if (settling) {
@@ -34,9 +34,10 @@ int eciSpeaking(ECIHand h) {
     if (atomic_load(&waiting)) { polls++; return 1; }
     return 0;
 }
-int et_insertIndex(void *h, long index) { return 1; }
-int et_addText(void *h, const char *text) { assert(strcmp(text, "hello") == 0); return 1; }
+int et_insertIndex(void *h, long index) { return fail_setup != 8; }
+int et_addText(void *h, const char *text) { assert(strcmp(text, "hello") == 0); return fail_setup != 6; }
 int et_synthesize(void *h) {
+    if (fail_setup == 7) return 0;
     memcpy(active->chunk, pcm_fixture, sizeof(pcm_fixture));
     vv_cb(h, eciWaveformBuffer, 256, active);
     if (cancel_during_copy == 2 || cancel_during_copy == 3) atomic_store(&waiting, 1);
@@ -137,6 +138,16 @@ int main(void) {
     assert(SYNTH(h)==NULL); pthread_join(thread,NULL);
     assert(deletes==before+1); SHUT(h); assert(deletes==before+1);
     assert(vv_sessions==NULL);
+    cancel_during_copy=0;
+    for (fail_setup=5;fail_setup<=8;fail_setup++) {
+        h=INIT(); assert(h);
+        a=(Array *)SYNTH(h); assert(a && a->len==0); free(a);
+        int count=calls;
+        assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)==-1);
+        a=(Array *)SYNTH(h); assert(a && a->len==0); free(a);
+        assert(calls==count); SHUT(h);
+    }
+    fail_setup=0;
     short tiny[]={1000,-1000}; vv_fade_edges(tiny,2); assert(tiny[0]==0 && tiny[1]==0);
     assert(vv_dialect_shipped(0x70000) && vv_dialect_shipped(0x90000));
     puts("PASS native: setup failures, stop generations, settlement ownership, repeat synthesis, control guards, ranges, PCM edges");

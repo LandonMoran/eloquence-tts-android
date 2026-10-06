@@ -114,3 +114,11 @@ The audit inventories all 225 issues (45 open, 180 closed), 570 commits reachabl
 ### Outstanding acceptance evidence
 
 Issue #141's historical key is removed from the current tree but still exists in Git history. Rotation and whether distributed APKs used that identity require owner confirmation; this branch does not rewrite shared history or rotate production signing identity. Native initialization readiness (#138), Android service-rebind stress (#81/#97), device listening, reboot-before-first-unlock and signed installation still need Android/device acceptance evidence. Closure metadata is not treated as proof that these criteria passed.
+
+## Additional adversarial pass
+
+- Preserve preference edits made during Direct Boot after unlock. A device-storage marker keeps the newer DE copy authoritative until a successful unlocked transaction mirrors both files.
+- Invalidate sessions on ECI clear/add/start failures so Kotlin retires a poisoned native handle rather than reusing it. Failure injection covers every operation and rejects subsequent controls/synthesis.
+- Normalize embedded carriage returns before serializing dictionary entries so they cannot split the persisted record format.
+
+These fixes have focused host/native regressions. New findings in this pass mean the repository is not claimed defect-free or "mostly bug-free"; device acceptance and signing-key rotation evidence remain outstanding.

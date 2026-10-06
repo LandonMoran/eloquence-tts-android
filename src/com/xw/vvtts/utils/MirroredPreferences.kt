@@ -25,6 +25,10 @@ class MirroredPreferences(context: Context, private val name: String) {
     private var stamp: Stamp? = null
     private var cached: Map<String, Any> = emptyMap()
 
+    // A DE write made while locked is newer than the unavailable CE mirror.
+    // Keep this marker until a later unlocked transaction updates both copies.
+    private fun pendingDeviceWrite() = File(device.filesDir, "$name.direct-boot-dirty")
+
     private fun file(ctx: Context) = File(ctx.dataDir, "shared_prefs/$name.xml")
     private fun unlocked() = device.getSystemService(UserManager::class.java)?.isUserUnlocked == true
     private fun stamp(f: File): Stamp {
@@ -45,7 +49,11 @@ class MirroredPreferences(context: Context, private val name: String) {
     }
 
     fun read(): Map<String, Any> = locked {
-        val candidates = if (unlocked()) listOf(credential, device) else listOf(device)
+        val candidates = when {
+            !unlocked() -> listOf(device)
+            pendingDeviceWrite().exists() -> listOf(device, credential)
+            else -> listOf(credential, device)
+        }
         for (context in candidates) {
             try {
                 // Obtaining dataDir can itself fail while CE storage is unavailable.
@@ -78,7 +86,13 @@ class MirroredPreferences(context: Context, private val name: String) {
         block(changes)
         val previous = read()
         try {
-            val primary = if (unlocked()) file(credential) else file(device)
+            val writeCredential = unlocked()
+            val primary = if (writeCredential) file(credential) else file(device)
+            if (!writeCredential) {
+                // Publish before replacing DE so process death cannot leave a newer
+                // device copy without the marker. The common file lock guards readers.
+                FileOutputStream(pendingDeviceWrite()).use { it.fd.sync() }
+            }
             write(primary, changes)
             if (primary != file(device)) {
                 try { write(file(device), changes) } catch (e: Exception) {
@@ -89,6 +103,7 @@ class MirroredPreferences(context: Context, private val name: String) {
             }
             cached = changes.toMap()
             stamp = stamp(primary)
+            if (writeCredential) pendingDeviceWrite().delete()
             true
         } catch (e: Exception) {
             stamp = null
