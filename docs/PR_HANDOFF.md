@@ -42,9 +42,30 @@ contract tests and workflow integration assertions both pass, but release
 publication itself remains unverified until the first real signed release runs.
 
 Publication status: the non-workflow continuation was pushed as
-`5dcc8149e2f294467d947cb073a0109a53e8719f`; the workflow change lands with this
-revision, both by normal push with no force push. Issue #288 is fixed on the
-branch; #291 is closed with the AOSP explanation.
+`5dcc8149e2f294467d947cb073a0109a53e8719f`; the #288 workflow change was pushed as
+`e1c2e3612c4477d29c89b1bf428f3d78b38b98c9`, both by normal push with no force
+push. The consolidated draft PR was created (see the status note below). Issue
+#288 is implemented on the branch and reopened; #291 is closed with the AOSP
+explanation.
+
+## Follow-up status note (2026-10-05)
+
+- Workflow head: `e1c2e3612c4477d29c89b1bf428f3d78b38b98c9`, pushed with a PAT
+  carrying workflow scope (normal push; no force push).
+- Consolidated PR: [pull/296](https://github.com/LandonMoran/eloquence-tts-android/pull/296),
+  draft, base `main`, head `coderabbit/fix-open-issues-engine/5b367011`. The
+  embedded description carries `Fixes #288` and `Closes #291`.
+- Fresh validation at the head: `tests/contracts.py` 10/10 pass including the new
+  `test_release_publication_integration`; `actionlint` 1.7.12 clean on all
+  `.github/workflows/*.yml`; `git diff --check` clean.
+- CI at the head at the time of writing: previous head `d0bc75a0` build
+  **success**; both `e1c2e361` build runs `in_progress`. Re-check before acting
+  on CI state (GitHub hides logs while runs are active).
+- Issue ops: #288 reopened with an implementation note; #291 closed with AOSP
+  evidence (`LANG_AVAILABLE == 0`, `Activity.RESULT_OK == -1 == LANG_MISSING_DATA`
+  in `TextToSpeech.java`).
+- No release was published and nothing was merged; closing superseded PRs
+  #240/#241/#286/#287 happens only after this PR lands, per the plan above.
 
 ## What the branch changes
 
