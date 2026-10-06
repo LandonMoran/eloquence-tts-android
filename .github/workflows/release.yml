@@ -52,3 +52,20 @@ jobs:
           name: release-signed-apks
           path: signed/*.apk
           if-no-files-found: error
+  publish:
+    needs: sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-signed-apks
+          path: signed
+      - name: Publish signed APKs and Android version metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 tools/publish_release.py "$RELEASE_TAG" signed "$ANDROID_HOME/build-tools/35.0.0/aapt"
