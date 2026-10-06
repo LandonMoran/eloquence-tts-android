@@ -122,3 +122,5 @@ Issue #141's historical key is removed from the current tree but still exists in
 - Normalize embedded carriage returns before serializing dictionary entries so they cannot split the persisted record format.
 
 These fixes have focused host/native regressions. New findings in this pass mean the repository is not claimed defect-free or "mostly bug-free"; device acceptance and signing-key rotation evidence remain outstanding.
+
+The continuing audit also found CR-only imported dictionary files could merge records. The bounded importer now recognizes CR, LF and CRLF; tests cover all line endings with UTF-8, UTF-16LE and UTF-16BE BOMs. `docs/PR_HANDOFF.md` contains the issue text and proposed PR description, since the runtime blocks direct issue and PR creation.

@@ -47,6 +47,15 @@ object DictionaryImport {
                     val c = reader.read()
                     if (c == -1) eof = true
                     if (c == -1 || c == '\n'.code) break
+                    if (c == '\r'.code) {
+                        // Match BufferedReader line semantics without allocating an
+                        // unbounded line: accept CR, LF and CRLF records.
+                        reader.mark(1)
+                        val next = reader.read()
+                        if (next == -1) eof = true
+                        else if (next != '\n'.code) reader.reset()
+                        break
+                    }
                     require(line.length < 1024) { "Dictionary line exceeds 1024 characters" }
                     line.append(c.toChar())
                 }

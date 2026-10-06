@@ -95,8 +95,11 @@ private fun dictionary() {
     check(config.dictEntries()==before)
     for (charset in listOf(Charsets.UTF_8,Charsets.UTF_16LE,Charsets.UTF_16BE)) {
         val bom=when(charset) { Charsets.UTF_16LE->byteArrayOf(-1,-2); Charsets.UTF_16BE->byteArrayOf(-2,-1); else->byteArrayOf(-17,-69,-65) }
-        val entries=DictionaryImport.read((bom+"word|replacement\nFoo|hello|cs\nbar,world\n".toByteArray(charset)).inputStream())
-        check(entries==listOf(DictEntry("Foo","hello",true),DictEntry("bar","world")))
+        for (newline in listOf("\n", "\r\n", "\r")) {
+            val text=listOf("word|replacement", "Foo|hello|cs", "bar,world", "").joinToString(newline)
+            val entries=DictionaryImport.read((bom+text.toByteArray(charset)).inputStream())
+            check(entries==listOf(DictEntry("Foo","hello",true),DictEntry("bar","world")))
+        }
     }
     checkFails { DictionaryImport.read("x".repeat(1025).byteInputStream()) }
     checkFails { DictionaryImport.read("a|b\n".repeat(1001).byteInputStream()) }
