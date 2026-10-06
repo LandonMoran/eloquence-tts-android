@@ -1,6 +1,7 @@
 name: Build APK
 
 on:
+  workflow_call:
   push:
     branches: ['**']
     paths-ignore:
@@ -61,30 +62,29 @@ jobs:
           ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar /tmp/annotations-24.1.0.jar
           (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
-      # CI-only dev keystore: generated per build, never committed (gitignored).
-      # Sideloads fine; not a release identity.
-# CI-only dev keystore: generated per build with a random password;
-# never committed (gitignored). Sideloads fine; never a release identity.
-      - name: Prepare signing keystore
-        run: |
-          if [ -n "$RELEASE_KEYSTORE_B64" ]; then
-            echo "$RELEASE_KEYSTORE_B64" | base64 -d > vvttts.jks
-            chmod 600 vvttts.jks
-            echo "KS_PASS=${RELEASE_KS_PASS}" >> "$GITHUB_ENV"
-            echo "KEY_PASS=${RELEASE_KEY_PASS}" >> "$GITHUB_ENV"
-          else
-            KS_PASS="$(openssl rand -hex 16)"
-            keytool -genkeypair -v               -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS"               -alias vvttts -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=CI Build,O=Home,C=US"
-            echo "KS_PASS=${KS_PASS}" >> "$GITHUB_ENV"
-            echo "KEY_PASS=${KS_PASS}" >> "$GITHUB_ENV"
-          fi
-          ls -la vvttts.jks 2>/dev/null || echo "KEYSSTORE_ABSENT_AFTER_PREPARE"
-          file vvttts.jks 2>/dev/null || true
-          echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
+      - name: Host regression and source contracts
         env:
-          RELEASE_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          RELEASE_KS_PASS: ${{ secrets.KS_PASS }}
-          RELEASE_KEY_PASS: ${{ secrets.KEY_PASS }}
+          ANDROID_JAR: /usr/local/lib/android/sdk/platforms/android-34/android.jar
+          KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
+          KXML_JAR: /tmp/kxml2-2.3.0.jar
+        run: |
+          curl -fsSL https://repo1.maven.org/maven2/net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar -o "$KXML_JAR"
+          echo 'f264dd9f79a1fde10ce5ecc53221eff24be4c9331c830b7d52f2f08a7b633de2  /tmp/kxml2-2.3.0.jar' | sha256sum -c -
+          bash tests/host/run.sh
+          bash tests/native/run.sh
+          python3 tests/contracts.py
+          python3 tools/prepare_assets.py --verify
+
+      # Ephemeral CI identity; release signing is isolated in release.yml.
+      - name: Prepare ephemeral CI signing key
+        run: |
+          KS_PASS="$(openssl rand -hex 32)"
+          echo "::add-mask::$KS_PASS"
+          keytool -genkeypair -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS" \
+            -alias vvttts -keyalg RSA -keysize 2048 -validity 30 -dname "CN=CI Build,O=Home,C=US"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
       - name: Build native bridge (arm64-v8a + armeabi-v7a + x86_64; openevv + JNI core)
         run: |
           ABI=arm64-v8a bash build_native.sh
@@ -124,6 +124,9 @@ jobs:
           KS_PASS: ${{ env.KS_PASS }}
           KEY_PASS: ${{ env.KEY_PASS }}
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
+
+      - name: Audit native ABI contents
+        run: python3 tools/audit_apk_abis.py
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

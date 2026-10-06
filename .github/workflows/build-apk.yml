@@ -59,23 +59,15 @@ jobs:
           fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
-      - name: Prepare signing keystore
+      - name: Prepare ephemeral CI signing key
         run: |
-          if [ -n "$RELEASE_KEYSTORE_B64" ] && echo "$RELEASE_KEYSTORE_B64" | base64 -d > vvttts.jks 2>/dev/null && keytool -list -keystore vvttts.jks -storepass "${RELEASE_KS_PASS:-eloquence-ci}" >/dev/null 2>&1; then
-            chmod 600 vvttts.jks
-            echo "KS_PASS=${RELEASE_KS_PASS:-eloquence-ci}" >> "$GITHUB_ENV"
-            echo "KEY_PASS=${RELEASE_KEY_PASS:-eloquence-ci}" >> "$GITHUB_ENV"
-          else
-            KS_PASS="$(openssl rand -hex 16)"
-            keytool -genkeypair -v               -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS"               -alias vvttts -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=CI Build,O=Home,C=US"
-            echo "KS_PASS=${KS_PASS}" >> "$GITHUB_ENV"
-            echo "KEY_PASS=${KS_PASS}" >> "$GITHUB_ENV"
-          fi
+          KS_PASS="$(openssl rand -hex 32)"
+          echo "::add-mask::$KS_PASS"
+          keytool -genkeypair -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS" \
+            -alias vvttts -keyalg RSA -keysize 2048 -validity 30 -dname "CN=CI Build,O=Home,C=US"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
           echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
-        env:
-          RELEASE_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          RELEASE_KS_PASS: ${{ secrets.KS_PASS }}
-          RELEASE_KEY_PASS: ${{ secrets.KEY_PASS }}
       - name: Build native bridge (x86_64)
         run: |
           export ANDROID_SDK="$HOME/android-sdk" ABI="x86_64"
