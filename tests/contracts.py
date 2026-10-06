@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def module(name):
+    """Load a repository tool by filename without requiring an installed package."""
     spec = importlib.util.spec_from_file_location(name, ROOT / 'tools' / f'{name}.py')
     loaded = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(loaded)
@@ -23,12 +24,14 @@ def module(name):
 
 class Contracts(unittest.TestCase):
     def test_no_tracked_signing_keys(self):
+        """Reject tracked signing-key files so release credentials cannot enter the checkout."""
         import subprocess
         tracked = subprocess.check_output(
             ['git', 'ls-files', '-z', '--', '*.jks', '*.keystore', '*.p12', '*.pfx'], cwd=ROOT)
         self.assertFalse(tracked, 'Signing key material must not be tracked')
 
     def test_registry_native_parity(self):
+        """Require the Kotlin voice catalog to exactly match the JNI dialect whitelist."""
         engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
         registry = (ROOT/'src/com/xw/vvtts/engine/VoiceRegistry.kt').read_text()
         constants = dict(re.findall(r'const val (DIALECT_\w+)\s*=\s*(0x[0-9a-fA-F]+)', engine))
@@ -39,6 +42,7 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('buildEloquenceConfig',engine)
 
     def test_release_signing_isolated(self):
+        """Require production signing secrets to stay in the protected release workflow."""
         for file in (ROOT/'.github/workflows').glob('*.yml'):
             text=file.read_text()
             if file.name=='release.yml':
@@ -50,6 +54,7 @@ class Contracts(unittest.TestCase):
             self.assertNotIn('eloquence-ci',text)
 
     def test_release_publication_helper(self):
+        """Verify release versions, asset selection, lookup failures, and draft/upload ordering."""
         with patch.dict(sys.modules, {'audit_apk_abis': module('audit_apk_abis')}):
             publisher = module('publish_release')
         # Helper contract: create/update/error/version/asset behavior. CI
@@ -62,6 +67,7 @@ class Contracts(unittest.TestCase):
             publisher.package_version(badging.replace('com.xw.vvtts','other.package'))
         calls = []
         def command(*args):
+            """Record publication commands and inspect the edited release notes without contacting GitHub."""
             calls.append(args)
             if args[0]=='aapt': return badging
             if args[:3]==('gh','release','edit'):
@@ -87,6 +93,7 @@ class Contracts(unittest.TestCase):
             calls.clear()
             # A new release is created as draft before upload and published last.
             def fresh_command(*args):
+                """Record commands for a new release while supplying fixture APK version metadata."""
                 calls.append(args)
                 return badging if args[0]=='aapt' else ''
             with patch.object(publisher,'run',side_effect=fresh_command):
@@ -97,6 +104,7 @@ class Contracts(unittest.TestCase):
             self.assertLess(create,upload)
 
     def test_release_publication_integration(self):
+        """Verify that publication depends on signing and has narrowly scoped write permission."""
         workflow=(ROOT/'.github/workflows/release.yml').read_text()
         self.assertNotIn('eloquence-ci',workflow)
         idx=workflow.index('  publish:\n')
@@ -128,6 +136,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual(workflow.count('release-signed-apks'),2)  # sign upload + publish download
 
     def test_apk_exact_abis(self):
+        """Accept exact ABI contents for each APK asset and reject additional native libraries."""
         audit=module('audit_apk_abis')
         with tempfile.TemporaryDirectory() as tmp:
             for name,abis in audit.ASSETS.items():
@@ -139,6 +148,7 @@ class Contracts(unittest.TestCase):
                 with self.assertRaises(ValueError):audit.audit(path)
 
     def test_apk_duplicate_native_entry(self):
+        """Reject duplicate native ZIP entries even when their names match the expected ABI."""
         audit=module('audit_apk_abis')
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'vvtts-arm64-v8a.apk'
@@ -151,6 +161,7 @@ class Contracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'duplicate'): audit.audit(path)
 
     def test_oracle_all_pieces_and_missing_duplicate_empty(self):
+        """Require exactly the requested nonempty oracle pieces and reject invalid selections."""
         assemble=module('assemble_oracle').assemble
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
@@ -169,6 +180,7 @@ class Contracts(unittest.TestCase):
             with self.assertRaises(ValueError):assemble(root,'zh-cn',[1],root/'bad.tsv')
 
     def test_oracle_checksums_before_extract(self):
+        """Require pinned archive checksums to be verified before extraction."""
         workflow=(ROOT/'.github/workflows/oracle-decompile.yml').read_text()
         self.assertIn('b13a7c4871bb689c5c04fee88ca8905895a7b4b3da53f59d521d691cdb137f72',workflow)
         self.assertIn('12fd966431903b8e15c36e5007f19343475be7d8f2a55f082e7a929eeabc937e',workflow)
@@ -176,6 +188,7 @@ class Contracts(unittest.TestCase):
         self.assertLess(workflow.index('"$JADX_SHA256" | sha256sum -c -'),workflow.index('unzip -q /tmp/jadx.zip'))
 
     def test_signature_permission_matches(self):
+        """Match the install-status permission and reject the nonexistent TTS binding permission."""
         manifest=(ROOT/'AndroidManifest.xml').read_text()
         installer=(ROOT/'src/com/xw/vvtts/update/ElqUpdateInstaller.kt').read_text()
         permission=re.search(r'INSTALL_STATUS_PERMISSION = "([^"]+)"',installer)[1]

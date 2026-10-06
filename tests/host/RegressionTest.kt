@@ -14,10 +14,14 @@ import java.io.File
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** Read a private instance field for host regression assertions. */
 private fun field(target: Any, name: String): Any? = target.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(target)
+/** Set a private instance field to arrange a host regression scenario. */
 private fun set(target: Any, name: String, value: Any?) = target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target,value)
+/** Assert that the supplied operation fails. */
 private fun checkFails(block: () -> Unit) { check(runCatching(block).isFailure) }
 
+/** Exercise mirrored persistence, Direct Boot, cache invalidation, rollback, and concurrent writers. */
 private fun preferences() {
     val context = Context()
     val store = MirroredPreferences(context,"test")
@@ -81,6 +85,7 @@ private fun preferences() {
     println("PASS prefs: cache, complete empty XML, CE fallback, locked construction, atomic rollback, concurrent writers, corruption, live logging")
 }
 
+/** Exercise dictionary caching, strict import decoding, record bounds, and normalization limits. */
 private fun dictionary() {
     val config=VoiceConfig(Context()); config.clearDict()
     check(config.addDictEntries(listOf(DictEntry("Foo","spoken",true),DictEntry("bar","other"))))
@@ -108,6 +113,7 @@ private fun dictionary() {
     for (bytes in listOf(byteArrayOf(97,124,-61,40), byteArrayOf(-1,-2,97,0,124,0,98))) {
         var closed=false
         val input=object : java.io.ByteArrayInputStream(bytes) {
+            /** Record stream closure so malformed-import tests can assert ownership cleanup. */
             override fun close() { closed=true; super.close() }
         }
         checkFails { DictionaryImport.read(input) }; check(closed)
@@ -117,6 +123,7 @@ private fun dictionary() {
     println("PASS dictionary: compiled rule reuse/invalidation, case/order, BOM streaming, all limits, normalization budget")
 }
 
+/** Check version ordering, shipped voice lookup, pitch mapping, and synthesis budgeting. */
 private fun versionsAndVoices() {
     check(ElqUpdateChecker.parseSemver("1.10.0")!! > ElqUpdateChecker.parseSemver("1.9.9")!!)
     check(ElqUpdateChecker.parseSemver("v1.0") == ElqUpdateChecker.parseSemver("V1.0.0"))
@@ -163,6 +170,7 @@ private fun versionsAndVoices() {
     println("PASS versions/voices: semantic ordering, Long codes, malformed bounds, audited ABI fallback, ISO-2/ISO-3, all preset pitch endpoints")
 }
 
+/** Verify nonblocking stop, stale-audio rejection, listener teardown, and synthesis-only time budgeting. */
 private fun lifecycle() {
     val engine=EloquenceEngine(Context())
     val service=VvTtsService(); set(service,"engine",engine)
@@ -191,10 +199,14 @@ private fun lifecycle() {
     println("PASS lifecycle: blocked synthesis Stop, stale-result suppression, listener teardown, long-read work budget")
 }
 
+/** Verify queued and in-flight warmup cannot publish handles after worker retirement. */
 private fun warmupRetirement() {
     val boundary = com.xw.vvtts.core.VvttsCore::class.java
+    /** Read a native-boundary fixture counter. */
     fun count(name:String) = (boundary.getField(name).get(null) as java.util.concurrent.atomic.AtomicInteger).get()
+    /** Read the engine's current synthesis worker for lifecycle assertions. */
     fun worker(engine:EloquenceEngine) = field(engine,"synthWorker")!!
+    /** Read a worker's executor for deterministic queue barriers. */
     fun executor(worker:Any) = field(worker,"executor") as ExecutorService
     val engine=EloquenceEngine(Context()); set(engine,"initialized",true)
     val old=worker(engine); val gate=CountDownLatch(1); val entered=CountDownLatch(1)
@@ -219,8 +231,10 @@ private fun warmupRetirement() {
     println("PASS warmup: queued retirement, shutdown during native open, explicit reinitialization")
 }
 
+/** Verify warmup serialization, destruction during synthesis, recreation, and shared engine ownership. */
 private fun warmupSerializationAndDestroy() {
     val boundary=com.xw.vvtts.core.VvttsCore::class.java
+    /** Read a native-boundary fixture counter for ownership assertions. */
     fun count(name:String)=(boundary.getField(name).get(null) as java.util.concurrent.atomic.AtomicInteger).get()
     val engine=EloquenceEngine(Context()); check(engine.initialize())
     val worker=field(engine,"synthWorker")!!
@@ -266,6 +280,7 @@ private fun warmupSerializationAndDestroy() {
     println("PASS ownership: warmup serialized, destroy during synthesis, native closure after return, service recreation")
 }
 
+/** Verify localized samples, Android result codes, and rejection of unsupported voice requests. */
 private fun sampleActivity() {
     for ((language,country) in listOf("deu" to "DEU", "jpn" to "JPN", "zho" to "CHN", "spa" to "MEX")) {
         val activity=com.xw.vvtts.ui.GetSampleText()
@@ -285,6 +300,7 @@ private fun sampleActivity() {
     println("PASS sample activity: Android Settings result contract, localized sample extra, unsupported requests")
 }
 
+/** Verify corpus bounds and protection against case, locale, and combining-mark bypasses. */
 private fun defender() {
     val dictionary=CrashCodeDefender.readCorpus(java.io.StringReader("# fixture\nUNCOSP\nIHOSTILE\n"))
     check(dictionary==setOf("uncosp","ihostile"))
@@ -308,6 +324,7 @@ private fun defender() {
     println("PASS defender: pre-allocation line bound, shipped corpus, combining marks, case and locale")
 }
 
+/** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
     try { preferences(); dictionary(); versionsAndVoices(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }

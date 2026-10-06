@@ -23,11 +23,13 @@ object VoiceRegistry {
     )
 
 
+    /** Map a shipped ISO-3 language code to ISO-2, otherwise return the lowercase input. */
     fun normalizeLanguage(language: String?): String {
         val lang = (language ?: "").lowercase(Locale.ROOT)
         return voices.firstOrNull { it.locale.isO3Language == lang }?.locale?.language ?: lang
     }
 
+    /** Find a shipped language/country pair; use its first voice only when country is absent. */
     fun find(language: String?, country: String? = null): CapableVoice? {
         val lang = normalizeLanguage(language)
         val candidates = voices.filter { it.locale.language == lang }
@@ -37,6 +39,7 @@ object VoiceRegistry {
         }
     }
 
+    /** Return sample speech in the voice's language, defaulting to English. */
     fun sample(voice: CapableVoice): String = when (voice.locale.language) {
         "de" -> "Hallo, dies ist ein Test der Eloquence Sprachausgabe."
         "fr" -> "Bonjour, ceci est un test de synthèse vocale Eloquence."

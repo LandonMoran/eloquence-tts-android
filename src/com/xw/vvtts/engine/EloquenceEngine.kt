@@ -77,6 +77,7 @@ class EloquenceEngine(context: Context) {
         this.voiceProfile = vp
     }
 
+    /** Prepare device storage and schedule warmup; return false if initialization fails. */
     @Synchronized
     fun initialize(): Boolean {
         if (initialized) return true
@@ -116,6 +117,7 @@ class EloquenceEngine(context: Context) {
          *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
         @Volatile var skipWarmupForAutotest = false
 
+        /** Apply dictionary rules in order, rejecting any intermediate expansion beyond 16,384 characters. */
         private fun applyDict(text: String, rules: List<Pair<Regex, String>>): String {
             var result = text
             for ((pattern, spoken) in rules) {
@@ -343,6 +345,7 @@ class EloquenceEngine(context: Context) {
         return synthesizeCore(text, dialect, volume, 1, 50)
     }
 
+    /** Invalidate pending synthesis and signal native handles without waiting for the synthesis lock. */
     fun stop() {
             stopped = true
             engineEpoch.incrementAndGet()
@@ -356,6 +359,7 @@ class EloquenceEngine(context: Context) {
             }
         }
 
+    /** Retire the worker and arrange handle cleanup after active native calls return. */
     @Synchronized
     fun shutdown() {
         engineEpoch.incrementAndGet()
@@ -408,17 +412,15 @@ class EloquenceEngine(context: Context) {
         initialized = false
         }
 
+    /** Report whether initialization succeeded and the engine has not been shut down. */
     fun isInitialized(): Boolean = initialized
     fun getSampleRate(): Int = SAMPLE_RATE
 
         // ===== In-house bridge (the only synthesis path) =====
+    /** Return the bridge output sample rate in Hz. */
     fun getCoreSampleRate(): Int = SAMPLE_RATE
 
-    /** Open + cache the engine handle for a dialect (no synthesis(.  Doing this
-     *  once inthe background after onCreate removes the LPC voice-table load from
-     *  the critical path of the first utterance (the single biggest "hover to
-     *  speech" latency component(.
-     */
+    /** Detach a worker's cached handles and shut them down after its active native call returns. */
     private fun closeHandles(worker: SynthWorker) {
         val handles = synchronized(handleLock) {
             val values = worker.handles.values.toList()
@@ -428,6 +430,7 @@ class EloquenceEngine(context: Context) {
         handles.forEach { VvttsCore.shutdown(it) }
     }
 
+    /** Remove a failed handle from its worker and schedule destruction outside the handle lock. */
     private fun retireHandle(worker: SynthWorker, dialect: Int, handle: Long) {
         val removed = synchronized(handleLock) { worker.handles.remove(dialect, handle) }
         if (removed) {
@@ -441,6 +444,7 @@ class EloquenceEngine(context: Context) {
         }
     }
 
+    /** Return a cached or newly opened dialect handle, or zero if the worker is obsolete. */
     private fun ensureHandle(worker: SynthWorker, dialect: Int): Long {
         if (worker.retired || synthWorker !== worker || !initialized) return 0L
         val cached = worker.handles[dialect] ?: 0L
@@ -513,6 +517,7 @@ class EloquenceEngine(context: Context) {
         return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
     }
 
+    /** Configure and synthesize on the serial worker; return null on failure or cancellation. */
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? = synchronized(nativeLock) {
         return synthWithTimeout { worker ->
         // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
@@ -588,7 +593,7 @@ class EloquenceEngine(context: Context) {
         }
     }
 
-    /** UI pitch 0-100 -> Apple pitchBase (±30 around the current voice's pitchBase) */
+    /** Map UI pitch 0..100 across the native range, keeping 50 at the selected voice's baseline. */
     private fun mapUiPitchToKona(uiPitch: Int, basePitch: Int): Int {
         // uiPitch 50 = neutral (voice's default pitchBase(; 0 = -30; 100 = +30
         val pitch = uiPitch.coerceIn(0, 100)
@@ -599,6 +604,7 @@ class EloquenceEngine(context: Context) {
     // Runs a synthesis body on the single worker thread. If it has not finished
     // in HANG_TIMEOUT_S, log the stuck stack, retire the engine, and return null
     // so THIS request fails fast — a frozen native call cannot take down the whole TTS.
+    /** Run synthesis with a watchdog, discarding results invalidated by stop or retirement. */
     private fun synthWithTimeout(block: (SynthWorker) -> ShortArray?): ShortArray? {
         val nowMin = SystemClock.elapsedRealtime()
         if (nowMin < retireUntilMs) {
@@ -669,6 +675,7 @@ class EloquenceEngine(context: Context) {
     
 // The single worker froze (can't interrupt native code(: retire it, start a fresh
     // executor + fresh native handles so subsequent requests work again immediatel
+    /** Replace the worker and invalidate its queued work while deferring active handle cleanup. */
     private fun rotateEngine() {
         val worker = synthWorker
         worker.retired = true

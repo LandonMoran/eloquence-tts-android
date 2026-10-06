@@ -147,6 +147,7 @@ static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *out
     *outn = out_n;
     return  0;
 }
+/** Taper both PCM endpoints to zero over at most 88 samples per edge. */
 static void vv_fade_edges(short *pcm, size_t n) {
     size_t fade = n / 2 < 88 ? n / 2 : 88;
     for (size_t i = 0; i < fade; i++) {
@@ -178,10 +179,12 @@ atomic_int failed;      /* engine-state-invalidation flag (see vv_fail_session( 
     atomic_int retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
 
+/** Report whether a session has a live engine and has not failed or been retired. */
 static int vv_usable(const VvtsSession *s) {
     return s && s->hECI && !s->failed && !s->retired;
 }
 
+/** Detect cancellation, including a stop that raced the current synthesis generation. */
 static int vv_cancelled(const VvtsSession *s) {
     return s->cancel || atomic_load(&s->stopGeneration) != s->activeGeneration;
 }
@@ -190,6 +193,7 @@ static void vv_fail_session(VvtsSession *s);  /* poison late-alloc-failure path 
 
 /* Fatal callback error: flag the session so the wait loop stops fast (cancel)
  * and nativeSynthesize fails instead of returning partial or rate-mismatched audio. */
+/** Mark a callback failure as fatal and cancel synthesis instead of returning partial audio. */
 static int vv_fail(VvtsSession *s) {
     s->failed = 1;
     s->fatal =  1;
@@ -202,6 +206,7 @@ static int vv_fail(VvtsSession *s) {
  * s->pcm after waiting for eciSpeaking to go quiet, so no locking is needed
  * as long as one session is never driven from two threads at once (the
  * Kotlin side already serialises with its synthesis lock). */
+/** Append waveform callbacks within allocation bounds; poison the session on overflow or allocation failure. */
 static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
     VvtsSession *s = (VvtsSession *)data;
     if (!vv_usable(s) || vv_cancelled(s) || message != eciWaveformBuffer)
@@ -238,6 +243,7 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
 
 #define VV_DRAIN_MAX_ITERS 40000  /* 0.5 ms each: ~20 s of drain before retirement */
 
+/** Poll until synthesis is quiet, forwarding cancellation and retiring sessions that exceed the drain bound. */
 static void vv_wait_till_done(VvtsSession *s) {
     /* openevv's engine cannot abandon an utterance: eciStop stops the
      * samples but the synthesis thread still has to finish it.  A fixed
@@ -276,6 +282,7 @@ static void vv_wait_till_done(VvtsSession *s) {
  * engine's own thread still has to finish; one session must never be driven
  * from two threads concurrently, so wait for the engine to go quiet before
  * touching text/pcm again. */
+/** Prove the previous utterance is quiet before buffer reuse, or retire the session on timeout. */
 static int vv_settle(VvtsSession *s) {
     for (int i = 0; i < VV_DRAIN_MAX_ITERS; i++) {
         if (!eciSpeaking(s->hECI)) return 1;
@@ -290,6 +297,7 @@ static int vv_settle(VvtsSession *s) {
  * for short TalkBack labels those fixed pauses dominate the perceived swipe
  * latency, so trim them before resampling.  A >-33 dBFS sample stops the
  * scan, so real speech is never eaten; near-empty blips are left alone. */
+/** Trim bounded edge silence in place and update the sample count, retaining and tapering padding. */
 static void vv_trim_silence(short *pcm, size_t *pn) {
     size_t n = *pn;
     if (n < 32) return;
@@ -331,6 +339,7 @@ static VvtsSession *vv_cleanup_queue;
 static unsigned vv_pending_cleanup;
 static int vv_cleanup_started;
 
+/** Retry destruction of retired sessions, preserving callback storage until the engine releases ownership. */
 static void *vv_cleanup_worker(void *unused) {
     (void)unused;
     for (;;) {
@@ -358,6 +367,7 @@ static void *vv_cleanup_worker(void *unused) {
     return NULL;
 }
 
+/** Start the shared deferred-cleanup thread once; return zero if thread creation fails. */
 static int vv_start_cleanup(void) {
     pthread_mutex_lock(&vv_cleanup_lock);
     if (!vv_cleanup_started) {
@@ -372,6 +382,7 @@ static int vv_start_cleanup(void) {
     return ready;
 }
 
+/** Destroy an unreferenced session immediately or transfer ownership to the cleanup queue. */
 static void vv_dispose(VvtsSession *s) {
     if (vv_destroy(s)) return;
     pthread_mutex_lock(&vv_cleanup_lock);
@@ -382,6 +393,7 @@ static void vv_dispose(VvtsSession *s) {
     pthread_mutex_unlock(&vv_cleanup_lock);
 }
 
+/** Look up a public session ID and acquire a lifetime reference, or return NULL. */
 static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
     (void)env;
     pthread_mutex_lock(&vv_registry_lock);
@@ -392,6 +404,7 @@ static VvtsSession *vv_find(JNIEnv *env, jlong handle) {
     return s;
 }
 
+/** Release a JNI lifetime reference and dispose a closing session after its last reference leaves. */
 static void vv_release(VvtsSession **reference) {
     VvtsSession *s = *reference;
     if (!s) return;
@@ -401,6 +414,7 @@ static void vv_release(VvtsSession **reference) {
     if (destroy) vv_dispose(s);
 }
 
+/** Release an acquired operation mutex when a scoped JNI guard exits. */
 static void vv_unlock(pthread_mutex_t **lock) {
     if (*lock) pthread_mutex_unlock(*lock);
 }
@@ -423,6 +437,7 @@ static void vv_unlock(pthread_mutex_t **lock) {
  * unknown dialects up front so the caller gets a clean NULL handle instead
  * of a killed process -- this is what keeps an accidental wrong-language
  * request from ever crashing the app (or TalkBack's TTS session). */
+/** Accept only dialect IDs whose voice modules are linked into this build. */
 static int vv_dialect_shipped(int32_t dialect) {
     switch (dialect) {
     case 0x10000: case 0x10001:  /* enus, engb */
@@ -440,6 +455,7 @@ static int vv_dialect_shipped(int32_t dialect) {
     }
 }
 
+/** Create and register a configured session, returning an opaque ID or zero on failure. */
 JNIEXPORT jlong JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
         JNIEnv *env, jclass cls, jstring configDir, jstring libDir, jint dialect) {
@@ -488,6 +504,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
  * Kotlin wrapper can distinguish "engine state invalidated" from the ordinary
  * "no audio" null,and drop/rebuild its cached handle.  (Contract: null
  * = no audio,, non-empty = PCM,, empty array = engine state poisoned(. */
+/** Permanently invalidate a session after synthesis failure, retaining buffers until safe cleanup. */
 static void vv_fail_session(VvtsSession *s) {
     /* Poisoned sessions keep hECI alive: shutdown must still be able to
      * eciStop/eciDelete it; only the reusable state is torn down here, so
@@ -502,6 +519,7 @@ static jshortArray vv_empty_result(JNIEnv *env) {
 }
 /* ------------------------------------------------------------------ */
 
+/** Synthesize with the session operation held; return PCM, NULL on cancellation, or an empty failure result. */
 static jshortArray vv_synthesize(
         JNIEnv *env, jclass cls, VvtsSession *s, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
@@ -684,6 +702,7 @@ failed:
     return vv_empty_result(env);
 }
 
+/** Acquire session lifetime and operation guards, then synthesize under a captured stop generation. */
 JNIEXPORT jshortArray JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
         JNIEnv *env, jclass cls, jlong handle, jint dialect,
@@ -701,6 +720,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSynthesize(
     return result;
 }
 
+/** Set a validated active-voice parameter; return -1 for invalid, busy, or unusable sessions. */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param, jint value) {
@@ -713,6 +733,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(
     return eciSetVoiceParam(s->hECI, voice, param, value);
 }
 
+/** Read a validated voice parameter; return -1 for invalid, busy, or unusable sessions. */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeGetVoiceParam(
         JNIEnv *env, jclass cls, jlong handle, jint voice, jint param) {
@@ -723,6 +744,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeGetVoiceParam(
     return eciGetVoiceParam(s->hECI, voice, param);
 }
 
+/** Set an engine parameter only within its canonical range and the bridge's fixed format contract. */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
         JNIEnv *env, jclass cls, jlong handle, jint param, jint value) {
@@ -745,6 +767,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
  * openevv's voices are 1..8 in the same order -- Reed, Shelley, Sandy,
  * Rocko, Flo, Grandma, Grandpa, Eddy.  Copy the chosen preset onto voice 0
  * (the active voice the Kotlin side then tunes by voice params). */
+/** Copy a shipped preset to active voice zero, returning 1 on success or -1 on failure. */
 JNIEXPORT jint JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeSetStandardVoice(
         JNIEnv *env, jclass cls, jlong handle, jint voiceNumber) {
@@ -755,6 +778,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetStandardVoice(
     return eciCopyVoice(s->hECI, voiceNumber, 0) ? 1 : -1;
 }
 
+/** Signal cancellation by advancing the generation without calling the engine from the stop thread. */
 JNIEXPORT void JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeStop(
         JNIEnv *env, jclass cls, jlong handle) {
@@ -766,6 +790,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeStop(
 
 }
 
+/** Remove a public session ID, cancel work, and defer disposal until active references leave. */
 JNIEXPORT void JNICALL
 Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
         JNIEnv *env, jclass cls, jlong handle) {
@@ -787,6 +812,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
     if (destroy) vv_dispose(s);
 }
 
+/** Free session storage only after engine quiescence and successful deletion; return zero to retry. */
 static int vv_destroy(VvtsSession *s) {
     if (s->hECI) {
         s->cancel = 1; /* let a concurrent wait loop abort fast */

@@ -13,10 +13,12 @@ ASSETS = ('vvtts-arm64-v8a.apk', 'vvtts-armeabi-v7a.apk', 'vvtts-universal.apk')
 
 
 def run(*args):
+    """Run a command and return decoded stdout, propagating unsuccessful exit status."""
     return subprocess.check_output(args, text=True)
 
 
 def package_version(badging):
+    """Parse the expected APK package's validated Long version code and version name from aapt output."""
     package = next((line for line in badging.splitlines() if line.startswith('package: ')), '')
     fields = dict(re.findall(r"(\w+)='([^']*)'", package))
     if fields.get('name') != 'com.xw.vvtts':
@@ -29,6 +31,7 @@ def package_version(badging):
 
 
 def publish(tag, directory, aapt):
+    """Validate signed assets against the tag, upload them, and publish notes with the APK version code."""
     match = re.fullmatch(r'v(\d{1,3})\.(\d{1,3})(?:\.(\d{1,3}))?', tag)
     if not match:
         raise ValueError('Release tag must be vMAJOR.MINOR[.PATCH]')

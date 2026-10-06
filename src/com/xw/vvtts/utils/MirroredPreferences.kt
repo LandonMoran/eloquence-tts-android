@@ -27,15 +27,20 @@ class MirroredPreferences(context: Context, private val name: String) {
 
     // A DE write made while locked is newer than the unavailable CE mirror.
     // Keep this marker until a later unlocked transaction updates both copies.
+    /** Locate the marker indicating that device-protected edits must survive the next unlock. */
     private fun pendingDeviceWrite() = File(device.filesDir, "$name.direct-boot-dirty")
 
+    /** Locate a named preferences XML file within the supplied storage context. */
     private fun file(ctx: Context) = File(ctx.dataDir, "shared_prefs/$name.xml")
+    /** Report whether credential-protected storage is available according to UserManager. */
     private fun unlocked() = device.getSystemService(UserManager::class.java)?.isUserUnlocked == true
+    /** Capture path, inode, timestamp, and size for detecting atomic file replacements. */
     private fun stamp(f: File): Stamp {
         val stat = Os.stat(f.path)
         return Stamp(f.path, stat.st_ino, f.lastModified(), stat.st_size)
     }
 
+    /** Run a reentrant transaction under the process monitor and shared device-storage file lock. */
     private fun <T> locked(block: () -> T): T = synchronized(processLock) {
         if (heldLock.get() == true) return@synchronized block()
         val lockFile = File(device.filesDir, "preferences.lock")
@@ -48,6 +53,7 @@ class MirroredPreferences(context: Context, private val name: String) {
         }
     }
 
+    /** Read the authoritative complete snapshot, falling back across storage areas on failure. */
     fun read(): Map<String, Any> = locked {
         val candidates = when {
             !unlocked() -> listOf(device)
@@ -73,10 +79,15 @@ class MirroredPreferences(context: Context, private val name: String) {
         if (!unlocked()) emptyMap() else cached
     }
 
+    /** Check whether the latest readable snapshot contains a key. */
     fun contains(key: String) = read().containsKey(key)
+    /** Return a string-valued view of the latest readable preferences. */
     fun strings(): Map<String, String> = read().mapValues { it.value.toString() }
+    /** Read a Boolean value, using the default for missing or differently typed values. */
     fun getBoolean(key: String, default: Boolean) = read()[key] as? Boolean ?: default
+    /** Read an Int value, using the default for missing or differently typed values. */
     fun getInt(key: String, default: Int) = read()[key] as? Int ?: default
+    /** Read a string set, falling back to the supplied default when absent or incompatible. */
     @Suppress("UNCHECKED_CAST")
     fun getStringSet(key: String, default: Set<String>?) = read()[key] as? Set<String> ?: default
 
@@ -112,6 +123,7 @@ class MirroredPreferences(context: Context, private val name: String) {
         }
     }
 
+    /** Collect editor operations and persist them together through one locked update. */
     fun edit(block: (SharedPreferences.Editor) -> Unit): Boolean {
         val editor = Changes()
         block(editor)
@@ -126,15 +138,25 @@ class MirroredPreferences(context: Context, private val name: String) {
     private class Changes : SharedPreferences.Editor {
         val values = LinkedHashMap<String, Any?>()
         var clear = false
+        /** Queue a string value, or remove the key when the value is null. */
         override fun putString(k: String, v: String?) = apply { values[k] = v }
+        /** Queue a defensive copy of a string set, or remove the key for null. */
         override fun putStringSet(k: String, v: Set<String>?) = apply { values[k] = v?.toSet() }
+        /** Queue an integer value for the enclosing edit transaction. */
         override fun putInt(k: String, v: Int) = apply { values[k] = v }
+        /** Queue a long value for the enclosing edit transaction. */
         override fun putLong(k: String, v: Long) = apply { values[k] = v }
+        /** Queue a floating-point value for the enclosing edit transaction. */
         override fun putFloat(k: String, v: Float) = apply { values[k] = v }
+        /** Queue a Boolean value for the enclosing edit transaction. */
         override fun putBoolean(k: String, v: Boolean) = apply { values[k] = v }
+        /** Queue removal of a key from the next snapshot. */
         override fun remove(k: String) = apply { values[k] = null }
+        /** Clear existing values before applying the queued changes. */
         override fun clear() = apply { clear = true }
+        /** Reject direct commit; MirroredPreferences.edit owns persistence of this editor. */
         override fun commit(): Boolean = error("Use MirroredPreferences.edit")
+        /** Reject direct apply; MirroredPreferences.edit owns persistence of this editor. */
         override fun apply(): Unit = error("Use MirroredPreferences.edit")
     }
 
@@ -143,6 +165,7 @@ class MirroredPreferences(context: Context, private val name: String) {
         // Reentrant callers use the monitor, but must not reacquire the OS lock.
         private val heldLock = ThreadLocal<Boolean>()
 
+        /** Parse a complete typed preferences map, recovering AtomicFile backups and rejecting malformed XML. */
         private fun parse(file: File): Map<String, Any> {
             val values = LinkedHashMap<String, Any>()
             AtomicFile(file).openRead().use { input ->
@@ -184,6 +207,7 @@ class MirroredPreferences(context: Context, private val name: String) {
             return values
         }
 
+        /** Serialize a complete snapshot, fsync it, and atomically rename it over the destination. */
         private fun write(file: File, values: Map<String, Any>) {
             file.parentFile?.mkdirs()
             val temp = File.createTempFile(".prefs-", ".tmp", file.parentFile)

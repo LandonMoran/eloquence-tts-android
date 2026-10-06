@@ -11,12 +11,15 @@ object DictionaryImport {
     fun read(input: InputStream): List<DictEntry> {
         val limited = object : FilterInputStream(input) {
             var bytes = 0
+            /** Charge bytes read against the import limit, throwing before an oversized import continues. */
             private fun count(n: Int): Int {
                 if (n > 0) bytes += n
                 require(bytes <= VoiceConfig.MAX_IMPORT_BYTES) { "Dictionary file exceeds 1 MiB" }
                 return n
             }
+            /** Read one byte and charge it once unless the stream has reached EOF. */
             override fun read(): Int = super.read().also { if (it >= 0) count(1) }
+            /** Read directly from the underlying stream and charge the returned byte count once. */
             override fun read(b: ByteArray, off: Int, len: Int): Int = count(`in`.read(b, off, len))
         }
         PushbackInputStream(limited, 3).use { stream ->

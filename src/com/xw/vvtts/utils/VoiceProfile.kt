@@ -11,7 +11,9 @@ import android.content.SharedPreferences
  */
 class VoiceProfile(context: Context) {
     private val store = MirroredPreferences(context, PREFS)
+    /** Read the current voice profile from mirrored storage as string values. */
     private fun readMap() = store.strings()
+    /** Persist profile editor changes through the mirrored-preferences transaction. */
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) { store.edit(block) }
 
     val preset: Int

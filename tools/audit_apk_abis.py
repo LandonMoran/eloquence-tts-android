@@ -13,6 +13,7 @@ ASSETS = {
 
 
 def audit(path):
+    """Reject APKs with duplicate, empty, missing, or unexpected native libraries for their asset name."""
     path = Path(path)
     expected = ASSETS[path.name]
     with zipfile.ZipFile(path) as apk:
