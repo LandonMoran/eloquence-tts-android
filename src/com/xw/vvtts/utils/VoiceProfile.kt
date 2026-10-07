@@ -26,11 +26,6 @@ class VoiceProfile(context: Context) {
         writeBoth { it.putInt(KEY_PRESET, v) }
     }
 
-    /** Whether the given param has a custom override for this preset */
-    fun hasOverride(preset: Int, param: Int): Boolean {
-        return readMap().containsKey(overrideKey(preset, param))
-    }
-
     /** Get a preset's param value: custom override first, else KonaVoice default */
     fun getParam(preset: Int, param: Int): Int {
         val key = overrideKey(preset, param)
@@ -84,19 +79,5 @@ class VoiceProfile(context: Context) {
             return "override_$preset" + "_" + param
     }
 
-        /** Parameter display name */
-        fun paramName(param: Int): String {
-            return when (param) {
-                PARAM_GENDER -> "Gender"
-                PARAM_HEAD_SIZE -> "Head size"
-                PARAM_PITCH_BASE -> "Pitch"
-                PARAM_PITCH_FLUC -> "Pitch flutter"
-                PARAM_ROUGHNESS -> "Roughness"
-                PARAM_BREATHINESS -> "Breathiness"
-                PARAM_SPEED -> "Speed"
-                PARAM_VOLUME -> "Volume"
-                else -> "Parameter $param"
-            }
-    }
     }
 }

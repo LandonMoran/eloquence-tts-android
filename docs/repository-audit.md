@@ -1,5 +1,11 @@
 # Repository audit and issue resolution
 
+> Historical audit snapshot. Its branch, pull-request, issue-count, and
+> validation statements describe the audit at the time it was written; they
+> are not current release status. Current supported locales and workflows are
+> defined by `src/com/xw/vvtts/engine/VoiceRegistry.kt` and
+> `.github/workflows/`.
+
 ## Publication status
 
 The consolidation branch contains the application fixes and the workflow changes from PR #287. The earlier workflow-write rejection was resolved by merging the same workflow content already present on that repository branch. All seven contract tests pass together. PRs #240, #241 and #286 are also integrated into the branch history with their accepted fixes preserved and the tail-fade correction retained.

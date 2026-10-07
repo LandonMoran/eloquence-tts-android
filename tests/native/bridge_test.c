@@ -117,8 +117,49 @@ static void await_cleanup(void) {
     assert(pending_cleanup() == 0);
 }
 
+/** Compare the production resampler against its previous zero-padded implementation. */
+static void test_resampler_equivalence(void) {
+    pthread_once(&vv_rsp_once, vv_rsp_build);
+    unsigned state = 0x6d2b79f5u;
+    const size_t lengths[] = {1, 2, 3, 31, 32, 63, 64, 65, 257, 4096};
+    for (size_t c = 0; c < sizeof(lengths) / sizeof(lengths[0]); ++c) {
+        const size_t n = lengths[c];
+        short *input = malloc(n * sizeof(*input));
+        assert(input);
+        for (size_t i = 0; i < n; ++i) {
+            state = state * 1664525u + 1013904223u;
+            input[i] = (short)(state >> 16);
+        }
+        short *padded = calloc(n + 2 * VV_RSP_HALF, sizeof(*padded));
+        short *expected = malloc(n * VV_RSP_PHASES * sizeof(*expected));
+        assert(padded && expected);
+        memcpy(padded + VV_RSP_HALF, input, n * sizeof(*input));
+        for (size_t out = 0; out < n * VV_RSP_PHASES; ++out) {
+            const size_t i = out >> 2;
+            const int phase = (int)(out & 3);
+            float acc = 0.0f;
+            const short *src = padded + VV_RSP_HALF + i;
+            for (int k = 0; k < VV_RSP_TAPS; ++k)
+                acc += vv_rsp_coeff[phase][k] * (float)src[k - VV_RSP_HALF];
+            if (acc > 32767.0f) acc = 32767.0f;
+            else if (acc < -32768.0f) acc = -32768.0f;
+            expected[out] = (short)(acc >= 0.0f ? acc + 0.5f : acc - 0.5f);
+        }
+        short *actual = NULL;
+        size_t actual_n = 0;
+        assert(vv_resample_4x(input, n, &actual, &actual_n) == 0);
+        assert(actual_n == n * VV_RSP_PHASES);
+        assert(memcmp(actual, expected, actual_n * sizeof(*actual)) == 0);
+        free(actual);
+        free(expected);
+        free(padded);
+        free(input);
+    }
+}
+
 /** Exercise JNI setup failures, parameter bounds, PCM endpoints, cancellation, and session lifetime races. */
 int main(void) {
+    test_resampler_equivalence();
     for (int i=0;i<256;i++) pcm_fixture[i] = i > 32 && i < 220 ? 4000 : 0;
     for (fail_setup=1;fail_setup<=3;fail_setup++) { int before=deletes; assert(INIT()==0); assert(deletes==before+1); }
     fail_setup=0;

@@ -1,31 +1,61 @@
-# CONTRIBUTING
+# Contributing
 
-## 构建（Building）
+## Before opening a pull request
 
-Android SDK/NDK builds run in GitHub Actions. Do not run Android builds locally; follow `jni/README.md`. Host source/regression checks are documented in `docs/repository-audit.md` and use JDK 17, Kotlin 1.9.25 and GCC sanitizers.
+- Keep changes focused and explain user-visible or runtime behavior changes.
+- Update related documentation when implementation or release behavior changes.
+- Add or update focused tests for changed behavior.
+- Do not hand-edit generated outputs. Follow
+  [`docs/artifacts-contract.md`](docs/artifacts-contract.md) to locate their
+  sources of truth.
+- Do not commit credentials, signing keys, or generated build artifacts.
 
-##测试（Testing）
+## Build and test policy
 
-- `chs_smoke` lane：中文语音数据回归。
-- `emu-smoke` lane：Android 模拟器冒烟测试。
-- 发布前手工回归清单见 `RELEASES.md`「测试要点」。
+Android SDK/NDK builds run in GitHub Actions; do not run Android builds locally.
+The build workflow uses JDK 17, Kotlin 1.9.25, Android platform 34, and
+Build Tools 35.0.0. The application manifest currently sets min SDK 28 and
+target SDK 36. See [`jni/README.md`](jni/README.md) for the native bridge
+contract.
 
+Available local checks include:
 
-##架构（Architecture）
+```sh
+bash tests/native/run.sh
+python3 tests/contracts.py
+python3 tools/prepare_assets.py --verify
+```
 
-- `src/com/xw/vvtts/`：Kotlin 源码（TTS 服务、设置、检测器等）。
-- `oracle/`：中文语音数据采集/合并/生成流水线（`merge_build.py` 确定性生成 `oracle_chs.c`）。
-- 语言检测三层架构：Unicode 规则 → 内存 n-gram 表 →→ Lingua 统计（详见 `RELEASES.md` 新特性）。
-- 版本策略与发布通道见 `RELEASES.md`；功能总览见 `README.md`。
+`bash tests/host/run.sh` compiles the host application regressions but requires
+`ANDROID_JAR`, `KOTLINC_CP` (Kotlin 1.9.25), and `KXML_JAR` (kxml2 2.3.0).
+The main CI workflow runs these checks as well as the Android builds. A separate
+`chs-smoke` job validates the Chinese oracle synthesis path; emulator jobs
+exercise Android behavior.
 
+## Architecture and source of truth
 
-##提交与 PR（PR Conventions）
+- `src/com/xw/vvtts/`: Kotlin service, engine, settings, and language detection.
+- `jni/`: JNI and compatibility bridge for the C ECI interface.
+- `native/openevv/`: C engine and its language modules.
+- `oracle/`: Chinese audio table generation and related development material.
+- `docs/languages-voices-capabilities.md`: summary of shipped locale and voice
+  capabilities; `VoiceRegistry.kt` is the executable locale source of truth.
+- `docs/repository-audit.md`: test commands and repository validation notes.
 
-- 分支命名：`fix/issue-<编号>`；PR 标题沿用 issue 标题，body 标注 `Fixes #<编号>`。
-- 每个 PR 应附 CodeRabbit 评审（在 PR 上评论 `@coderabbitai autofix review`）。
-- 目标分支：`main`；CI 须绿；未经 owner 明确批准不自行合并。
+The native APK library is built from `openevv` plus the JNI bridge. Chinese
+Simplified uses the generated oracle bank. See the root README and the native
+bridge documentation for runtime details.
 
+## Pull requests
 
-##发布（Releases）
+Target `main`. Use a descriptive title and include the issue reference when
+applicable. Summarize the change, its validation, and any checks that could not
+be run. CI must pass before merge; do not merge without the repository
+maintainer's approval.
 
-- 版本/发布契约、资产命名契约见 `RELEASES.md`；每次发布须更新该文件并打语义化 tag。
+## Releases
+
+Release tags, asset names, signing, and publication requirements are specified
+in [`RELEASES.md`](RELEASES.md). Update release documentation when those
+contracts change. Production signing secrets belong only in the protected
+GitHub `release` environment.

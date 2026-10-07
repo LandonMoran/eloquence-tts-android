@@ -1,53 +1,73 @@
-# 语言 / 角色 / 能力 —— 唯一事实源
+# Languages, voices, and capabilities
 
-`src/com/xw/vvtts/engine/VoiceRegistry.kt` is the executable source of truth; native parity is checked in CI.
+[`VoiceRegistry.kt`](../src/com/xw/vvtts/engine/VoiceRegistry.kt) is the
+executable source of truth for the Android locales advertised as available.
+[`KonaVoice.kt`](../src/com/xw/vvtts/utils/KonaVoice.kt) defines the eight
+named voice presets and their base parameter values. Native locale parity is
+checked by [`tests/contracts.py`](../tests/contracts.py).
 
-本文档是仓库中「支持的语言」「发音角色」「能力清单」的唯一事实源；README 特性列表、设置 UI 文案、发布说明等凡涉及上述清单之处，均以此表为准，如需增删请改本文件并同步发布说明。
+## Shipped locales
 
-## 支持的语言（14）
+The Android app advertises 14 locales:
 
-| Locale | 语言| 说明 |
-|---|---|---|
-| `zh-CN` | 简体中文 | 主开发语言，自带 oracle 语音库 |
-| `en-US` | 美式英语 | |
-| `en-GB` | 英式英语 | |
-| `de-DE` | 德语 | |
-| `fr-FR` | 法语（法国） | |
-| `fr-CA` | 法语（加拿大） | |
-| `es-ES` | 西班牙语（西班牙） | |
-| `es-US` | 西班牙语（美国） | |
-| `es-MX` | 西班牙语（墨西哥） | |
-| `it-IT` | 意大利语 | |
-| `ja-JP` | 日文 | |
-| `pl-PL` | 波兰语 | |
-| `pt-BR` | 葡萄牙语（巴西） | |
-| `fi-FI` | 芬兰语 | |
+| Locale | Language | Native dialect |
+| --- | --- | --- |
+| `en-US` | English (United States) | `0x10000` |
+| `en-GB` | English (United Kingdom) | `0x10001` |
+| `de-DE` | German (Germany) | `0x40000` |
+| `fr-FR` | French (France) | `0x30000` |
+| `fr-CA` | French (Canada) | `0x30001` |
+| `es-ES` | Spanish (Spain) | `0x20000` |
+| `es-US` | Spanish (United States) | `0x20001` |
+| `es-MX` | Spanish (Mexico) | `0x20002` |
+| `it-IT` | Italian (Italy) | `0x50000` |
+| `ja-JP` | Japanese (Japan) | `0x80000` |
+| `pl-PL` | Polish (Poland) | `0x110000` |
+| `pt-BR` | Portuguese (Brazil) | `0x70000` |
+| `fi-FI` | Finnish (Finland) | `0x90000` |
+| `zh-CN` | Chinese (Simplified, China) | `0x60000` |
 
-## 发音角色（8）
+Traditional Chinese (`zh-TW`) and Korean (`ko-KR`) dialect constants and
+resources exist in parts of the repository, but they are not in
+`VoiceRegistry.kt` and are not advertised or synthesized by this Android build.
 
-| 角色 | 说明 |
-|---|---|
-| Reed | |
-| Shelley | |
-| Sandy | |
-| Rocko | |
-| Flo | |
-| Grandma | |
-| Grandpa | |
-| Eddy | |
+## Voice presets and parameters
 
-> 角色可用性因语言而异（以引擎实际数据为准）；UI 中未出现在当前语言下的角色即不被支持，不在此列外列。
+The app defines eight named presets: Reed, Shelley, Sandy, Rocko, Flo, Grandma,
+Grandpa, and Eddy. The selected preset supplies a standard voice row and a
+baseline parameter set; a user voice profile can override parameter values.
+The native mapping explicitly accounts for Eddy's different row number in
+`openevv`.
 
+The eight ECI voice parameters are:
 
+1. gender
+2. head size
+3. pitch baseline
+4. pitch fluctuation
+5. roughness
+6. breathiness
+7. speed
+8. volume
 
-## 能力清单
+Parameter ranges and language-specific native behavior are defined by
+[`EloquenceEngine.kt`](../src/com/xw/vvtts/engine/EloquenceEngine.kt),
+[`KonaVoice.kt`](../src/com/xw/vvtts/utils/KonaVoice.kt), and the native
+[`jni/README.md`](../jni/README.md). The preset list is not a promise that
+every locale has identical sound or supports identical native data.
 
-- 多语言自动检测：Unicode 规则（O(1(）→ 内存 n-gram → Lingua 三层，混合语言文本自动分片。
-- 零延迟：本地引擎，无云端往返。
+## Runtime capabilities
 
-- 系统 TTS 集成：可作为 Android 无障碍 / 屏幕阅读器语音引擎使用；`directBootAware` + 设备保护存储支持锁屏朗读。
+- The language detector uses Unicode rules, an in-memory n-gram model, and
+  Lingua classification. Mixed-language text is segmented before synthesis.
+- The local engine has no speech-service network round trip.
+- Android system TTS supplies speech rate and pitch; app settings supply voice
+  and volume options. Voice profile controls tune the ECI parameters.
+- Direct Boot is supported by the TTS service declaration and device-protected
+  engine/settings storage. See `AndroidManifest.xml` and
+  `src/com/xw/vvtts/services/VvTtsService.kt`.
+- The update checker uses GitHub Releases and ABI-specific APK names. Its exact
+  version metadata and signing requirements are in [`RELEASES.md`](../RELEASES.md).
 
-- 音色参数（8 维）：gender / headSize / pitchBaseline / pitchFluctuation / roughness / breathiness / speed / volume（长按发音角色调节）。
-- 语速 /  音调 / /音量独立可调，试听实时生效。
-
-- 自动更新：GitHub Releases 通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）。
+When this list changes, update the registry and its native parity checks first,
+then keep user-facing documentation and release notes in sync.

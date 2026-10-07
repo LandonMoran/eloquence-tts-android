@@ -39,12 +39,13 @@ class SettingsActivity : Activity() {
     private var engine: EloquenceEngine? = null
     private var pitchVal: TextView? = null
     private var volumeVal: TextView? = null
+    private var pitchBar: SeekBar? = null
+    private var volumeBar: SeekBar? = null
     private val charParamIds = intArrayOf(VoiceProfile.PARAM_HEAD_SIZE, VoiceProfile.PARAM_ROUGHNESS, VoiceProfile.PARAM_BREATHINESS, VoiceProfile.PARAM_PITCH_FLUC)
     private val charLabelRes = intArrayOf(R.string.voice_head, R.string.voice_roughness, R.string.voice_breathiness, R.string.voice_inflection)
     private val charBars = arrayOfNulls<SeekBar>(charParamIds.size)
     private val charVals = arrayOfNulls<TextView>(charParamIds.size)
     private var langSwitch: Switch? = null
-    private var langFixedBtn: Button? = null
     private var voiceBtn: Button? = null
     private var presetBtn: Button? = null
     private var presetRow: LinearLayout? = null
@@ -128,11 +129,11 @@ class SettingsActivity : Activity() {
         
         // ===== SPEECH SECTION =====
         addSectionHeader(mainContainer, R.string.sec_speech)
-        pitchVal = addSeekBar(mainContainer, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100) { v ->
+        pitchVal = addSeekBar(mainContainer, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100, { pitchBar = it }) { v ->
             voiceConfig!!.setPitch(v)
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
-        volumeVal = addSeekBar(mainContainer, getString(R.string.volume), voiceConfig!!.volume, 0, 100) { v ->
+        volumeVal = addSeekBar(mainContainer, getString(R.string.volume), voiceConfig!!.volume, 0, 100, { volumeBar = it }) { v ->
             voiceConfig!!.setVolume(v)
             volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
@@ -152,7 +153,6 @@ class SettingsActivity : Activity() {
         refreshVoiceButton(voiceBtnLocal)
         val langSwitchLocal = addSwitchRow(mainContainer, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
             LanguageDetector.setDetectionEnabled(on)
-            voiceConfig!!.setAutoDetect(on)
             if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
             saveLanguageSettings()
             refreshLanguageUi()
@@ -160,9 +160,7 @@ class SettingsActivity : Activity() {
             updateChineseGuard()
         }
         langSwitch = langSwitchLocal
-        val langFixedBtnLocal = addRow(this, mainContainer)
-        langFixedBtn = langFixedBtnLocal
-        langFixedBtnLocal.setOnClickListener { showLanguageDialog() }
+        refreshLanguageUi()
         val testBtnLocal = addFilledButton(mainContainer, R.string.test, dp(16))
         testBtnLocal.setOnClickListener { testSpeech() }
         
@@ -216,7 +214,7 @@ class SettingsActivity : Activity() {
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
-        val extraLogSwitch = addSwitchRow(mainContainer, getString(R.string.extra_logging_row), voiceConfig!!.extraLogging) { on ->
+        addSwitchRow(mainContainer, getString(R.string.extra_logging_row), voiceConfig!!.extraLogging) { on ->
             voiceConfig!!.setExtraLogging(on)
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
@@ -352,7 +350,7 @@ class SettingsActivity : Activity() {
                 }
             }
 
-                    /** Zh-oracle hook: force real zh sample (你好。） through the GB18030 oracle path
+                    /** Zh-oracle hook: force a Chinese sample through the GB18030 oracle path
                      *  so CI can verify samples>0 via the CHS_ORACLE log. */
                     private fun testZhOracle() {
                         Thread {
@@ -415,7 +413,6 @@ class SettingsActivity : Activity() {
 
             /** Per-language sample texts */
     private fun sampleTextFor(code: String): String {
-        if (code == null) return "Hello, this is a speech test."
         if (code.startsWith("zh")) return "\u4f60\u597d\u3002"
         if (code.startsWith("en")) return "Hello, this is a speech synthesis test."
         if (code.startsWith("de")) return "Hallo, das ist ein Sprachsynthesetest."
@@ -516,13 +513,6 @@ class SettingsActivity : Activity() {
 
     private fun refreshLanguageUi() {
         langSwitch?.isChecked = LanguageDetector.isDetectionEnabled()
-        val fixed = langFixedBtn
-        if (fixed != null) {
-            fixed.visibility = if (LanguageDetector.isDetectionEnabled()) View.GONE else View.VISIBLE
-            if (!LanguageDetector.isDetectionEnabled()) {
-                fixed.text = getString(R.string.lang_msg_fmt, dialectName(LanguageDetector.getFixedDialect()))
-            }
-        }
     }
 
     private fun addSwitchRow(root: LinearLayout, label: String, checked: Boolean, onToggle: (Boolean) -> Unit): Switch {
@@ -557,25 +547,7 @@ class SettingsActivity : Activity() {
         root.addView(tv)
     }
 
-    private fun dialectName(dialect: Int): String {
-        if (dialect == LanguageDetector.DIALECT_EN_US) return getString(R.string.dialect_en_us)
-        if (dialect == LanguageDetector.DIALECT_EN_GB) return getString(R.string.dialect_en_gb)
-        if (dialect == LanguageDetector.DIALECT_DE_DE) return getString(R.string.dialect_de_de)
-        if (dialect == LanguageDetector.DIALECT_FR_FR) return getString(R.string.dialect_fr_fr)
-        if (dialect == LanguageDetector.DIALECT_FR_CA) return getString(R.string.dialect_fr_ca)
-        if (dialect == LanguageDetector.DIALECT_ES_ES) return getString(R.string.dialect_es_es)
-        if (dialect == LanguageDetector.DIALECT_ES_US) return getString(R.string.dialect_es_us)
-        if (dialect == LanguageDetector.DIALECT_ES_MX) return getString(R.string.dialect_es_mx)
-        if (dialect == LanguageDetector.DIALECT_IT_IT) return getString(R.string.dialect_it_it)
-        if (dialect == LanguageDetector.DIALECT_JA_JP) return getString(R.string.dialect_ja_jp)
-        if (dialect == LanguageDetector.DIALECT_PL_PL) return getString(R.string.dialect_pl_pl)
-        if (dialect == LanguageDetector.DIALECT_PT_BR) return getString(R.string.dialect_pt_br)
-        if (dialect == LanguageDetector.DIALECT_FI_FI) return getString(R.string.dialect_fi_fi)
-        if (dialect == LanguageDetector.DIALECT_ZH_CN) return getString(R.string.dialect_zh_cn)
-        return getString(R.string.dialect_en_us)
-    }
-
-    /** Voice picker: single choice over dialects actually included in this build */
+    /** Language picker: one immediate picker for the dialects included in this build. */
     private fun showVoiceDialog() {
         val voices = VoiceConfig.LANGS.filter { EloquenceEngine.isShippedDialect(it.eciDialect.toInt()) }
         val codes = voices.map { it.code }.toTypedArray()
@@ -585,13 +557,27 @@ class SettingsActivity : Activity() {
         if (checked < 0) checked = 0
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.voice_dlg_title))
-            .setSingleChoiceItems(labels, checked) { _, which ->
-                voiceConfig!!.setVoice(codes[which])
-                refreshVoiceButton(voiceBtn!!)
-                updateChineseGuard()
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                selectLanguage(codes[which])
+                dialog.dismiss()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+    }
+
+    private fun selectLanguage(code: String) {
+        val language = VoiceConfig.LANGS.firstOrNull {
+            it.code == code && EloquenceEngine.isShippedDialect(it.eciDialect.toInt())
+        } ?: return
+        val config = voiceConfig ?: return
+
+        config.setVoice(language.code)
+        LanguageDetector.setFixedDialect(language.eciDialect.toInt())
+        LanguageDetector.setDetectionEnabled(false)
+        saveLanguageSettings()
+        refreshLanguageUi()
+        voiceBtn?.let(::refreshVoiceButton)
+        updateChineseGuard()
     }
 
     private fun refreshVoiceButton(btn: Button) {
@@ -891,6 +877,8 @@ class SettingsActivity : Activity() {
         numberBtn?.let { refreshNumberButton(it) }
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
+        pitchBar?.progress = voiceConfig!!.pitch
+        volumeBar?.progress = voiceConfig!!.volume
         refreshVoiceCharSliders()
         updateChineseGuard()
         Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
@@ -903,7 +891,6 @@ class SettingsActivity : Activity() {
             REQ_PROFILE -> {
                 presetBtn?.let { refreshPresetButton(it) }
                 refreshVoiceCharSliders()
-                presetBtn?.let { refreshPresetButton(it) }
             }
             REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)
             REQ_DICT_CREATE -> if (data?.data != null) exportDictToUri(data.data!!)
@@ -914,57 +901,6 @@ class SettingsActivity : Activity() {
         super.onDestroy()
         UpdateActions.dismissFor(this)
     }
-
-    private fun showLanguageDialog() {
-        val items = arrayOf(
-            "English (US)",
-            "English (UK)",
-            "German",
-            "French (France)",
-            "French (Canada)",
-            "Spanish (Spain)",
-            "Spanish (US)",
-            "Spanish (Mexico)",
-            "Italian",
-            "Japanese",
-            "Polish",
-            "Portuguese (Brazil)",
-            "Finnish",
-            "Chinese (Mandarin)",
-        )
-        val dialects = intArrayOf(
-            LanguageDetector.DIALECT_EN_US,
-            LanguageDetector.DIALECT_EN_GB,
-            LanguageDetector.DIALECT_DE_DE,
-            LanguageDetector.DIALECT_FR_FR,
-            LanguageDetector.DIALECT_FR_CA,
-            LanguageDetector.DIALECT_ES_ES,
-            LanguageDetector.DIALECT_ES_US,
-            LanguageDetector.DIALECT_ES_MX,
-            LanguageDetector.DIALECT_IT_IT,
-            LanguageDetector.DIALECT_JA_JP,
-            LanguageDetector.DIALECT_PL_PL,
-            LanguageDetector.DIALECT_PT_BR,
-            LanguageDetector.DIALECT_FI_FI,
-            LanguageDetector.DIALECT_ZH_CN,
-        )
-        val current = LanguageDetector.getFixedDialect().let { d -> dialects.indexOf(d).coerceAtLeast(0) }
-        var picked = current
-        AlertDialog.Builder(this)
-                    .setTitle(getString(R.string.language_dlg_title))
-                    .setSingleChoiceItems(items, current ) { _,which -> picked = dialects[which] }
-                    .setPositiveButton(getString(R.string.ok)) { _, _ ->
-                        LanguageDetector.setDetectionEnabled(false)
-                        LanguageDetector.setFixedDialect(picked)
-                        voiceConfig!!.setAutoDetect(false)
-                        saveLanguageSettings()
-                        refreshLanguageUi()
-                        voiceBtn?.let { refreshVoiceButton(it) }
-                        updateChineseGuard()
-                    }
-                    .setNegativeButton(getString(R.string.cancel), null)
-                    .show()
-            }
 
     /** Language-detection settings dialog */
     private fun showDetectionSettingsDialog() {
@@ -1043,12 +979,12 @@ class SettingsActivity : Activity() {
 
     /** Detect languages (multi-select) */
     private fun showDetectionLanguagesDialog() {
-        // Current whitelist; default is English + Japanese
+        // The default whitelist contains every language supported by the detector.
         val enabled = LanguageDetector.getEnabledLanguages()
         val checked = BooleanArray(LanguageDetector.ALL_LANG_CODES.size)
         for (i in LanguageDetector.ALL_LANG_CODES.indices) {
             val code = LanguageDetector.ALL_LANG_CODES[i]
-            checked[i] = enabled != null && enabled.contains(code)
+            checked[i] = enabled.contains(code)
         }
         val names = LanguageDetector.ALL_LANG_NAMES
         // Mirror checkbox state into a temp array as the user toggles
@@ -1143,12 +1079,7 @@ class SettingsActivity : Activity() {
         e.putInt("spanish_dialect", LanguageDetector.getSpanishDialect())
         e.putInt("french_dialect", LanguageDetector.getFrenchDialect())
         e.putInt("default_language", LanguageDetector.getDefaultLanguage())
-        val enabled = LanguageDetector.getEnabledLanguages()
-        if (enabled != null) {
-            e.putStringSet("enabled_langs", enabled)
-        } else {
-            e.remove("enabled_langs")
-        }
+        e.putStringSet("enabled_langs", LanguageDetector.getEnabledLanguages())
         }
     }
 
@@ -1161,7 +1092,7 @@ class SettingsActivity : Activity() {
         LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
         LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
         LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
-        // Detection whitelist: default English + Japanese (fresh install or never set)
+        // Detection whitelist: enable all detector languages on a fresh install.
         val enabled: Set<String>
         if (prefs.contains("enabled_langs")) {
             enabled = prefs.getStringSet("enabled_langs", null) ?: emptySet<String>()

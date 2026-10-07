@@ -1,5 +1,9 @@
 # CJK clean-room plan (chs / cht / kor) - where it actually stands
 
+> Historical research plan. It includes unfinished branch notes and
+> implementation proposals that do not describe current app support. For the
+> shipped Chinese runtime and generated source, see [`README.md`](README.md).
+
 ## The chsrom dict reader - complete transcription spec (2026-09-20)
 
 All addresses: x86_64 slice of tvos18 chsrom.dylib (VA==fileoff).

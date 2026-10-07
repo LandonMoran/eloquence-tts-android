@@ -1,6 +1,10 @@
 # CJK engine binary map (Plan B: static ROM extraction)
 Working file. All offsets are FILE offsets unless marked VA.
 
+> Historical reverse-engineering notes. The Android runtime uses the
+> consolidated Chinese oracle tables and generator described in
+> [`README.md`](README.md); this investigation is not the current build path.
+
 ## Modules (apple-eloquence-elf-1.2.3 / lib/)
 - chsrom.so  - Chinese ROMANIZER: hanzi -> pinyin (UCS2<->MBCS, isPinYin)
 - chs.so     - Chinese SPEECH: pinyin -> phonemes (LPTA rules), durations, prosody
@@ -95,4 +99,3 @@ Same table layout as converted ELF 1.2.3, confirmed in the tvos18 dylibs:
 
 - tvos18_korrom.dylib __const VA 00008390 size  213636. Kor tables anchors TODO.
 - viavoice2002_chsrom.dll .rdata VA  10011000 size  1175552. Older layout TODO.
-

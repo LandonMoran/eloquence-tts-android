@@ -69,7 +69,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         i += adv;
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
-            if (ln & 1) ln -= 1;  /* PCM is 16-bit; odd lengths would misalign the stream */
+            if (ln & 1) return 0;  /* Reject malformed 16-bit PCM instead of silently dropping a byte. */
             if (ln > VV_MAX_PCM_SAMPLES * sizeof(short) - total) return 0;  /* checksum: reject oversized input early */
             total += ln;
         }
@@ -86,7 +86,7 @@ size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) {
         i += adv;
         if (key < 0x80) continue;
         if (chs_oracle_pcm_for_gbk(key, &d, &ln)) {
-            if (ln & 1) ln -= 1;  /* PCM is  16-bit; odd lengths would misalign the stream */
+            if (ln & 1) { free(pcm); return 0; }
             if (ln > total - off) { free(pcm); return 0; }
             memcpy((unsigned char *)pcm + off, d, ln);
             off += ln;

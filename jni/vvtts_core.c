@@ -118,31 +118,30 @@ static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *out
 
     pthread_once(&vv_rsp_once, vv_rsp_build);
 
-    short *zbuf = (short *)calloc(in_n +  2 * VV_RSP_HALF, sizeof(short));  /* zero padding both sides */
-    if (!zbuf) return -1;
-    memcpy(zbuf + VV_RSP_HALF, in, in_n * sizeof(short));
-
     size_t out_n = in_n * VV_RSP_PHASES;
     short *o = (short *)malloc(out_n * sizeof(short));
-    if (!o) { free(zbuf); return -1; }
-    for (size_t n =  0; n < out_n; n++) {
-        const size_t i = n >>  2;          /* source sample index */
-        const int   p = (int)(n &     3);        /* polyphase branch */
-        float acc =  0.0f;
-        const short *src = zbuf + VV_RSP_HALF + i;   /* centered on in[i] */
-        for (int k =  0; k < VV_RSP_TAPS; k++) {
-            /* h[p][k] pairs with input sample at offset (k - 32( from the
-             * center (in[i]:: the coefficient table was built symmetric, so
-             * the sweep below covers that exact stereo window. */
-            acc += vv_rsp_coeff[p][k] * (float)src[k - VV_RSP_HALF];
+    if (!o) return -1;
+    for (size_t i = 0; i < in_n; i++) {
+        /* All phases at this source position use the same zero-padded input
+         * interval. Calculate its bounds once rather than checking each tap
+         * in all four output-phase loops. */
+        const size_t first_tap = i < VV_RSP_HALF ? VV_RSP_HALF - i : 0;
+        const size_t available = in_n + VV_RSP_HALF - i;
+        const size_t tap_end = available < VV_RSP_TAPS ? available : VV_RSP_TAPS;
+        for (int p = 0; p < VV_RSP_PHASES; p++) {
+            float acc = 0.0f;
+            for (size_t k = first_tap; k < tap_end; k++) {
+                const size_t sample = i + k - VV_RSP_HALF;
+                acc += vv_rsp_coeff[p][k] * (float)in[sample];
+            }
+            /* Round-to-nearest with 16-bit clipping. */
+            float v = acc;
+            if (v > 32767.0f) v = 32767.0f;
+            else if (v < -32768.0f) v = -32768.0f;
+            o[i * VV_RSP_PHASES + (size_t)p] =
+                (short)(v >= 0.0f ? v + 0.5f : v - 0.5f);
         }
-        /* Round-to-nearest with 16-bit clipping. */
-        float v = acc;
-        if (v >  32767.0f) v =  32767.0f;
-        else if (v < -32768.0f) v = -32768.0f;
-        o[n] = (short)(v >=  0.0f ? v +  0.5f : v -  0.5f);
     }
-    free(zbuf);
     *out = o;
     *outn = out_n;
     return  0;

@@ -211,36 +211,33 @@ class MirroredPreferences(context: Context, private val name: String) {
         private fun write(file: File, values: Map<String, Any>) {
             file.parentFile?.mkdirs()
             val temp = File.createTempFile(".prefs-", ".tmp", file.parentFile)
-            val output = FileOutputStream(temp)
             try {
-                val xml = Xml.newSerializer()
-                xml.setOutput(output, "UTF-8")
-                xml.startDocument("UTF-8", true)
-                xml.startTag(null, "map")
-                for ((key, value) in values) {
-                    val type = when (value) {
-                        is String -> "string"; is Boolean -> "boolean"; is Int -> "int"
-                        is Long -> "long"; is Float -> "float"; is Set<*> -> "set"
-                        else -> error("Unsupported preference type")
+                FileOutputStream(temp).use { output ->
+                    val xml = Xml.newSerializer()
+                    xml.setOutput(output, "UTF-8")
+                    xml.startDocument("UTF-8", true)
+                    xml.startTag(null, "map")
+                    for ((key, value) in values) {
+                        val type = when (value) {
+                            is String -> "string"; is Boolean -> "boolean"; is Int -> "int"
+                            is Long -> "long"; is Float -> "float"; is Set<*> -> "set"
+                            else -> error("Unsupported preference type")
+                        }
+                        xml.startTag(null, type).attribute(null, "name", key)
+                        when (value) {
+                            is String -> xml.text(value)
+                            is Set<*> -> value.forEach { xml.startTag(null, "string").text(it.toString()).endTag(null, "string") }
+                            else -> xml.attribute(null, "value", value.toString())
+                        }
+                        xml.endTag(null, type)
                     }
-                    xml.startTag(null, type).attribute(null, "name", key)
-                    when (value) {
-                        is String -> xml.text(value)
-                        is Set<*> -> value.forEach { xml.startTag(null, "string").text(it.toString()).endTag(null, "string") }
-                        else -> xml.attribute(null, "value", value.toString())
-                    }
-                    xml.endTag(null, type)
+                    xml.endTag(null, "map")
+                    xml.endDocument()
+                    xml.flush()
+                    output.fd.sync()
                 }
-                xml.endTag(null, "map")
-                xml.endDocument()
-                xml.flush()
-                output.fd.sync()
-                output.close()
                 Os.rename(temp.path, file.path)
-            } catch (e: Exception) {
-                throw e
             } finally {
-                output.close()
                 temp.delete()
             }
         }

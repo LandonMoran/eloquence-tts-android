@@ -24,6 +24,26 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import com.xw.vvtts.utils.CrashCodeDefender
 
+internal class AppliedVoiceParams {
+    private var dialect: Int? = null
+    private var presetId: Int = 0
+    private var values: IntArray? = null
+
+    fun matches(dialect: Int, presetId: Int, params: IntArray): Boolean =
+        this.dialect == dialect && this.presetId == presetId && values?.contentEquals(params) == true
+
+    fun record(dialect: Int, presetId: Int, params: IntArray) {
+        this.dialect = dialect
+        this.presetId = presetId
+        values = params.copyOf()
+    }
+
+    fun clear() {
+        dialect = null
+        values = null
+    }
+}
+
 class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
     private val handleLock = Any()
@@ -51,10 +71,9 @@ class EloquenceEngine(context: Context) {
         // the engine-default voice.  Scoped per worker so a retired worker's late
         // writes never land in a replacement worker's cache.
 
-        // Fingerprint of the last-applied param set; repeated utterances (TalkBack
-        // swipe bursts) skip the ~19-call native param re-injection entirely.  Also
-        // per worker, for the same stale-write reason as the voice cache.
-        var lastParamSig: String? = null // written/read only by this worker's executor
+        // Repeated utterances skip the ~19-call native param re-injection without
+        // constructing a string signature for every synthesis request.
+        val appliedVoiceParams = AppliedVoiceParams() // accessed only by this worker's executor
         val executor: ExecutorService = Executors.newSingleThreadExecutor { r ->
             Thread(r, "elq-synth").apply { isDaemon = true }
         }
@@ -70,7 +89,6 @@ class EloquenceEngine(context: Context) {
         @Volatile private var retireUntilMs = 0L
         private val HANG_TIMEOUT_S = 30L
         private val ZOMBIE_GRACE_MS = 12000L
-    @Volatile private var stopped = false
 
         /** Voice-profile source: custom overrides win during synthesis */
     fun setVoiceProfile(vp: VoiceProfile?) {
@@ -197,15 +215,15 @@ class EloquenceEngine(context: Context) {
             var t = base.replace("\u0080", "euro").replace('|', ' ')
             t = t.replace('\u2019', '\'')
             if (t.isEmpty()) return t
-            val overrides: List<Pair<String, String>> = when (dialect) {
-                DIALECT_EN_US -> ENU_SPOKEN_EXCEPTIONS
-                DIALECT_EN_GB -> ENG_SPOKEN_EXCEPTIONS
-                DIALECT_FR_FR, DIALECT_FR_CA -> FR_SPOKEN_EXCEPTIONS
-                DIALECT_DE_DE -> DE_SPOKEN_EXCEPTIONS
+            val overrides: List<Pair<Regex, String>> = when (dialect) {
+                DIALECT_EN_US -> ENU_SPOKEN_REGEXES
+                DIALECT_EN_GB -> ENG_SPOKEN_REGEXES
+                DIALECT_FR_FR, DIALECT_FR_CA -> FR_SPOKEN_REGEXES
+                DIALECT_DE_DE -> DE_SPOKEN_REGEXES
                 else -> emptyList()
             }
-            for ((w, r) in overrides) {
-                t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
+            for ((pattern, spoken) in overrides) {
+                t = pattern.replace(t, spoken)
             }
 
             // Factory number grouping, ported from their TTS service. Mode -1 = off
@@ -247,12 +265,18 @@ class EloquenceEngine(context: Context) {
             "dagegen" to "dage gen", "dage-gen" to "dage gen",
             "dageben" to "dage ben", "dage-ben" to "dage ben",
         )
+        private fun compileSpokenExceptions(entries: List<Pair<String, String>>): List<Pair<Regex, String>> =
+            entries.map { (written, spoken) -> Regex("(?i)" + Regex.escape(written)) to spoken }
+
+        private val ENU_SPOKEN_REGEXES = compileSpokenExceptions(ENU_SPOKEN_EXCEPTIONS)
+        private val ENG_SPOKEN_REGEXES = compileSpokenExceptions(ENG_SPOKEN_EXCEPTIONS)
+        private val FR_SPOKEN_REGEXES = compileSpokenExceptions(FR_SPOKEN_EXCEPTIONS)
+        private val DE_SPOKEN_REGEXES = compileSpokenExceptions(DE_SPOKEN_EXCEPTIONS)
 
         @JvmStatic
         fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
-            var volume = volume
-            if (volume < 0) volume = 0
-            if (volume > 100) volume = 100
+            val volume = volume.coerceIn(0, 100)
+            if (volume == 100) return pcm
             // NOTE: unity gain at volume == 100. The engine already applies its own
             // eciVolume (Kona voicing, usually ~90) internally; scaling AGAIN by
             // volume/50.0 would double-amplify any signal and hard-clip the output
@@ -333,31 +357,16 @@ class EloquenceEngine(context: Context) {
             return sb.toString()
         }
     }
-
-
-
-
-
-
-
-    fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
-        // Legacy Guangrong routing dropped; forwards to synthesizeCore (Apple engine(
-        return synthesizeCore(text, dialect, volume, 1, 50)
-    }
-
     /** Invalidate pending synthesis and signal native handles without waiting for the synthesis lock. */
     fun stop() {
-            stopped = true
-            engineEpoch.incrementAndGet()
-            // Native stop (s->cancel=1 volatile) is the designed cross-thread cancellation:
-            // it aborts the in-flight synth's own wait loop instead of queueing behind it.  Iterating
-            // handles cross-thread is safe now that they live in a ConcurrentHashMap the worker may lazily grow.
-
-            val worker = synthWorker
-            synchronized(handleLock) {
-                for (h in worker.handles.values) VvttsCore.stop(h)
-            }
+        engineEpoch.incrementAndGet()
+        // Native stop is the cross-thread cancellation signal. The synthesis thread
+        // observes it while polling; handle iteration is safe because the cache is concurrent.
+        val worker = synthWorker
+        synchronized(handleLock) {
+            for (handle in worker.handles.values) VvttsCore.stop(handle)
         }
+    }
 
     /** Retire the worker and arrange handle cleanup after active native calls return. */
     @Synchronized
@@ -414,9 +423,8 @@ class EloquenceEngine(context: Context) {
 
     /** Report whether initialization succeeded and the engine has not been shut down. */
     fun isInitialized(): Boolean = initialized
-    fun getSampleRate(): Int = SAMPLE_RATE
 
-        // ===== In-house bridge (the only synthesis path) =====
+    // ===== In-house bridge (the only synthesis path) =====
     /** Return the bridge output sample rate in Hz. */
     fun getCoreSampleRate(): Int = SAMPLE_RATE
 
@@ -434,7 +442,7 @@ class EloquenceEngine(context: Context) {
     private fun retireHandle(worker: SynthWorker, dialect: Int, handle: Long) {
         val removed = synchronized(handleLock) { worker.handles.remove(dialect, handle) }
         if (removed) {
-            worker.lastParamSig = null
+            worker.appliedVoiceParams.clear()
             try {
                 retireExecutor.execute { VvttsCore.shutdown(handle) }
             } catch (_: RejectedExecutionException) {
@@ -509,12 +517,7 @@ class EloquenceEngine(context: Context) {
         }
     }
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int): ShortArray? {
-        return synthesizeCore(text, dialect, volume, presetId, 50)
-    }
-
-    fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int): ShortArray? {
-        // Default speed 100% (neutral(
-        return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
+        return synthesizeCore(text, dialect, volume, presetId, 50, 100)
     }
 
     /** Configure and synthesize on the serial worker; return null on failure or cancellation. */
@@ -548,9 +551,7 @@ class EloquenceEngine(context: Context) {
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
             params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
-            val sig = "$presetId|$dialect|" + params.joinToString("|")
-            if (worker.lastParamSig != sig) {
-                worker.lastParamSig = null
+            if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
                 val configured = copied >= 0 && params.indices.all { p ->
@@ -560,7 +561,7 @@ class EloquenceEngine(context: Context) {
                     retireHandle(worker, dialect, handle)
                     return@synthWithTimeout null
                 }
-                worker.lastParamSig = sig
+                worker.appliedVoiceParams.record(dialect, presetId, params)
             }
             // Encoding
             val cs = charsetForDialect(dialect)

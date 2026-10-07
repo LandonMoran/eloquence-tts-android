@@ -2,7 +2,6 @@
 <resources>
     <string name="lang_header">Kieli</string>
     <string name="voice_profile">Ääni</string>
-    <string name="rate">Nopeus</string>
     <string name="pitch">Sävelkorkeus</string>
     <string name="volume">Äänenvoimakkuus</string>
     <string name="test">Testi</string>

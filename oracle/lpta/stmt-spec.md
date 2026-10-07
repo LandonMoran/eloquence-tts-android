@@ -1,5 +1,9 @@
 # IBM LPTA Rule Interpreter - chs.so - Per-Statement Specification
 
+> Historical reverse-engineering specification. It is not used as the
+> Android build recipe; the shipped Chinese table-generation path is described
+> in [`../README.md`](../README.md).
+
 Target: `/root/.scratch_cjk/apple-eloquence-elf-1.2.3-linux-x86_64/lib/chs.so`
 (ELF-translated IBM Eloquence Mandarin speech module; file offsets == VAs.)
 Method: static disassembly only (`objdump -d`, `readelf`, python struct reads). The

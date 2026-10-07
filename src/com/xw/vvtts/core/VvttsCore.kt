@@ -3,12 +3,12 @@ package com.xw.vvtts.core
 import android.util.Log
 
 /**
- * In-house ECI bridge (libvvtts_core.so)v3
- * One session per language(a dialect handle);voices are driven by backtick annotations.
+ * In-house ECI bridge (libvvtts_core.so) v3.
+ * One session per language (a dialect handle); voices are driven by backtick annotations.
  *
- * All native declarations must be @JvmStatic(static methods land on the outer class),
- * 否则 Kotlin 会把它编译进 Companion,JNI 符号名会变成
- * Java_com_xw_vvtts_core_VvttsCore_00024Companion_native*,C 桥接就找不到方法了.
+ * All native declarations must use @JvmStatic so JNI resolves their symbols on the
+ * outer class rather than the Companion, which would add `_00024Companion` to the
+ * generated native method names.
  */
 class VvttsCore {
 
@@ -31,7 +31,7 @@ class VvttsCore {
         @JvmStatic external fun nativeShutdown(handle: Long)
         @JvmStatic external fun nativeStop(handle: Long)
 
-       /** Create a session for the given dialect(repeated calls rebuild it) */
+        /** Create a session for the given dialect; repeated calls rebuild it. */
         @JvmStatic
         fun openEngine(configDir: String?, libDir: String?, dialect: Int): Long {
             return try {
@@ -42,8 +42,8 @@ class VvttsCore {
             }
         }
 
-       /** Pre-encoded text to PCM; null means no audio/cancelled, empty means
-        * the session is retired and must be evicted and shut down. */
+        /** Pre-encoded text to PCM; null means no audio or cancellation, while an empty
+         * result means the session is retired and must be evicted and shut down. */
         @JvmStatic
         fun synth(handle: Long, dialect: Int, text: ByteArray, charsetId: Int, outPath: String?): ShortArray? {
             return try {
@@ -54,7 +54,7 @@ class VvttsCore {
             }
         }
 
-       /** ECI voice params(voice=0 is the active voice) */
+        /** Set an ECI voice parameter; voice 0 is the active voice. */
         @JvmStatic
         fun setVoiceParam(handle: Long, voice: Int, param: Int, value: Int): Int {
             return try {
@@ -73,8 +73,8 @@ class VvttsCore {
             }
         }
 
-       /** Engine ECIParam IDs: 2=text mode, 5=sample rate, 7=phoneme indices.
-        * Pitch, speed and volume use setVoiceParam; see native/openevv/include/eci.h. */
+        /** Set an engine ECI parameter. Pitch, speed, and volume use setVoiceParam;
+         * see native/openevv/include/eci.h. */
         @JvmStatic
         fun setParam(handle: Long, param: Int, value: Int): Int {
             return try {
@@ -84,7 +84,7 @@ class VvttsCore {
             }
         }
 
-       /** Switch to a standard voice */
+        /** Switch to a standard voice. */
         @JvmStatic
         fun setStandardVoice(handle: Long, voiceNumber: Int): Int {
             return try {
@@ -116,5 +116,5 @@ class VvttsCore {
         }
     }
 
-       /** Stateless bridge class(default constructor kept for compat with old new VvttsCore() call sites) */
+    /** Stateless bridge class. The default constructor remains for compatibility. */
 }

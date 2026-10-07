@@ -1,5 +1,9 @@
 # Testing
 
+> This document describes the standalone `openevv` test harness. Android
+> application, JNI, and emulator validation lanes are defined by the root
+> `.github/workflows/` files and `tests/`.
+
 Three ranks, and it matters which question is being asked. `test/matrix.sh` is the gate: it says whether anything moved. `test/suite.sh` is the oracle: it says what IBM's own engine does, and it wants Wine and the SDK. The harnesses under `test/harness` are for what neither can see, because a call no rule makes cannot be reached by speaking a sentence.
 
 Only the middle one wants anything of IBM's. The gate, the harnesses that need no reference, the build, the release and every job in CI run against a tree with no IBM material in it, which has been checked by taking the objects away and running them -- see below.

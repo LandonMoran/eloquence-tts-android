@@ -1,5 +1,10 @@
 # Prepared issue: consolidated TTS branch handoff
 
+> Historical handoff document. Branch names, PR links, issue counts, and
+> environment details below are a dated record, not current contribution or
+> release instructions. Use the root README, CONTRIBUTING.md, and RELEASES.md
+> for current project guidance.
+
 This document prepares the consolidated PR description below. The branch link points to the current revision; the pinned commit identifies the first follow-up fix. Earlier environments could not create issues or PRs; the consolidated PR was created from the authorized checkout using the embedded description.
 
 ## Branch and current status

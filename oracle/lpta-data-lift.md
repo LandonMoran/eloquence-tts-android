@@ -1,5 +1,9 @@
 # chs synth-data lift — status and unblock
 
+> Historical investigation notes. The current Android Chinese runtime data
+> path is documented in [`README.md`](README.md) and
+> [`../docs/artifacts-contract.md`](../docs/artifacts-contract.md).
+
 As of 2026-09-21, the chs clean-room C path (libevv-enus-chs.a( synthesizes **zero** phonemes/PCM for ANY input. Every piece but one stage is present and verified;thiss file says where the gap is and what it takes to close it.
 
 **UPDATE (2026-09-21 eve): route FOUND — sweep landed.** The "wall" below was superseded by the CI route: `oracle-fanout` ( zh-cn pieces 1-8, ubuntu-24.04-arm, public repo = free( → gather → **oracle/corpus/zh-cn-sweep.tsv** + **oracle/table/zh-cn.consolidated.tsv** ( hanzi<TAB>pcm<TAB>phbuf<TAB>genphon( — 18,037 rows,  ️3,718 nonzero-audio hanzi ( pieces 1-2,5-8; p3-p4 landed later(. Remaining:the **fitter** — consolidated rows → lang/chs runtime table the apply-chain engine consumes ( see cjk-module-pipeline.md's"fitter contract"( — then integration（0x60000 whitelist, charset, rom via evvRunStaticInitialisers(.

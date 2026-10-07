@@ -29,7 +29,7 @@ class TextNormalizer {
             "正", "载", "极", "恒河沙", "阿僧祇", "那由他", "不可思议", "无量数",
         )
 
-        /** Chinese calendar/time units that may directly follow a digit run (2024年, 3月, 15日, 2点( */
+        /** Chinese calendar/time units that may directly follow a digit run (year, month, day, hour, minute, second). */
         private val DATETIME_UNITS = setOf('年', '月', '日', '点', '分', '秒')
 
         /** Strict date grammar: ISO-style 4-digit year, 1-2 digit month, and 1-2 digit day(
@@ -133,8 +133,8 @@ class TextNormalizer {
          *  1) width-normalize first (full-width digits/punct -> ASCII) so date/number
          *     runs are recognizable, 2) number readings while '-'/'/'/':' boundaries
          *     are still intact, 3) symbol readings last.  Running symbols first would
-         *     replace '-' with 减号 before hasDateTimeBoundaries ran, mangling every
-         *     date (2024-03-15 -> 二千零二十四减号三减号十五). */
+         *     replace '-' with its spoken name before hasDateTimeBoundaries runs,
+         *     which would alter date readings. */
         fun normalizeForChinese(input: String): String {
             if (input.isEmpty()) return input
             var s = normalizeWidth(input)
@@ -184,7 +184,7 @@ class TextNormalizer {
                 val name = SYMBOL_NAMES[c]
                 if (name != null) {
                     // A run of identical symbols reads once, not once per char(#185(:
-                    // "!!!!" -> 感叹号 (not 感叹号×4), "——" -> 破折号.
+                    // A repeated punctuation run is spoken once, not once per character.
                     if (runChar == c) continue
                     if (expanded + name.length <= MAX_NORMALIZED_CHARS) {
                         runChar = c
@@ -220,8 +220,8 @@ class TextNormalizer {
                     val isDateTime = hasDateTimeBoundaries(input, start, i)
                     if (isDateTime) {
                         if (i < input.length && (input[i] == ':' || input[i] == '：')) {
-                            // time read-out: 14:30 -> 十四点三十; consume colon so the
-                            // oracle synth(which speaks hanzi only) never sees it
+                            // Convert a clock separator to the localized hour/minute marker;
+                            // consume the colon because the oracle accepts Chinese text only.
                             sb.append(convertNumber(digits))
                             sb.append('点')
                             i++  // skip the separator (it became 点"
@@ -244,7 +244,7 @@ class TextNormalizer {
         /** Convert by digit-count rules:≤4 digits read as a whole;≥5 digit-by-digit */
         fun convertNumber(digits: String): String {
             // Leading zeros mark identifier/zero-padded values (phone, ID, code(:#70(:
-            // speaking every digit preserves the value ("0123" must not become 一百二十三).
+            // Speaking every digit preserves leading-zero identifiers such as "0123".
             if (digits.length > 1 && digits[0] == '0') return toChineseDigits(digits)
             var t = digits
             val firstNonZero = t.indexOfFirst { it != '0' }
@@ -334,12 +334,12 @@ class TextNormalizer {
         }
 
         /** Detect whether a digit run is part of a true date/time pattern. Bounded:
-                 * preserves ISO dates (4-digit-year-, month-, day-, slash-dates, colon times
-                 * H:MM(:SS(, and Chinese-unit-attached forms (2024年, 3月, 15日(; phone numbers
+                 * preserves ISO dates (4-digit year, month, and day), slash dates, colon times
+                 * H:MM(:SS(, and dates with attached Chinese units; phone numbers
                  * (555-123-4567(, ranges (1-2(, and separated numeric identifiers fall through
                  * to convertNumber() so the oracle never receives raw ASCII digits. */
                 private fun hasDateTimeBoundaries(input: String, start: Int, end: Int): Boolean {
-                    // 1) Chinese calendar/time unit directly attached to this run
+                    // 1) A Chinese calendar/time unit is directly attached to this run.
                     if (end < input.length && input[end] in DATETIME_UNITS) return true
 
                     // 2) part of a full date or clock time: the maximal digit+separator segment
