@@ -245,15 +245,24 @@ private fun languagePickerSelection() {
     }
     try {
         LanguageDetector.setDetectionEnabled(true)
+        LanguageDetector.setDefaultLanguage(LanguageDetector.DIALECT_DE_DE)
         select.invoke(activity, "fr-CA")
         check(config.voice == "fr-CA")
         check(LanguageDetector.getFixedDialect() == LanguageDetector.DIALECT_FR_CA)
-        check(LanguageDetector.getDefaultLanguage() == LanguageDetector.DIALECT_FR_CA)
+        check(LanguageDetector.getDefaultLanguage() == LanguageDetector.DIALECT_DE_DE) {
+            "Selecting a fixed voice must preserve the independent detection fallback"
+        }
         check(!LanguageDetector.isDetectionEnabled())
         val persisted = MirroredPreferences(context, "vvtts_lang_settings")
         check(persisted.getInt("fixed_dialect", -1) == LanguageDetector.DIALECT_FR_CA)
+        check(persisted.getInt("default_language", -1) == LanguageDetector.DIALECT_DE_DE)
         check(!persisted.getBoolean("detection_enabled", true))
 
+        LanguageDetector.setDetectionEnabled(true)
+        check(LanguageDetector.getDefaultLanguage() == LanguageDetector.DIALECT_DE_DE) {
+            "Re-enabling detection must restore the prior fallback language"
+        }
+        LanguageDetector.setDetectionEnabled(false)
         select.invoke(activity, "zh-TW")
         check(config.voice == "fr-CA") { "Unsupported dialect changed the selected language" }
         println("PASS language picker: selection persists and unshipped dialects are ignored")

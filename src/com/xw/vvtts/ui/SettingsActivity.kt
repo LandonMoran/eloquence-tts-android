@@ -573,7 +573,6 @@ class SettingsActivity : Activity() {
 
         config.setVoice(language.code)
         LanguageDetector.setFixedDialect(language.eciDialect.toInt())
-        LanguageDetector.setDefaultLanguage(language.eciDialect.toInt())
         LanguageDetector.setDetectionEnabled(false)
         saveLanguageSettings()
         refreshLanguageUi()
