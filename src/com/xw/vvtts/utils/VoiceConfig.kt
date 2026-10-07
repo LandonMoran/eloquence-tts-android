@@ -14,7 +14,7 @@ data class DictEntry(
 
 /** Voice, pitch, volume, reading, and dictionary settings. */
 class VoiceConfig(private val context: Context) {
-    /** Supported language definitions (Apple Kona full table).)*/
+    /** Supported language definitions from the Apple Kona table. */
     class Lang(
         /** BCP-47 */
         val code: String,

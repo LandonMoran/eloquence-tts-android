@@ -115,8 +115,7 @@ class LanguageDetector {
             synchronized(stateLock) {
             val en = enabledLanguages
             if (langs == null || langs.isEmpty()) {
-                // Keep the current set on empty input (nothing to change;also avoid
-                // allocating a fresh empty HashSet per utterance when already empty.)
+                // Clear the whitelist, but reuse an already-empty set.
                 if (en.isEmpty()) return
                 enabledLanguages = HashSet()
                 resetLingua()
@@ -147,9 +146,7 @@ class LanguageDetector {
         fun isLanguageEnabled(code: String): Boolean {
             val te = transientEnabled.get()
             if (te != null && te.contains(code)) return true
-            val en = enabledLanguages
-            if (en == null) return false
-            return en.contains(code)
+            return enabledLanguages.contains(code)
         }
 
         /** Rebuild Lingua(call when the whitelist changes;takes effect immediately,no restart needed) */
@@ -282,7 +279,6 @@ class LanguageDetector {
             allLatin.add(Language.POLISH)
 
             val en = enabledLanguages
-            if (en == null) return allLatin // theoretically can't happen; defensive
 
             val filtered = ArrayList<Language>()
             for (l in allLatin) {
@@ -769,12 +765,7 @@ class LanguageDetector {
 
             try {
                 val lang = ld.detectLanguageOf(text)
-                if (lang == null) {
-                    // detection returned null -> default language(Latin only),else English
-                    val dl = resolveDefaultLanguage()
-                    return latinFallback(dl, fallbackDialect)
-                }
-                    // detected language goes through the whitelist:if absent -> fallback to default language
+                // Route detections through the whitelist; disabled languages use the configured fallback.
                 val code = languageToCode(lang)
                 if (!isLanguageEnabled(code)) {
                     val dl = resolveDefaultLanguage()

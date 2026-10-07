@@ -584,12 +584,10 @@ synchronized(synthesisLock) {
             // single source of truth (in-app rate slider was removed to avoid offset
             // between app % and system %);engine scale is 100 = neutral, so pass the
             // request rate through directly: TalkBack's speed slider now maps 1:1.
-            var sysRate = request.speechRate
-                        var sysPitch = request.pitch
-                        if (sysRate <=  0) sysRate =  100
-                        if (sysPitch <=  0) sysPitch =  100
+            val sysRate = request.speechRate.takeIf { it > 0 } ?: 100
+            val sysPitch = request.pitch.takeIf { it > 0 } ?: 100
 
-            val rate = clamp(Math.round(sysRate.toFloat()).toInt(),1,300)
+            val rate = clamp(sysRate, 1, 300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
             val cfgVolume = voiceConfig?.volume ?: 100
@@ -623,8 +621,8 @@ synchronized(synthesisLock) {
                                 synthFailedOrTruncated = true   // truncated: error(), not done()
                                 break
                             }
-                if (seg.text == null || seg.text!!.trim().isEmpty()) continue
-                var segText: String = seg.text!!
+                if (seg.text.trim().isEmpty()) continue
+                val segText = seg.text
                 Log.d("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " len=" + segText.length)
         if (voiceConfig?.extraLogging == true) {
             Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
