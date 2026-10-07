@@ -180,12 +180,15 @@ atomic_int failed;      /* engine-state-invalidation flag (see vv_fail_session( 
 
 /** Report whether a session has a live engine and has not failed or been retired. */
 static int vv_usable(const VvtsSession *s) {
-    return s && s->hECI && !s->failed && !s->retired;
+    return s && s->hECI &&
+           !atomic_load(&s->failed) &&
+           !atomic_load(&s->retired);
 }
 
 /** Detect cancellation, including a stop that raced the current synthesis generation. */
 static int vv_cancelled(const VvtsSession *s) {
-    return s->cancel || atomic_load(&s->stopGeneration) != s->activeGeneration;
+    return atomic_load(&s->cancel) ||
+           atomic_load(&s->stopGeneration) != s->activeGeneration;
 }
 
 static void vv_fail_session(VvtsSession *s);  /* poison late-alloc-failure path (realloc fail below( */
@@ -194,9 +197,9 @@ static void vv_fail_session(VvtsSession *s);  /* poison late-alloc-failure path 
  * and nativeSynthesize fails instead of returning partial or rate-mismatched audio. */
 /** Mark a callback failure as fatal and cancel synthesis instead of returning partial audio. */
 static int vv_fail(VvtsSession *s) {
-    s->failed = 1;
-    s->fatal =  1;
-    s->cancel =  1;
+    atomic_store(&s->failed, 1);
+    atomic_store(&s->fatal, 1);
+    atomic_store(&s->cancel, 1);
     return eciDataProcessed;
 }
 
@@ -259,7 +262,7 @@ static void vv_wait_till_done(VvtsSession *s) {
     int stopSent = 0;
     while (s->hECI && eciSpeaking(s->hECI) && iters < VV_DRAIN_MAX_ITERS) {
         if (vv_cancelled(s) && !stopSent) {
-            if (!eciStop(s->hECI)) s->failed = 1;
+            if (!eciStop(s->hECI)) atomic_store(&s->failed, 1);
             stopSent = 1;
         }
         /* Polling is what collects the engine's queued samples: the engine
@@ -271,7 +274,7 @@ static void vv_wait_till_done(VvtsSession *s) {
         iters++;
     }
     if (s->hECI && eciSpeaking(s->hECI)) {
-        s->retired = 1; // Never reuse buffers while the engine may still own them.
+        atomic_store(&s->retired, 1); // Never reuse buffers while the engine may still own them.
     }
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_exit i_done pcm=%zu", s->pcmLen);
 }
@@ -288,7 +291,7 @@ static int vv_settle(VvtsSession *s) {
         struct timespec ts = {0, 500000L};
         nanosleep(&ts, NULL);
     }
-    s->retired = 1;
+    atomic_store(&s->retired, 1);
     return 0;
 }
 
@@ -509,7 +512,7 @@ static void vv_fail_session(VvtsSession *s) {
     /* Poisoned sessions keep hECI alive: shutdown must still be able to
      * eciStop/eciDelete it; only the reusable state is torn down here, so
      * a later call on the same handle answers the sentinel instead. */
-    s->failed = 1;
+    atomic_store(&s->failed, 1);
     /* Live text/PCM are left intact until settlement or shutdown. */
 }
 
@@ -524,8 +527,8 @@ static jshortArray vv_synthesize(
         JNIEnv *env, jclass cls, VvtsSession *s, jint dialect,
         jbyteArray text, jint charsetId, jstring outPath) {
     if (!s) return NULL;
-    if (s->failed) return vv_empty_result(env);
-    if (s->retired) return vv_empty_result(env); /* engine wedge: never re-drive this session */
+    if (atomic_load(&s->failed)) return vv_empty_result(env);
+    if (atomic_load(&s->retired)) return vv_empty_result(env); /* engine wedge: never re-drive this session */
     if (!s->hECI) return NULL;
     if (!text) return NULL;
     /* #113: a handle is initialized for one dialect; synthesizing text marked
@@ -569,7 +572,7 @@ static jshortArray vv_synthesize(
     free(s->text);
     s->text = buf;
     s->pcmLen = 0;
-    s->fatal = 0;
+    atomic_store(&s->fatal, 0);
 
     if (dialect == 0x60000) {
         /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
@@ -655,14 +658,16 @@ static jshortArray vv_synthesize(
     clock_gettime(CLOCK_MONOTONIC, &st2);
     operation = "vv_wait_till_done";
     vv_wait_till_done(s);
-    if (s->fatal) return vv_empty_result(env);
-    if (vv_cancelled(s)) return s->retired || s->failed ? vv_empty_result(env) : NULL;
+    if (atomic_load(&s->fatal)) return vv_empty_result(env);
+    if (vv_cancelled(s)) {
+        return (atomic_load(&s->retired) || atomic_load(&s->failed)) ? vv_empty_result(env) : NULL;
+    }
     clock_gettime(CLOCK_MONOTONIC, &st3);
     long long ms1 = (st2.tv_sec - st1.tv_sec) * 1000LL + (st2.tv_nsec - st1.tv_nsec) / 1000000LL;
     long long ms2 = (st3.tv_sec - st2.tv_sec) * 1000LL + (st3.tv_nsec - st2.tv_nsec) /  1000000LL;
     __android_log_print(ANDROID_LOG_INFO, "SPD", "synth=%lldms wait=%lldms pcm=%zu len=%d", ms1, ms2, s->pcmLen, (int)len);
-    if (s->failed) goto failed;
-    if (s->retired) {
+    if (atomic_load(&s->failed)) goto failed;
+    if (atomic_load(&s->retired)) {
         /* Timeout mid-flight: the engine thread may still be writing s->pcm.
          * Return failure WITHOUT reading, trimming or resampling PCM; the
          * session stays cached until shutdown reclaims it safely. */
@@ -815,7 +820,7 @@ Java_com_xw_vvtts_core_VvttsCore_nativeShutdown(
 /** Free session storage only after engine quiescence and successful deletion; return zero to retry. */
 static int vv_destroy(VvtsSession *s) {
     if (s->hECI) {
-        s->cancel = 1; /* let a concurrent wait loop abort fast */
+        atomic_store(&s->cancel, 1); /* let a concurrent wait loop abort fast */
         eciStop(s->hECI);
         /* Let the synthesis thread finish its current utterance before we
          * free the session it is still pointing at.  This drain ignores

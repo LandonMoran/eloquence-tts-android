@@ -1,7 +1,5 @@
 package com.xw.vvtts.services
 
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicLong
 import android.content.Context
@@ -45,7 +43,6 @@ class VvTtsService : TextToSpeechService() {
     // native code for up to HANG_TIMEOUT_S.
     private val engineRefLock = Any()
     @Volatile private var warmGen: Long = 0L // generation snapshot at warmup launch; stale warmups stand down
-    private val cleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "tts-cleanup").apply { isDaemon = true } }
     private fun currentEngine(): EloquenceEngine? = synchronized(engineRefLock) { engine }
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
@@ -98,7 +95,7 @@ class VvTtsService : TextToSpeechService() {
         deviceCtx = device
         refreshSettings()
         registerAllPrefsListeners(device)
-        registerAllPrefsListeners(applicationContext!!)
+        registerAllPrefsListeners(applicationContext)
         val eng = acquireProcessEngine(device)
         engine = eng
         eng?.setVoiceProfile(voiceProfile)
@@ -169,7 +166,6 @@ class VvTtsService : TextToSpeechService() {
         ngramLoadThread = null
         val retiringEngine = synchronized(engineRefLock) { engine.also { engine = null } }
         if (retiringEngine != null) releaseProcessEngine(retiringEngine)
-        cleanupExecutor.shutdown()
         registeredPrefs.forEach { it.unregisterOnSharedPreferenceChangeListener(onPrefsChanged) }
         registeredPrefs.clear()
         LanguageDetector.cancelPreload()
@@ -573,12 +569,13 @@ synchronized(synthesisLock) {
             }
 
 
-            if (engine == null || !engine!!.isInitialized()) {
+            val activeEngine = currentEngine()?.takeIf { it.isInitialized() }
+            if (activeEngine == null) {
                 synthFailedOrTruncated = true   // null-engine: the pipeline must see error(), not a false-success done()
                 return  // finally emits the start+error pair for an uninitialized engine
             }
 
-            val preset = if (voiceProfile != null) voiceProfile!!.preset else 1
+            val preset = voiceProfile?.preset ?: 1
             // Android passes speech rate/pitch as PERCENTS where 100 = normal
             // (SynthesisRequest.getSpeechRate()/getPitch()). System TTS rate is THE
             // single source of truth (in-app rate slider was removed to avoid offset
@@ -595,13 +592,13 @@ synchronized(synthesisLock) {
                         val pitch = clamp(cfgPitch.coerceIn(0,100) + (sysPitch - 100) / 2, 0,100)
                         val volume = cfgVolume
 
-            val pace = Pace(engine!!.getCoreSampleRate())
+            val pace = Pace(activeEngine.getCoreSampleRate())
                         val synthBudget = SynthesisBudget(UTT_BUDGET_MS)
             // Start the framework's audio pipe BEFORE synthesis: first-audio
             // latency must not include the first segment's native synth time.
             // The finally block terminates normal or canceled synthesis.
             if (!started) {
-                val verdict = callback.start(engine!!.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
+                val verdict = callback.start(activeEngine.getCoreSampleRate(), AudioFormat.ENCODING_PCM_16BIT, 1)
                 started = true
                 if (verdict != TextToSpeech.SUCCESS) {
                     Log.w(TAG, "callback.start rejected the audio pipe (verdict=$verdict); dropping utterance")
