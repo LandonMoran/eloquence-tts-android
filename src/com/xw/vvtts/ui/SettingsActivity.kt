@@ -304,7 +304,10 @@ class SettingsActivity : Activity() {
 
     /** Synthesizes and plays a sample using the current voice settings, falling back to English for unshipped dialects. */
     private fun testSpeechImpl() {
-        if (engine == null || !engine!!.isInitialized()) {
+        // Snapshot: this runs on a worker thread while the UI thread may swap/clear these.
+        val eng = engine
+        val cfg = voiceConfig
+        if (eng == null || cfg == null || !eng.isInitialized()) {
             toastOnUi(R.string.engine_not_ready)
             return
         }
@@ -316,7 +319,7 @@ class SettingsActivity : Activity() {
             text = "Hello, this is a speech synthesis test."
                         dialect = EloquenceEngine.DIALECT_EN_US
         } else {
-            val code = voiceConfig!!.voice
+            val code = cfg.voice
             val lang = VoiceConfig.findLang(code)
             text = sampleTextFor(lang.code)
             dialect = bcpToDialect(lang.code)
@@ -328,22 +331,22 @@ class SettingsActivity : Activity() {
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
                     toastOnUi(R.string.preview_in_english)
-            val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
-                EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
-                voiceConfig!!.pitch, 100)
+            val pcmEn = eng.synthesizeCore("Hello, this is a speech synthesis test.",
+                EloquenceEngine.DIALECT_EN_US, cfg.volume, preset,
+                cfg.pitch, 100)
             if (pcmEn != null && pcmEn.size > 0) {
-                playPcm(pcmEn, engine!!.getCoreSampleRate())
+                playPcm(pcmEn, eng.getCoreSampleRate())
                 toastOnUi(R.string.spoken_en)
             } else {
                 toastOnUi(R.string.synth_failed)
             }
             return
         }
-        val pcm = engine!!.synthesizeCore(text, dialect,
-            voiceConfig!!.volume, preset,
-            voiceConfig!!.pitch, 100)
+        val pcm = eng.synthesizeCore(text, dialect,
+            cfg.volume, preset,
+            cfg.pitch, 100)
         if (pcm != null && pcm.size > 0) {
-            playPcm(pcm, engine!!.getCoreSampleRate())
+            playPcm(pcm, eng.getCoreSampleRate())
             toastOnUi(R.string.synth_ok)
         } else {
                     toastOnUi(R.string.synth_failed)
