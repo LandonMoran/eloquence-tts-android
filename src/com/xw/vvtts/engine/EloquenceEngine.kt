@@ -275,9 +275,8 @@ class EloquenceEngine(context: Context) {
 
         @JvmStatic
         fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {
-            var volume = volume
-            if (volume < 0) volume = 0
-            if (volume > 100) volume = 100
+            val volume = volume.coerceIn(0, 100)
+            if (volume == 100) return pcm
             // NOTE: unity gain at volume == 100. The engine already applies its own
             // eciVolume (Kona voicing, usually ~90) internally; scaling AGAIN by
             // volume/50.0 would double-amplify any signal and hard-clip the output
@@ -518,7 +517,7 @@ class EloquenceEngine(context: Context) {
         }
     }
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int): ShortArray? {
-        return synthesizeCore(text, dialect, volume, presetId, 50)
+        return synthesizeCore(text, dialect, volume, presetId, 50, 100)
     }
 
     /** Configure and synthesize on the serial worker; return null on failure or cancellation. */

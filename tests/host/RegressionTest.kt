@@ -195,6 +195,19 @@ private fun appliedVoiceParams() {
     println("PASS voice parameter cache: unchanged sets reuse safely; dialect, preset, values, and clear invalidate")
 }
 
+/** Keep unity-gain PCM allocation-free and preserve scaling/clamping at other levels. */
+private fun volumeScaling() {
+    val samples = shortArrayOf(Short.MIN_VALUE, -1000, 0, 1000, Short.MAX_VALUE)
+    check(EloquenceEngine.applyVolume(samples, 100) === samples)
+    check(EloquenceEngine.applyVolume(samples, 150) === samples)
+    val half = EloquenceEngine.applyVolume(samples, 50)
+    check(half !== samples)
+    check(half.contentEquals(shortArrayOf(-16384, -500, 0, 500, 16383)))
+    val muted = EloquenceEngine.applyVolume(samples, -1)
+    check(muted.contentEquals(shortArrayOf(0, 0, 0, 0, 0)))
+    println("PASS volume scaling: unity avoids copying; other gains clamp and preserve samples")
+}
+
 /** Check that compiled spoken exceptions preserve the existing replacements. */
 private fun spokenExceptions() {
     val preprocess = EloquenceEngine.Companion.javaClass.getDeclaredMethod(
@@ -376,6 +389,6 @@ private fun defender() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); spokenExceptions(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
     finally { Context.root.deleteRecursively() }
 }
