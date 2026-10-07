@@ -150,6 +150,9 @@ class TextNormalizer {
                 val c = input[i]
                 when {
                     c == '\u3000' -> sb.append(' ')
+                    // Keep the full-width comma: SYMBOL_NAMES reads it as the Chinese comma,
+                    // whereas the ASCII ',' would be read as the "English comma".
+                    c == '\uFF0C' -> sb.append(c)
                     c.code in 0xFF01..0xFF5E -> sb.append((c.code - 0xFEE0).toChar())
                     else -> sb.append(c)
                 }
