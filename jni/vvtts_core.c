@@ -174,7 +174,7 @@ typedef struct VvtsSession {
     unsigned activeGeneration;
     atomic_int cancel; /* set by stop/shutdown to abort the wait loop fast */
     atomic_int fatal;  /* set by the callback on overflow/alloc failure: synthesis must fail, not degrade ( see vv_fail( ) */
-atomic_int failed;      /* engine-state-invalidation flag (see vv_fail_session( */
+    atomic_int failed;     /* engine-state-invalidation flag (see vv_fail_session( */
     atomic_int retired;    /* engine wedge: dead session; reclaim only in shutdown after eciSpeaking proves quiet */
 } VvtsSession;
 
