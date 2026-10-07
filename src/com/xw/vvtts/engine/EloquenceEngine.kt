@@ -358,30 +358,16 @@ class EloquenceEngine(context: Context) {
             return sb.toString()
         }
     }
-
-
-
-
-
-
-
-    fun synthesize(text: String, dialect: Int, volume: Int): ShortArray? {
-        // Legacy Guangrong routing dropped; forwards to synthesizeCore (Apple engine(
-        return synthesizeCore(text, dialect, volume, 1, 50)
-    }
-
     /** Invalidate pending synthesis and signal native handles without waiting for the synthesis lock. */
     fun stop() {
-            engineEpoch.incrementAndGet()
-            // Native stop (s->cancel=1 volatile) is the designed cross-thread cancellation:
-            // it aborts the in-flight synth's own wait loop instead of queueing behind it.  Iterating
-            // handles cross-thread is safe now that they live in a ConcurrentHashMap the worker may lazily grow.
-
-            val worker = synthWorker
-            synchronized(handleLock) {
-                for (h in worker.handles.values) VvttsCore.stop(h)
-            }
+        engineEpoch.incrementAndGet()
+        // Native stop is the cross-thread cancellation signal. The synthesis thread
+        // observes it while polling; handle iteration is safe because the cache is concurrent.
+        val worker = synthWorker
+        synchronized(handleLock) {
+            for (handle in worker.handles.values) VvttsCore.stop(handle)
         }
+    }
 
     /** Retire the worker and arrange handle cleanup after active native calls return. */
     @Synchronized
@@ -438,9 +424,8 @@ class EloquenceEngine(context: Context) {
 
     /** Report whether initialization succeeded and the engine has not been shut down. */
     fun isInitialized(): Boolean = initialized
-    fun getSampleRate(): Int = SAMPLE_RATE
 
-        // ===== In-house bridge (the only synthesis path) =====
+    // ===== In-house bridge (the only synthesis path) =====
     /** Return the bridge output sample rate in Hz. */
     fun getCoreSampleRate(): Int = SAMPLE_RATE
 
@@ -534,11 +519,6 @@ class EloquenceEngine(context: Context) {
     }
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int): ShortArray? {
         return synthesizeCore(text, dialect, volume, presetId, 50)
-    }
-
-    fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int): ShortArray? {
-        // Default speed 100% (neutral(
-        return synthesizeCore(text, dialect, volume, presetId, uiPitch, 100)
     }
 
     /** Configure and synthesize on the serial worker; return null on failure or cancellation. */

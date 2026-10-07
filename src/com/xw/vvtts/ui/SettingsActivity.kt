@@ -354,7 +354,7 @@ class SettingsActivity : Activity() {
                 }
             }
 
-                    /** Zh-oracle hook: force real zh sample (你好。） through the GB18030 oracle path
+                    /** Zh-oracle hook: force a Chinese sample through the GB18030 oracle path
                      *  so CI can verify samples>0 via the CHS_ORACLE log. */
                     private fun testZhOracle() {
                         Thread {
