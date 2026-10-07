@@ -38,7 +38,7 @@ jobs:
           trap 'rm -f "$key"' EXIT
           umask 077
           printf '%s' "$RELEASE_KEYSTORE_B64" | base64 -d > "$key"
-          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          signer="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -perm -111 | sort -V | tail -1)"
           test -x "$signer"
           mkdir signed
           for apk in unsigned/*.apk; do

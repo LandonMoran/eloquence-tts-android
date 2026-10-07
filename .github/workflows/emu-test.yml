@@ -76,6 +76,22 @@ jobs:
           echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
           echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
           echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
+
+      # The APK is deliberately built from the release manifest, so enable the
+      # debug-only autotest hook for this emulator-only diagnostic lane.
+      - name: Enable emulator autotest hook
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("AndroidManifest.xml")
+          text = manifest.read_text()
+          marker = '<application android:debuggable="true"'
+          if marker not in text:
+              text = text.replace("<application\n", f"{marker}\n", 1)
+          manifest.write_text(text)
+          PY
+
       - name: Build native bridge (x86_64)
         run: |
           export ANDROID_SDK="$HOME/android-sdk" ABI="x86_64"
