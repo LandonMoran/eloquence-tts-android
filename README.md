@@ -32,7 +32,8 @@ Other capabilities include:
   device-protected storage so it can initialize before the first unlock.
 - A GitHub Releases update checker. Its asset and version requirements are
   documented in [RELEASES.md](RELEASES.md); the workflow's first production
-  tag still needs end-to-end validation.
+  tag still needs end-to-end validation. As checked on 2026-10-07, no GitHub
+  Release has been published; repository tags do not by themselves include APKs.
 
 ## Architecture
 
