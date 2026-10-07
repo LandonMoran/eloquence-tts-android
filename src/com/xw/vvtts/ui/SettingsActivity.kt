@@ -1049,7 +1049,7 @@ class SettingsActivity : Activity() {
         val checked = BooleanArray(LanguageDetector.ALL_LANG_CODES.size)
         for (i in LanguageDetector.ALL_LANG_CODES.indices) {
             val code = LanguageDetector.ALL_LANG_CODES[i]
-            checked[i] = enabled != null && enabled.contains(code)
+            checked[i] = enabled.contains(code)
         }
         val names = LanguageDetector.ALL_LANG_NAMES
         // Mirror checkbox state into a temp array as the user toggles
@@ -1144,12 +1144,7 @@ class SettingsActivity : Activity() {
         e.putInt("spanish_dialect", LanguageDetector.getSpanishDialect())
         e.putInt("french_dialect", LanguageDetector.getFrenchDialect())
         e.putInt("default_language", LanguageDetector.getDefaultLanguage())
-        val enabled = LanguageDetector.getEnabledLanguages()
-        if (enabled != null) {
-            e.putStringSet("enabled_langs", enabled)
-        } else {
-            e.remove("enabled_langs")
-        }
+        e.putStringSet("enabled_langs", LanguageDetector.getEnabledLanguages())
         }
     }
 
