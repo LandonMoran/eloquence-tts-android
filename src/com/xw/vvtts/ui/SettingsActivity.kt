@@ -489,14 +489,16 @@ class SettingsActivity : Activity() {
             .setBufferSizeInBytes(bytes.size)
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
-        track.write(bytes, 0, bytes.size)
-        track.play()
         try {
+            track.write(bytes, 0, bytes.size)
+            track.play()
             Thread.sleep((pcm.size * 1000.0 / sampleRate).toLong() + 120)
         } catch (ignore: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } finally {
+            runCatching { track.stop() }
+            track.release()
         }
-        track.stop()
-        track.release()
     }
 
     private fun shortsToBytes(pcm: ShortArray): ByteArray {

@@ -157,9 +157,21 @@ static void test_resampler_equivalence(void) {
     }
 }
 
+/** Do not trim when leading and trailing silence overlap after preserving edge padding. */
+static void test_trim_silence_overlapping_edges(void) {
+    const size_t n = 22066;
+    short *pcm = calloc(n, sizeof(*pcm));
+    assert(pcm);
+    size_t samples = n;
+    vv_trim_silence(pcm, &samples);
+    assert(samples == n);
+    free(pcm);
+}
+
 /** Exercise JNI setup failures, parameter bounds, PCM endpoints, cancellation, and session lifetime races. */
 int main(void) {
     test_resampler_equivalence();
+    test_trim_silence_overlapping_edges();
     for (int i=0;i<256;i++) pcm_fixture[i] = i > 32 && i < 220 ? 4000 : 0;
     for (fail_setup=1;fail_setup<=3;fail_setup++) { int before=deletes; assert(INIT()==0); assert(deletes==before+1); }
     fail_setup=0;

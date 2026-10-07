@@ -312,6 +312,7 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
     const size_t pad = 22;
     lead = lead > pad ? lead - pad : 0;
     tail = tail > pad ? tail - pad : 0;
+    if (lead > n || tail > n - lead) return;
     size_t keep = n - lead - tail;
     if (keep < 16) return;
     memmove(pcm, pcm + lead, keep * sizeof(short));
