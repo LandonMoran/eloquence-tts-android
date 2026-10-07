@@ -229,8 +229,10 @@ private fun lifecycle() {
     // Hold both service locks while a real engine worker is blocked.
     synchronized(field(service,"synthesisLock")!!) {
         synchronized(field(service,"engineCallLock")!!) {
+            val epoch=field(engine,"engineEpoch") as java.util.concurrent.atomic.AtomicLong
+            val before=epoch.get()
             caller.submit { service.javaClass.getDeclaredMethod("onStop").apply { isAccessible=true }.invoke(service) }.get(1,TimeUnit.SECONDS)
-            check(field(engine,"stopped")==true)
+            check(epoch.get()==before+1) { "Stop did not invalidate in-flight synthesis" }
         }
     }
     release.countDown(); check(pending.get(2,TimeUnit.SECONDS)==null) { "Stopped worker returned stale audio" }

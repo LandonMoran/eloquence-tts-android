@@ -89,7 +89,6 @@ class EloquenceEngine(context: Context) {
         @Volatile private var retireUntilMs = 0L
         private val HANG_TIMEOUT_S = 30L
         private val ZOMBIE_GRACE_MS = 12000L
-    @Volatile private var stopped = false
 
         /** Voice-profile source: custom overrides win during synthesis */
     fun setVoiceProfile(vp: VoiceProfile?) {
@@ -373,7 +372,6 @@ class EloquenceEngine(context: Context) {
 
     /** Invalidate pending synthesis and signal native handles without waiting for the synthesis lock. */
     fun stop() {
-            stopped = true
             engineEpoch.incrementAndGet()
             // Native stop (s->cancel=1 volatile) is the designed cross-thread cancellation:
             // it aborts the in-flight synth's own wait loop instead of queueing behind it.  Iterating
