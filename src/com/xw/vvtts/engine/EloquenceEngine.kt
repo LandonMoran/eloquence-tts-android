@@ -24,6 +24,26 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import com.xw.vvtts.utils.CrashCodeDefender
 
+internal class AppliedVoiceParams {
+    private var dialect: Int? = null
+    private var presetId: Int = 0
+    private var values: IntArray? = null
+
+    fun matches(dialect: Int, presetId: Int, params: IntArray): Boolean =
+        this.dialect == dialect && this.presetId == presetId && values?.contentEquals(params) == true
+
+    fun record(dialect: Int, presetId: Int, params: IntArray) {
+        this.dialect = dialect
+        this.presetId = presetId
+        values = params.copyOf()
+    }
+
+    fun clear() {
+        dialect = null
+        values = null
+    }
+}
+
 class EloquenceEngine(context: Context) {
     private val appContext: Context = context.applicationContext
     private val handleLock = Any()
@@ -51,10 +71,9 @@ class EloquenceEngine(context: Context) {
         // the engine-default voice.  Scoped per worker so a retired worker's late
         // writes never land in a replacement worker's cache.
 
-        // Fingerprint of the last-applied param set; repeated utterances (TalkBack
-        // swipe bursts) skip the ~19-call native param re-injection entirely.  Also
-        // per worker, for the same stale-write reason as the voice cache.
-        var lastParamSig: String? = null // written/read only by this worker's executor
+        // Repeated utterances skip the ~19-call native param re-injection without
+        // constructing a string signature for every synthesis request.
+        val appliedVoiceParams = AppliedVoiceParams() // accessed only by this worker's executor
         val executor: ExecutorService = Executors.newSingleThreadExecutor { r ->
             Thread(r, "elq-synth").apply { isDaemon = true }
         }
@@ -434,7 +453,7 @@ class EloquenceEngine(context: Context) {
     private fun retireHandle(worker: SynthWorker, dialect: Int, handle: Long) {
         val removed = synchronized(handleLock) { worker.handles.remove(dialect, handle) }
         if (removed) {
-            worker.lastParamSig = null
+            worker.appliedVoiceParams.clear()
             try {
                 retireExecutor.execute { VvttsCore.shutdown(handle) }
             } catch (_: RejectedExecutionException) {
@@ -548,9 +567,7 @@ class EloquenceEngine(context: Context) {
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
             params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
-            val sig = "$presetId|$dialect|" + params.joinToString("|")
-            if (worker.lastParamSig != sig) {
-                worker.lastParamSig = null
+            if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
                 val configured = copied >= 0 && params.indices.all { p ->
@@ -560,7 +577,7 @@ class EloquenceEngine(context: Context) {
                     retireHandle(worker, dialect, handle)
                     return@synthWithTimeout null
                 }
-                worker.lastParamSig = sig
+                worker.appliedVoiceParams.record(dialect, presetId, params)
             }
             // Encoding
             val cs = charsetForDialect(dialect)

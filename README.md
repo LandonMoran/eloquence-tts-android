@@ -1,86 +1,134 @@
 # Eloquence TTS for Android
 
-经典老头子语音 vvtts 的安卓移植版，基于仓库内置的 openevv C 引擎，支持 **14 种语言 + 8 个发音角色**，内置多语言自动检测与零延迟实时切换。
+Eloquence TTS is an Android text-to-speech engine based on the native
+[`openevv`](native/openevv/README.md) engine. It is designed for Android's
+system Text-to-Speech interface, including screen readers such as TalkBack.
+Synthesis runs locally; speech text is not sent to a speech service.
 
+## Supported languages and voices
 
+The app advertises these 14 locales: English (United States and United
+Kingdom), German (Germany), French (France and Canada), Spanish (Spain,
+United States, and Mexico), Italian (Italy), Japanese (Japan), Polish
+(Poland), Portuguese (Brazil), Finnish (Finland), and Chinese (Simplified,
+China).
 
-## 特性
+Eight named voice presets are available: Reed, Shelley, Sandy, Rocko, Flo,
+Grandma, Grandpa, and Eddy. A preset selects an ECI voice row and its default
+parameters; users can adjust the available voice parameters. The actual
+language, locale, and capability mapping is maintained in
+[`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt) and summarized
+in [Languages, voices, and capabilities](docs/languages-voices-capabilities.md).
+Traditional Chinese and Korean are not shipped Android voices.
 
-- **14 种语言**：简体中文、日文、波兰语、英式/美式英语、德语、法语（法国/加拿大）、西班牙语（西班牙/美国/墨西哥）、意大利语、葡萄牙语（巴西）、芬兰语
-- **8 个发音角色**：Reed / Shelley / Sandy / Rocko / Flo / Grandma / Grandpa / Eddy，通过 ECI voice param 机制切换
-- **多语言自动检测**：Unicode 规则 → 内存 n-gram 统计 → Lingua 三层检测，混合语言文本自动分片，各用各的引擎朗读
-- **自动更新**：基于 GitHub Releases 的检查/下载/安装通道，按 ABI 匹配 APK，语义化版本对比（详见 `RELEASES.md`）
-- **能力清单**：支持的语言 /  发音角色 /  能力唯一事实源见 `docs/languages-voices-capabilities.md`
-- **零延迟**：本地引擎，按下就出声，无云端往返
-- **自定义捏声**：长按发音角色可调节性别、头部大小、情感起伏、粗糙度、气息感等音色参数
-- **语速 / 音调 / 音量**：可独立调节，试听实时生效
-- **系统 TTS 集成**：可作为 Android 无障碍 / 屏幕阅读器的语音引擎使用
-- **锁屏朗读**：`directBootAware` + 设备保护存储，解锁前（含锁屏输密码）TalkBack 也能用本引擎朗读
+Other capabilities include:
 
-## 目录结构
+- Automatic language detection, using Unicode checks, in-memory n-gram data,
+  and Lingua classification. Mixed-language input is divided into language
+  segments before synthesis.
+- System TTS controls for speech rate and pitch, plus app voice and volume
+  settings. Voice presets also expose the engine's eight ECI voice parameters.
+- Direct Boot support: the TTS service is marked `directBootAware` and uses
+  device-protected storage so it can initialize before the first unlock.
+- A GitHub Releases update checker. Its asset and version requirements are
+  documented in [RELEASES.md](RELEASES.md); the workflow's first production
+  tag still needs end-to-end validation.
 
-```
-├── src/                      Java/Kotlin 源码（engine / services / ui / utils）
-├── jni/                      native 桥接层（ECI C API 封装）
-├── oracle/                  中文语音库（采集 / 合并 / 生成流水线）
-│   ├── table/*.consolidated.tsv   一行一汉字，16-bit PCM（11.025kHz）
-│   ├── corpus/                   扫字表与采样文本
-│   ├── merge_build.py            确定性生成 native/.../oracle_chs.c
-│   └── README.md                 逆向采集笔记
-├── native/openevv/             引擎与语音库 C 源码
-├── native-libs/arm64-v8a/    编译好的语言库与引擎 .so
-├── language-models/             Lingua 语言检测模型
-├── libs/                       第三方依赖 jar
-├── res/                        Android 资源（多语言 strings）
-├── AndroidManifest.xml
-├── build.sh                    APK 构建脚本
-└── build_native.sh             oracle C 语音库交叉编译
-```
+## Architecture
 
-## 构建
+Android's `TextToSpeechService` in `src/` selects and segments text, applies
+normalization and voice settings, then serializes synthesis work through
+`EloquenceEngine`. The engine calls the JNI bridge in `jni/`, which statically
+links the C `openevv` engine and exposes a single `libvvtts_core.so` per ABI.
+The bridge returns signed 16-bit mono PCM. Native engine audio is 11,025 Hz;
+the bridge resamples it to 44,100 Hz for Android playback.
 
-Android APK/NDK builds run in GitHub Actions (`.github/workflows/build.yml`), using JDK 17 and Android API 34. Do not run Android builds locally. CI publishes arm64, arm32, universal and test-only x86_64 artifacts after ABI auditing.
+Chinese Simplified (`zh-CN`) uses the in-tree oracle audio bank, generated as C
+from consolidated tables. The other 13 shipped locales use `openevv` language
+modules. Runtime synthesis does not load converted Apple engine libraries.
+The bridge's lifecycle, cancellation, size, and encoding constraints are
+described in [`jni/README.md`](jni/README.md).
 
-Host checks and the issue/audit map are documented in [docs/repository-audit.md](docs/repository-audit.md). `tools/prepare_assets.py --verify` checks generated model/bridge content. Release signing uses the protected `release` environment; configure required reviewers, protected tag restrictions, and signing secrets there before releasing.
+## Repository layout
 
-## 技术实现
+| Path | Purpose |
+| --- | --- |
+| `src/` | Kotlin Android service, engine, settings, detection, and utilities |
+| `jni/` | Native ECI compatibility layer and JNI bridge |
+| `native/openevv/` | C speech engine, language modules, and engine documentation |
+| `oracle/` | Chinese audio tables, generation tools, and research notes |
+| `language-models/`, `libs/` | Packaged language-detection data and JVM libraries |
+| `res/`, `AndroidManifest.xml` | Android resources and application/service configuration |
+| `tests/` | Host regressions, native boundary tests, lifecycle tests, and contracts |
+| `tools/` | Asset generation, APK auditing, and release publication helpers |
+| `build.sh`, `build_native.sh` | Android APK and native-library build scripts |
 
-### 引擎来源
+## Installation and builds
 
-The APK statically links the vendored `native/openevv` engine and JNI bridge into `libvvtts_core.so`. Historical Apple extraction tools and reference data remain in the repository, but converted Apple dylibs are not loaded by this runtime.
+Android SDK/NDK builds are run in GitHub Actions; do not build Android APKs
+locally. The main build workflow compiles the native bridge and APKs for
+`arm64-v8a`, `armeabi-v7a`, and a universal package. An `x86_64` APK is
+test-only and is not a release asset. See
+[`build.yml`](.github/workflows/build.yml) for the current build lane.
 
-参考的开源项目：
-- [Mudb0y/Apple-Eloquence-ELF](https://github.com/Mudb0y/Apple-Eloquence-ELF)
-- [Mudb0y/openevv](https://github.com/Mudb0y/openevv)
-- [Mudb0y/trypsynth](https://github.com/Mudb0y/trypsynth)
+When a signed APK is available from a GitHub Release, choose the asset that
+matches the device ABI and install it through Android's package installer.
+Release signing and publication are described in [RELEASES.md](RELEASES.md).
+Ordinary CI artifacts use temporary signing keys and cannot be used as
+upgrade-compatible production installs.
 
-### 中文 oracle 语音库
+## Testing
 
-- `oracle/table/*.consolidated.tsv`：一行一个汉字 + 真人 PCM，采集自参考 Eloquence 引擎
-- `oracle/merge_build.py`：把 consolidated TSV + legacy 行确定性合并成 `oracle_chs.c`（16,913 字）
-- 数字 0-9 由 `TextNormalizer` 归一为汉字（零一二…（，经同一语音库朗读
+Run the checks that do not require an Android SDK/NDK:
 
-###角色切换
+- `bash tests/native/run.sh` runs the native bridge, compatibility, and oracle
+  tests with GCC address and undefined-behavior sanitizers.
+- `python3 tests/contracts.py` checks repository contracts, including voice
+  registry/native parity and release/ABI rules.
+- `python3 tools/prepare_assets.py --verify` checks generated language-model
+  and bridge assets.
+- `bash tests/host/run.sh` compiles application sources and runs host
+  regressions. It requires the Android API jar, Kotlin 1.9.25 compiler
+  classpath, and kxml2 2.3.0 jar (`ANDROID_JAR`, `KOTLINC_CP`, and `KXML_JAR`).
 
-通过 ECI 的 `eciSetVoiceParam` 设置 8 维 voice 参数（gender、headSize、pitchBaseline、pitchFluctuation、roughness、breathiness、speed、volume）实现。
+The `chs-smoke` CI lane builds the host engine with Chinese voice data and
+checks its oracle synthesis. Emulator and Android APK tests run in GitHub
+Actions. Device listening, TalkBack cancellation, and pre-unlock Direct Boot
+checks remain important release validation; see
+[`RELEASES.md`](RELEASES.md).
 
-###多语言检测
+## Troubleshooting
 
-三层架构：Unicode 规则层（O(1( 判定假名/谚文/汉字/拉丁）+ 内存 n-gram 层 + Lingua 统计层（拉丁 10 语言互分
+- If the engine cannot start, verify that the installed APK is a signed
+  release build for the device ABI and that its installation has not been
+  replaced by an ordinary CI-signed artifact.
+- If a locale is unavailable, compare it with the 14 entries in
+  [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt). Defined
+  dialect constants do not necessarily mean that a locale is shipped.
+- If generated Chinese engine data or language assets differ from their
+  sources, follow [the generated-artifact contract](docs/artifacts-contract.md)
+  and the [repository audit](docs/repository-audit.md); do not edit generated
+  C or packed assets by hand.
+- For native handle, cancellation, PCM, and JNI limits, see
+  [`jni/README.md`](jni/README.md). For update assets and version metadata,
+  see [RELEASES.md](RELEASES.md).
 
+## Licensing and provenance
 
+The root [MIT license](LICENSE) applies to the project material it covers; it
+does not grant rights to third-party speech data or vendor-derived material.
+The `openevv` distribution includes its own provenance and licensing notice in
+[`native/openevv/NOTICE`](native/openevv/NOTICE). The Chinese oracle tables and
+other referenced speech data have separate provenance and may have separate
+rights. Review the applicable notices before redistribution. The repository's
+oracle notes describe development provenance and do not replace legal advice
+or grant a license.
 
-## License
+## Contributing and releases
 
-本项目代码以 MIT License 开源。语音数据与引用库版权归各自所有者；Apple Eloquence 语音数据版权归 Apple Inc.，仅供学习与研究使用。
-
-## 免责声明
-
-本仓库仅用于技术研究与学习交流，不构成任何商业用途的授权。使用 Apple 语音数据可能涉及版权问题，请遵守当地法律法规。
-
-## Roadmap
-
-- [ ] 补采 百 / /零 / /八 的 PCM 静音口（采集工具现状与计划见 `oracle/lpta-remake.md`）
-- [x] 首个发布：v1.0 · versionCode 2000000001（版本策略见 `RELEASES.md`）
-- [ ] 自动更新 ABI 匹配回退验证（部分资产缺失时回退为打开 Releases 页）
-- 发布变更说明见 `RELEASES.md`（随每次发布更新）
+Contributions should keep documentation and tests aligned with executable
+source-of-truth files. Android builds belong in GitHub Actions; host and native
+checks can be run locally when their stated dependencies are available. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for pull-request expectations and
+[RELEASES.md](RELEASES.md) for versioning, asset names, signing, and publication
+status.

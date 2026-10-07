@@ -2,6 +2,10 @@
 
 Last measured 3 September 2026.
 
+> This is a dated status report for the standalone `openevv` engine. Its
+> historical language and test counts are not the Android app's current
+> supported-locale list; see the root `docs/languages-voices-capabilities.md`.
+
 ## Works
 
 The engine speaks, and it speaks IBM's samples. All 98 cases in eight categories come out byte for byte identical to IBM's own binary: plain text, UTF-8, annotations, annotations with the annotation input type on, real-world text with the parameters read back in a person's units, the user dictionary, the same sentence said twice on one instance, and an SSML document read and then spoken. That is English; all nine of the SDK's languages do the same over the cases there are for each, 881 between them, and the sections below say which.

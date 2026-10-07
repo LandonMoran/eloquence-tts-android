@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.UserManager
 import android.system.Os
 import android.util.Xml
+import com.xw.vvtts.engine.AppliedVoiceParams
 import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.engine.VoiceRegistry
 import com.xw.vvtts.services.SynthesisBudget
@@ -170,6 +171,23 @@ private fun versionsAndVoices() {
     println("PASS versions/voices: semantic ordering, Long codes, malformed bounds, audited ABI fallback, ISO-2/ISO-3, all preset pitch endpoints")
 }
 
+/** Verify cached voice parameters compare without retaining a mutable caller array. */
+private fun appliedVoiceParams() {
+    val cache = AppliedVoiceParams()
+    val params = intArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+    check(!cache.matches(1, 2, params))
+    cache.record(1, 2, params)
+    check(cache.matches(1, 2, params))
+    params[0] = 9
+    check(!cache.matches(1, 2, params))
+    params[0] = 1
+    check(!cache.matches(2, 2, params))
+    check(!cache.matches(1, 3, params))
+    cache.clear()
+    check(!cache.matches(1, 2, params))
+    println("PASS voice parameter cache: unchanged sets reuse safely; dialect, preset, values, and clear invalidate")
+}
+
 /** Verify nonblocking stop, stale-audio rejection, listener teardown, and synthesis-only time budgeting. */
 private fun lifecycle() {
     val engine=EloquenceEngine(Context())
@@ -327,6 +345,6 @@ private fun defender() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
     finally { Context.root.deleteRecursively() }
 }
