@@ -12,7 +12,7 @@ data class DictEntry(
     val caseSensitive: Boolean = false,
 )
 
-/** Voice settings (UI rate/pitch/volume + language selection.)) */
+/** Voice, pitch, volume, reading, and dictionary settings. */
 class VoiceConfig(private val context: Context) {
     /** Supported language definitions (Apple Kona full table).)*/
     class Lang(
@@ -38,22 +38,14 @@ class VoiceConfig(private val context: Context) {
 
     val voice: String
         get() = readMap()[KEY_VOICE] ?: "en-US"
-    val rate: Int
-        get() = readMap()[KEY_RATE]?.toIntOrNull() ?: 100
     val pitch: Int
         get() = readMap()[KEY_PITCH]?.toIntOrNull() ?: 50
     val volume: Int
         get() = readMap()[KEY_VOLUME]?.toIntOrNull() ?: 100
-    val isAutoDetect: Boolean
-        get() = readMap()[KEY_AUTO_DETECT]?.toBoolean() ?: true
-
     fun setVoice(v: String) { writeBoth { it.putString(KEY_VOICE, v) } }
-    fun setRate(r: Int) { writeBoth { it.putInt(KEY_RATE, r) } }
     fun setPitch(p: Int) { writeBoth { it.putInt(KEY_PITCH, p) } }
     /** Persist the requested output volume in mirrored settings. */
     fun setVolume(v: Int) { writeBoth { it.putInt(KEY_VOLUME, v) } }
-    fun setAutoDetect(b: Boolean) { writeBoth { it.putBoolean(KEY_AUTO_DETECT, b) } }
-
     fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT,  b) } }
         val punctEnabled: Boolean
             get() = readMap()[KEY_PUNCT]?.toBoolean() ?: false
@@ -63,7 +55,7 @@ class VoiceConfig(private val context: Context) {
             get() = readMap()[KEY_NUMBER_ENABLED]?.toBoolean() ?: false
         fun setNumberModePref(v: Int) { writeBoth { it.putInt(KEY_NUMBER_MODE,  v) } }
         val numberModePref: Int
-            get() = readMap()[KEY_NUMBER_MODE]?.toIntOrNull() ?: 0
+            get() = (readMap()[KEY_NUMBER_MODE]?.toIntOrNull() ?: 0).coerceIn(0, 4)
 
     private var dictionaryRaw: String? = null
     private var dictionaryEntries: List<DictEntry> = emptyList()
@@ -156,10 +148,8 @@ class VoiceConfig(private val context: Context) {
         const val MAX_IMPORT_BYTES = 1024 * 1024
         private const val PREFS = "vvtts_prefs"
         const val KEY_VOICE = "voice"
-        const val KEY_RATE = "rate"
         const val KEY_PITCH = "pitch"
         const val KEY_VOLUME = "volume"
-        const val KEY_AUTO_DETECT = "auto_detect"
         const val KEY_PUNCT = "speak_punctuation"
         const val KEY_DICT = "user_dict"
         const val KEY_NUMBER_ENABLED = "number_processing_enabled"

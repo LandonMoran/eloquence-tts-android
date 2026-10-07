@@ -1,6 +1,6 @@
 # CJK clean-room plan (chs / cht / kor) - where it actually stands
 
-> Historical research plan. It includes work-in-progress branches and
+> Historical research plan. It includes unfinished branch notes and
 > implementation proposals that do not describe current app support. For the
 > shipped Chinese runtime and generated source, see [`README.md`](README.md).
 

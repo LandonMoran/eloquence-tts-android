@@ -152,7 +152,6 @@ class SettingsActivity : Activity() {
         refreshVoiceButton(voiceBtnLocal)
         val langSwitchLocal = addSwitchRow(mainContainer, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
             LanguageDetector.setDetectionEnabled(on)
-            voiceConfig!!.setAutoDetect(on)
             if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
             saveLanguageSettings()
             refreshLanguageUi()
@@ -163,6 +162,7 @@ class SettingsActivity : Activity() {
         val langFixedBtnLocal = addRow(this, mainContainer)
         langFixedBtn = langFixedBtnLocal
         langFixedBtnLocal.setOnClickListener { showLanguageDialog() }
+        refreshLanguageUi()
         val testBtnLocal = addFilledButton(mainContainer, R.string.test, dp(16))
         testBtnLocal.setOnClickListener { testSpeech() }
         
@@ -216,7 +216,7 @@ class SettingsActivity : Activity() {
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
-        val extraLogSwitch = addSwitchRow(mainContainer, getString(R.string.extra_logging_row), voiceConfig!!.extraLogging) { on ->
+        addSwitchRow(mainContainer, getString(R.string.extra_logging_row), voiceConfig!!.extraLogging) { on ->
             voiceConfig!!.setExtraLogging(on)
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
@@ -415,7 +415,6 @@ class SettingsActivity : Activity() {
 
             /** Per-language sample texts */
     private fun sampleTextFor(code: String): String {
-        if (code == null) return "Hello, this is a speech test."
         if (code.startsWith("zh")) return "\u4f60\u597d\u3002"
         if (code.startsWith("en")) return "Hello, this is a speech synthesis test."
         if (code.startsWith("de")) return "Hallo, das ist ein Sprachsynthesetest."
@@ -903,7 +902,6 @@ class SettingsActivity : Activity() {
             REQ_PROFILE -> {
                 presetBtn?.let { refreshPresetButton(it) }
                 refreshVoiceCharSliders()
-                presetBtn?.let { refreshPresetButton(it) }
             }
             REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)
             REQ_DICT_CREATE -> if (data?.data != null) exportDictToUri(data.data!!)
@@ -956,7 +954,6 @@ class SettingsActivity : Activity() {
                     .setPositiveButton(getString(R.string.ok)) { _, _ ->
                         LanguageDetector.setDetectionEnabled(false)
                         LanguageDetector.setFixedDialect(picked)
-                        voiceConfig!!.setAutoDetect(false)
                         saveLanguageSettings()
                         refreshLanguageUi()
                         voiceBtn?.let { refreshVoiceButton(it) }

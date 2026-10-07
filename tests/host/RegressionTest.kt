@@ -80,6 +80,13 @@ private fun preferences() {
     check(File(Context.root,"ce/shared_prefs/boot-edits.xml").readText()==File(Context.root,"de/shared_prefs/boot-edits.xml").readText())
     check(!File(Context.root,"de/files/boot-edits.direct-boot-dirty").exists())
     val config=VoiceConfig(context)
+    val configStore=MirroredPreferences(context,"vvtts_prefs")
+    configStore.edit { it.putInt("number_processing_mode", 99) }
+    check(config.numberModePref==4) { "Invalid number mode should clamp to the last supported choice" }
+    configStore.edit { it.putInt("number_processing_mode", -1) }
+    check(config.numberModePref==0) { "Negative number mode should clamp to the default choice" }
+    config.setNumberModePref(2)
+    check(config.numberModePref==2)
     config.setExtraLogging(false); check(!config.extraLogging)
     VoiceConfig(Context()).setExtraLogging(true); check(config.extraLogging)
     VoiceConfig(Context()).setExtraLogging(false); check(!config.extraLogging)

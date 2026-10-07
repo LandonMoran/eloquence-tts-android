@@ -83,9 +83,5 @@ class KonaVoice {
         }
 
         /** eciVoiceNumber -> voice(falls back to Reed when not found) */
-        fun byEciVoiceNumber(vn: Int): Voice {
-            for (v in VOICES) if (v.eciVoiceNumber == vn) return v
-            return VOICES[0]
-        }
     }
 }
