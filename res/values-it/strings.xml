@@ -2,7 +2,6 @@
 <resources>
     <string name="lang_header">Lingua</string>
     <string name="voice_profile">Voce</string>
-    <string name="rate">Velocità</string>
     <string name="pitch">Tono</string>
     <string name="volume">Volume</string>
     <string name="test">Test</string>

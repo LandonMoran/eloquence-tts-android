@@ -39,6 +39,8 @@ class SettingsActivity : Activity() {
     private var engine: EloquenceEngine? = null
     private var pitchVal: TextView? = null
     private var volumeVal: TextView? = null
+    private var pitchBar: SeekBar? = null
+    private var volumeBar: SeekBar? = null
     private val charParamIds = intArrayOf(VoiceProfile.PARAM_HEAD_SIZE, VoiceProfile.PARAM_ROUGHNESS, VoiceProfile.PARAM_BREATHINESS, VoiceProfile.PARAM_PITCH_FLUC)
     private val charLabelRes = intArrayOf(R.string.voice_head, R.string.voice_roughness, R.string.voice_breathiness, R.string.voice_inflection)
     private val charBars = arrayOfNulls<SeekBar>(charParamIds.size)
@@ -128,11 +130,11 @@ class SettingsActivity : Activity() {
         
         // ===== SPEECH SECTION =====
         addSectionHeader(mainContainer, R.string.sec_speech)
-        pitchVal = addSeekBar(mainContainer, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100) { v ->
+        pitchVal = addSeekBar(mainContainer, getString(R.string.pitch), voiceConfig!!.pitch, 0, 100, { pitchBar = it }) { v ->
             voiceConfig!!.setPitch(v)
             pitchVal!!.text = getString(R.string.pitch_fmt, v)
         }
-        volumeVal = addSeekBar(mainContainer, getString(R.string.volume), voiceConfig!!.volume, 0, 100) { v ->
+        volumeVal = addSeekBar(mainContainer, getString(R.string.volume), voiceConfig!!.volume, 0, 100, { volumeBar = it }) { v ->
             voiceConfig!!.setVolume(v)
             volumeVal!!.text = getString(R.string.volume_fmt, v)
         }
@@ -890,6 +892,8 @@ class SettingsActivity : Activity() {
         numberBtn?.let { refreshNumberButton(it) }
         pitchVal?.text = getString(R.string.pitch_fmt, voiceConfig!!.pitch)
         volumeVal?.text = getString(R.string.volume_fmt, voiceConfig!!.volume)
+        pitchBar?.progress = voiceConfig!!.pitch
+        volumeBar?.progress = voiceConfig!!.volume
         refreshVoiceCharSliders()
         updateChineseGuard()
         Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
@@ -1040,7 +1044,7 @@ class SettingsActivity : Activity() {
 
     /** Detect languages (multi-select) */
     private fun showDetectionLanguagesDialog() {
-        // Current whitelist; default is English + Japanese
+        // The default whitelist contains every language supported by the detector.
         val enabled = LanguageDetector.getEnabledLanguages()
         val checked = BooleanArray(LanguageDetector.ALL_LANG_CODES.size)
         for (i in LanguageDetector.ALL_LANG_CODES.indices) {
@@ -1158,7 +1162,7 @@ class SettingsActivity : Activity() {
         LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
         LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
         LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
-        // Detection whitelist: default English + Japanese (fresh install or never set)
+        // Detection whitelist: enable all detector languages on a fresh install.
         val enabled: Set<String>
         if (prefs.contains("enabled_langs")) {
             enabled = prefs.getStringSet("enabled_langs", null) ?: emptySet<String>()

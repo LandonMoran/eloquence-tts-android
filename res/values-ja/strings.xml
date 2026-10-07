@@ -4,7 +4,6 @@
     <string name="title_main">Eloquence TTS</string>
     <string name="lang_header">言語環境</string>
     <string name="voice_profile">発音キャラクター</string>
-    <string name="rate">話速</string>
     <string name="pitch">音高</string>
     <string name="volume">音量</string>
     <string name="test">テスト発音</string>

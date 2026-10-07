@@ -10,11 +10,9 @@
     <string name="lang_msg_fmt">Message Language: %1$s</string>
     <string name="voice_char_note">Note: character adjustments sound strongest with the Reed preset.</string>
     <string name="voice_profile">Voice</string>
-    <string name="rate">Rate</string>
     <string name="pitch">Pitch</string>
     <string name="volume">Volume</string>
     <string name="test">Test</string>
-    <string name="rate_fmt">Rate: %1$d%%</string>
     <string name="pitch_fmt">Pitch: %1$d%%</string>
     <string name="volume_fmt">Volume: %1$d%%</string>
     <string name="voice_param_fmt">%1$s: %2$d%%</string>

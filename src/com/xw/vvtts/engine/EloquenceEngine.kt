@@ -216,15 +216,15 @@ class EloquenceEngine(context: Context) {
             var t = base.replace("\u0080", "euro").replace('|', ' ')
             t = t.replace('\u2019', '\'')
             if (t.isEmpty()) return t
-            val overrides: List<Pair<String, String>> = when (dialect) {
-                DIALECT_EN_US -> ENU_SPOKEN_EXCEPTIONS
-                DIALECT_EN_GB -> ENG_SPOKEN_EXCEPTIONS
-                DIALECT_FR_FR, DIALECT_FR_CA -> FR_SPOKEN_EXCEPTIONS
-                DIALECT_DE_DE -> DE_SPOKEN_EXCEPTIONS
+            val overrides: List<Pair<Regex, String>> = when (dialect) {
+                DIALECT_EN_US -> ENU_SPOKEN_REGEXES
+                DIALECT_EN_GB -> ENG_SPOKEN_REGEXES
+                DIALECT_FR_FR, DIALECT_FR_CA -> FR_SPOKEN_REGEXES
+                DIALECT_DE_DE -> DE_SPOKEN_REGEXES
                 else -> emptyList()
             }
-            for ((w, r) in overrides) {
-                t = Regex("(?i)" + Regex.escape(w)).replace(t, r)
+            for ((pattern, spoken) in overrides) {
+                t = pattern.replace(t, spoken)
             }
 
             // Factory number grouping, ported from their TTS service. Mode -1 = off
@@ -266,6 +266,13 @@ class EloquenceEngine(context: Context) {
             "dagegen" to "dage gen", "dage-gen" to "dage gen",
             "dageben" to "dage ben", "dage-ben" to "dage ben",
         )
+        private fun compileSpokenExceptions(entries: List<Pair<String, String>>): List<Pair<Regex, String>> =
+            entries.map { (written, spoken) -> Regex("(?i)" + Regex.escape(written)) to spoken }
+
+        private val ENU_SPOKEN_REGEXES = compileSpokenExceptions(ENU_SPOKEN_EXCEPTIONS)
+        private val ENG_SPOKEN_REGEXES = compileSpokenExceptions(ENG_SPOKEN_EXCEPTIONS)
+        private val FR_SPOKEN_REGEXES = compileSpokenExceptions(FR_SPOKEN_EXCEPTIONS)
+        private val DE_SPOKEN_REGEXES = compileSpokenExceptions(DE_SPOKEN_EXCEPTIONS)
 
         @JvmStatic
         fun applyVolume(pcm: ShortArray, volume: Int): ShortArray {

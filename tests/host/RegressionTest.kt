@@ -195,6 +195,28 @@ private fun appliedVoiceParams() {
     println("PASS voice parameter cache: unchanged sets reuse safely; dialect, preset, values, and clear invalidate")
 }
 
+/** Check that compiled spoken exceptions preserve the existing replacements. */
+private fun spokenExceptions() {
+    val preprocess = EloquenceEngine.Companion.javaClass.getDeclaredMethod(
+        "preprocess",
+        String::class.java,
+        Int::class.javaPrimitiveType,
+        List::class.java,
+        Boolean::class.javaPrimitiveType,
+        Int::class.javaPrimitiveType,
+    ).apply { isAccessible = true }
+    val result = preprocess.invoke(
+        EloquenceEngine.Companion,
+        "CTRL GMAIL Tzsche",
+        EloquenceEngine.DIALECT_EN_US,
+        emptyList<Pair<Regex, String>>(),
+        false,
+        -1,
+    )
+    check(result == "control g mail tsche")
+    println("PASS spoken exceptions: cached case-insensitive replacements preserve normalized output")
+}
+
 /** Verify nonblocking stop, stale-audio rejection, listener teardown, and synthesis-only time budgeting. */
 private fun lifecycle() {
     val engine=EloquenceEngine(Context())
@@ -352,6 +374,6 @@ private fun defender() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); spokenExceptions(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
     finally { Context.root.deleteRecursively() }
 }
