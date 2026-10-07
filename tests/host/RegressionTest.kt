@@ -9,6 +9,7 @@ import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.engine.VoiceRegistry
 import com.xw.vvtts.services.SynthesisBudget
 import com.xw.vvtts.services.VvTtsService
+import com.xw.vvtts.ui.SettingsActivity
 import com.xw.vvtts.update.ElqUpdateChecker
 import com.xw.vvtts.utils.*
 import java.io.File
@@ -230,6 +231,89 @@ private fun spokenExceptions() {
     println("PASS spoken exceptions: cached case-insensitive replacements preserve normalized output")
 }
 
+/** Exercise the merged picker’s persisted fixed-language selection without Android dialogs. */
+private fun languagePickerSelection() {
+    val previousFixed = LanguageDetector.getFixedDialect()
+    val previousDefault = LanguageDetector.getDefaultLanguage()
+    val previousDetection = LanguageDetector.isDetectionEnabled()
+    val context = Context()
+    val config = VoiceConfig(context)
+    val activity = SettingsActivity()
+    set(activity, "voiceConfig", config)
+    val select = activity.javaClass.getDeclaredMethod("selectLanguage", String::class.java).apply {
+        isAccessible = true
+    }
+    try {
+        LanguageDetector.setDetectionEnabled(true)
+        select.invoke(activity, "fr-CA")
+        check(config.voice == "fr-CA")
+        check(LanguageDetector.getFixedDialect() == LanguageDetector.DIALECT_FR_CA)
+        check(LanguageDetector.getDefaultLanguage() == LanguageDetector.DIALECT_FR_CA)
+        check(!LanguageDetector.isDetectionEnabled())
+        val persisted = MirroredPreferences(context, "vvtts_lang_settings")
+        check(persisted.getInt("fixed_dialect", -1) == LanguageDetector.DIALECT_FR_CA)
+        check(!persisted.getBoolean("detection_enabled", true))
+
+        select.invoke(activity, "zh-TW")
+        check(config.voice == "fr-CA") { "Unsupported dialect changed the selected language" }
+        println("PASS language picker: selection persists and unshipped dialects are ignored")
+    } finally {
+        LanguageDetector.setFixedDialect(previousFixed)
+        LanguageDetector.setDefaultLanguage(previousDefault)
+        LanguageDetector.setDetectionEnabled(previousDetection)
+    }
+}
+
+/** Exercise Telegram-style mixed-script, punctuation-heavy text through segmentation and chunk preprocessing. */
+private fun telegramFormattedText() {
+    val text = """
+        Your install is v0.21.5 (2026.9.24) — tagged commit f97608f. Against today's main HEAD
+        (8e85a0fd, Oct 6) the picture: ~800 files / ~740K insertions changed总体.
+        Headline areas: desktop/TUI apps, local-runtime, llama.cpp v0.5.0, Termux packaging,
+        telemetry v5, and update internals. See https://example.invalid/path?x=1&y=2.
+        This includes `code`, **bold**, underscores_like_this, emojis 🙂, and repeated punctuation!!!!!
+        Received at 10:56 PM — 1 of 91 somewhere around the middle.
+    """.trimIndent()
+    val chunks = VvTtsService.Companion.javaClass.getDeclaredMethod(
+        "splitSynthChunks", String::class.java,
+    ).apply { isAccessible = true }
+    val preprocess = EloquenceEngine.Companion.javaClass.getDeclaredMethod(
+        "preprocess",
+        String::class.java,
+        Int::class.javaPrimitiveType,
+        List::class.java,
+        Boolean::class.javaPrimitiveType,
+        Int::class.javaPrimitiveType,
+    ).apply { isAccessible = true }
+    val segments = LanguageDetector.segment(text)
+    check(segments.isNotEmpty())
+    check(segments.joinToString("") { it.text } == text)
+    for (segment in segments) {
+        @Suppress("UNCHECKED_CAST")
+        val pieces = chunks.invoke(VvTtsService.Companion, segment.text) as List<String>
+        check(pieces.joinToString("") == segment.text)
+        for (piece in pieces) {
+            val expanded = when (segment.dialect) {
+                LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(piece)
+                LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(piece)
+                else -> EmojiExpander.expand(piece)
+            }?.takeIf { it.isNotEmpty() } ?: piece
+            val prepared = preprocess.invoke(
+                EloquenceEngine.Companion,
+                expanded,
+                segment.dialect,
+                emptyList<Pair<Regex, String>>(),
+                true,
+                -1,
+            ) as String
+            val safe = CrashCodeDefender.sanitize(Context(), prepared)
+            check(safe.isNotEmpty())
+            check(safe.toByteArray(Charsets.UTF_8).size <= 16_384)
+        }
+    }
+    println("PASS Telegram input: mixed script and punctuation segments, chunks, and preprocess safely")
+}
+
 /** Verify nonblocking stop, stale-audio rejection, listener teardown, and synthesis-only time budgeting. */
 private fun lifecycle() {
     val engine=EloquenceEngine(Context())
@@ -389,6 +473,6 @@ private fun defender() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
     finally { Context.root.deleteRecursively() }
 }
