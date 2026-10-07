@@ -483,8 +483,9 @@ class SettingsActivity : Activity() {
 
     /** Play and block until done (duration = samples / rate) */
     private fun playPcmAndWait(pcm: ShortArray, sampleRate: Int) {
+        if (pcm.isEmpty() || sampleRate <= 0) return
         val bytes = shortsToBytes(pcm)
-        val track = AudioTrack.Builder()
+        val track = try { AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -497,6 +498,10 @@ class SettingsActivity : Activity() {
             .setBufferSizeInBytes(bytes.size)
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "AudioTrack create failed", t)
+            return
+        }
         try {
             track.write(bytes, 0, bytes.size)
             track.play()
