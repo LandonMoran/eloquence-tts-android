@@ -16,6 +16,8 @@ int main(void) {
     // ASan would catch any attempt to allocate/copy it instead of rejecting pass 1.
     clip_length=VV_MAX_PCM_SAMPLES*sizeof(short)+2;
     assert(chs_build_pcm(text,sizeof(text),&pcm)==0 && pcm==NULL);
+    for (clip_length=1; clip_length<=3; clip_length+=2)
+        assert(chs_build_pcm(text,2,&pcm)==0 && pcm==NULL);
     assert(chs_build_pcm(text,VV_MAX_TEXT_BYTES+1,&pcm)==0 && pcm==NULL);
     puts("PASS oracle: PCM and input bounds before allocation");
 }
