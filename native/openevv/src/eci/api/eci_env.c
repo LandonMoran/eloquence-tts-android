@@ -829,6 +829,8 @@ int STDCALL ev_setOutputBuffer(OldInst *h, int32_t n, void *buf)
         OI_RATE(inst) = g_DefaultEnvironment[ENV_RATE];
         return ev_setOutputDevice(inst, 0) ? 1 : 0;
     }
+    if (n < 0 || n > INT32_MAX / 2)
+        return 0;
 
     ev_saveInstanceData(inst);
     OI_SAMPBUF(inst) = buf;
