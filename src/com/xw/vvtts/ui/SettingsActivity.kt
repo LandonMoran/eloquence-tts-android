@@ -853,22 +853,28 @@ class SettingsActivity : Activity() {
         }.apply { isDaemon = true; name = "dictionary-import" }.start()
     }
     private fun exportDictToUri(uri: android.net.Uri) {
+        val entries = voiceConfig?.dictEntries() ?: return
         Thread {
-            val out = contentResolver.openOutputStream(uri) ?: return@Thread
-            val sb = StringBuilder()
-        sb.append('\uFEFF')
-        for (e in voiceConfig!!.dictEntries()) {
+            val ok = runCatching {
+                val sb = StringBuilder()
+                sb.append('\uFEFF')
+                for (e in entries) {
                     sb.append(e.word).append('|').append(e.spoken)
                     if (e.caseSensitive) sb.append("|cs")
                     sb.append('\n')
                 }
-        out.write(sb.toString().toByteArray(Charsets.UTF_8))
-                    out.close()
-                    runOnUiThread {
-                        Toast.makeText(this,  getString(R.string.dict_exported),  Toast.LENGTH_SHORT).show()
-                    }
-                }.start()
+                val out = contentResolver.openOutputStream(uri) ?: error("Cannot open output")
+                out.use { it.write(sb.toString().toByteArray(Charsets.UTF_8)) }
+            }.onFailure { Log.e("SettingsActivity", "dictionary export failed", it) }.isSuccess
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) {
+                    Toast.makeText(this,
+                        if (ok) getString(R.string.dict_exported) else getString(R.string.synth_failed),
+                        Toast.LENGTH_SHORT).show()
+                }
             }
+        }.start()
+    }
     private fun confirmResetDefaults() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.reset_title))
