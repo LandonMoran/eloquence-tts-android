@@ -119,6 +119,7 @@ static void await_cleanup(void) {
 
 /** Compare the production resampler against its previous zero-padded implementation. */
 static void test_resampler_equivalence(void) {
+    pthread_once(&vv_rsp_once, vv_rsp_build);
     unsigned state = 0x6d2b79f5u;
     const size_t lengths[] = {1, 2, 3, 31, 32, 63, 64, 65, 257, 4096};
     for (size_t c = 0; c < sizeof(lengths) / sizeof(lengths[0]); ++c) {
