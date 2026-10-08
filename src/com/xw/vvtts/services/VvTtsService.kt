@@ -986,7 +986,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                 if (b != ' ' && b != ',' && b != '，') return false
                 val left = text.substring(0, i).trimEnd()
                 if (left.isEmpty()) return false
-                val punct = arrayOf(' ', ',', '.', ';', '!', '?', '。', '，', '！', '？', '、', '．')
+                val punct = charArrayOf(' ', ',', '.', ';', '!', '?', '。', '，', '！', '？', '、', '．')
                 val lastTokRaw = left.substringAfterLast(' ')
                 val lastTok = lastTokRaw.trim(*punct)
                 val prevTok = left.dropLast(lastTokRaw.length).trimEnd().substringAfterLast(' ').trim(*punct)
