@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Eloquence</string>
-    <string name="title_main">Eloquence</string>
+    <string name="app_name">Eloquence TTS</string>
+    <string name="title_main">Eloquence TTS</string>
     <string name="lang_header">언어 환경</string>
     <string name="voice_profile">발음 역할</string>
     <string name="pitch">음조</string>
