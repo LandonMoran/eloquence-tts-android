@@ -48,6 +48,7 @@ class SettingsActivity : Activity() {
     private var langSwitch: Switch? = null
     private var voiceBtn: Button? = null
     private var presetBtn: Button? = null
+    private var refreshingCharSliders = false
     private var presetRow: LinearLayout? = null
     private var charSection: LinearLayout? = null
     private var chineseGuard: LinearLayout? = null
@@ -273,27 +274,33 @@ class SettingsActivity : Activity() {
 
     private fun addVoiceCharSliders(root: LinearLayout) {
         val vp = voiceProfile ?: return
-        val preset = vp.preset
         val min = 0
         val max = 100
         for (i in charLabelRes.indices) {
             val p = charParamIds[i]
             val label = getString(charLabelRes[i])
             val cb: (Int) -> Unit = { v ->
-                vp.setParam(preset, p, v)
+                // Resolve the preset at write time and skip programmatic refreshes, so a
+                // rapid voice switch can't write one voice's values into another profile.
+                if (!refreshingCharSliders) vp.setParam(vp.preset, p, v)
                 charVals[i]?.text = getString(R.string.voice_param_fmt, label, v)
             }
-            charVals[i] = addSeekBar(root, label, vp.getParam(preset, p), min, max, { charBars[i] = it }, cb)
+            charVals[i] = addSeekBar(root, label, vp.getParam(vp.preset, p), min, max, { charBars[i] = it }, cb)
         }
     }
 
     private fun refreshVoiceCharSliders() {
         val vp = voiceProfile ?: return
         val preset = vp.preset
-        for (i in charParamIds.indices) {
-            val b = charBars[i] ?: continue
-            b.progress = vp.getParam(preset, charParamIds[i])
-            charVals[i]?.text = getString(R.string.voice_param_fmt, getString(charLabelRes[i]), b.progress)
+        refreshingCharSliders = true
+        try {
+            for (i in charParamIds.indices) {
+                val b = charBars[i] ?: continue
+                b.progress = vp.getParam(preset, charParamIds[i])
+                charVals[i]?.text = getString(R.string.voice_param_fmt, getString(charLabelRes[i]), b.progress)
+            }
+        } finally {
+            refreshingCharSliders = false
         }
     }
 
