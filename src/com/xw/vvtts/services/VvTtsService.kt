@@ -1005,10 +1005,19 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                         i--
                     }
                     // Pass B: nearest boundary within the hard cap (word/clause splits
-                    // with the same digit guards so dates/numbers survive..
+                    // with the same digit guards so dates/numbers survive. A pure-space
+                    // cut must never hang a function word on either side ("go to |
+                    // channel" reads as a broken phrase), so when the nearest cut is
+                    // bounded by a dangling word we back off to an earlier clean
+                    // boundary. Punctuation breaks (. , ; ! ?) are never dangling.
                     if (cut < 0) {
+                        val danglingWords = arrayOf(
+                            "to", "the", "a", "an", "and", "or", "but", "of", "for",
+                            "in", "on", "at", "with", "by", "from", "into", "onto",
+                            "is", "was", "be", "as", "so", "if", "then", "over", "under", "up")
                         var j = end
-                        while (j > start + 1 && cut < 0) {
+                        var fallback = -1
+                        while (j > start + 1) {
                             val c = text[j - 1]
                             val isBoundary = c == ' ' || c == '\n' || c == '\t' || c == '.' || c == ','
                                 || c == ';' || c == '!' || c == '?' || c == '。' || c == '，'
@@ -1016,10 +1025,24 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                             if (isBoundary) {
                                 val prev = if (j >= 2) text[j - 2] else ' '
                                 val next = if (j < n) text[j] else ' '
-                                if (!isNumericBoundary(c, prev, next)) cut = j
+                                if (!isNumericBoundary(c, prev, next)) {
+                                    if (fallback < 0) fallback = j
+                                    if (c == ' ') {
+                                        val prevWord = text.substring(start, j).trimEnd().substringAfterLast(' ').lowercase()
+                                        val nextWord = text.substring(j).trimStart().substringBefore(' ').lowercase()
+                                        if (prevWord !in danglingWords && nextWord !in danglingWords) {
+                                            cut = j
+                                            break
+                                        }
+                                    } else {
+                                        cut = j
+                                        break
+                                    }
+                                }
                             }
                             j--
                         }
+                        if (cut < 0) cut = fallback
                     }
                     // Pass C: no boundary in range: force-cut, backing off digit/symbol
                     // runs so dates/numbers are never split mid-run; never below the
