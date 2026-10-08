@@ -111,7 +111,10 @@ class EloquenceEngine(context: Context) {
                 return false
             }
             val configDir = File(storageContext.filesDir, "eloquence")
-            if (!configDir.exists()) configDir.mkdirs()
+            if (!configDir.exists() && !configDir.mkdirs() && !configDir.exists()) {
+                Log.e(TAG, "failed to create config dir: ${configDir.absolutePath}")
+                return false
+            }
             initialized = true
             Log.i(TAG, "Eloquence openevv engine ready")
             // Warm the default (US English) voice in the background: preloads the LPC voice
