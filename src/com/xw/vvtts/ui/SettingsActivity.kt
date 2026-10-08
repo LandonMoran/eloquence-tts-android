@@ -304,7 +304,9 @@ class SettingsActivity : Activity() {
 
     /** Synthesizes and plays a sample using the current voice settings, falling back to English for unshipped dialects. */
     private fun testSpeechImpl() {
-        if (engine == null || !engine!!.isInitialized()) {
+        val eng = engine
+        val cfg = voiceConfig
+        if (eng == null || cfg == null || !eng.isInitialized()) {
             toastOnUi(R.string.engine_not_ready)
             return
         }
@@ -316,7 +318,7 @@ class SettingsActivity : Activity() {
             text = "Hello, this is a speech synthesis test."
                         dialect = EloquenceEngine.DIALECT_EN_US
         } else {
-            val code = voiceConfig!!.voice
+            val code = cfg.voice
             val lang = VoiceConfig.findLang(code)
             text = sampleTextFor(lang.code)
             dialect = bcpToDialect(lang.code)
@@ -328,22 +330,22 @@ class SettingsActivity : Activity() {
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
                     toastOnUi(R.string.preview_in_english)
-            val pcmEn = engine!!.synthesizeCore("Hello, this is a speech synthesis test.",
-                EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, preset,
-                voiceConfig!!.pitch, 100)
+            val pcmEn = eng.synthesizeCore("Hello, this is a speech synthesis test.",
+                EloquenceEngine.DIALECT_EN_US, cfg.volume, preset,
+                cfg.pitch, 100)
             if (pcmEn != null && pcmEn.size > 0) {
-                playPcm(pcmEn, engine!!.getCoreSampleRate())
+                playPcm(pcmEn, eng.getCoreSampleRate())
                 toastOnUi(R.string.spoken_en)
             } else {
                 toastOnUi(R.string.synth_failed)
             }
             return
         }
-        val pcm = engine!!.synthesizeCore(text, dialect,
-            voiceConfig!!.volume, preset,
-            voiceConfig!!.pitch, 100)
+        val pcm = eng.synthesizeCore(text, dialect,
+            cfg.volume, preset,
+            cfg.pitch, 100)
         if (pcm != null && pcm.size > 0) {
-            playPcm(pcm, engine!!.getCoreSampleRate())
+            playPcm(pcm, eng.getCoreSampleRate())
             toastOnUi(R.string.synth_ok)
         } else {
                     toastOnUi(R.string.synth_failed)
@@ -354,7 +356,9 @@ class SettingsActivity : Activity() {
                      *  so CI can verify samples>0 via the CHS_ORACLE log. */
                     private fun testZhOracle() {
                         Thread {
-                            if (engine == null || !engine!!.isInitialized()) {
+                            val eng = engine
+                            val cfg = voiceConfig
+                            if (eng == null || cfg == null || !eng.isInitialized()) {
                                 toastOnUi(R.string.engine_not_ready)
                                 return@Thread
                             }
@@ -362,15 +366,15 @@ class SettingsActivity : Activity() {
                             val dialect = EloquenceEngine.DIALECT_ZH_CN
                             val preset = voiceProfile?.preset ?: 1
                             val pcm = try {
-                                engine!!.synthesizeCore(text, dialect, voiceConfig!!.volume, preset,
-                                    voiceConfig!!.pitch, 100)
+                                eng.synthesizeCore(text, dialect, cfg.volume, preset,
+                                    cfg.pitch, 100)
                             } catch (t: Throwable) {
                                 Log.e("CRASHHOOK", "testZhOracle exception", t)
                                 null
                             }
                             Log.i("CRASHHOOK", "testZhOracle done samples=" + (pcm?.size ?: 0))
                             if (pcm != null && pcm.size > 0) {
-                                playPcm(pcm, engine!!.getCoreSampleRate())
+                                playPcm(pcm, eng.getCoreSampleRate())
                                 toastOnUi(R.string.synth_ok)
                             } else {
                                 toastOnUi(R.string.synth_failed)
@@ -391,7 +395,9 @@ class SettingsActivity : Activity() {
 
     /** Synthesizes [text] for crash diagnostics using English or shipped Simplified Chinese, and logs the outcome. */
     private fun testCrashImpl(text: String) {
-                if (engine == null || !engine!!.isInitialized()) return
+                val eng = engine
+                val cfg = voiceConfig
+                if (eng == null || cfg == null || !eng.isInitialized()) return
                 Log.i("CRASHHOOK", "start:" + text)
                 var dialect = EloquenceEngine.DIALECT_EN_US
                 try {
@@ -402,8 +408,8 @@ class SettingsActivity : Activity() {
                 }
                 Log.i("CRASHHOOK", "dialect=" + Integer.toHexString(dialect))
                 val pcm2 = try {
-                    engine!!.synthesizeCore(text, dialect,
-                        voiceConfig!!.volume, voiceProfile?.preset ?: 1, voiceConfig!!.pitch, 100)
+                    eng.synthesizeCore(text, dialect,
+                        cfg.volume, voiceProfile?.preset ?: 1, cfg.pitch, 100)
                 } catch (t: Throwable) {
                     Log.e("CRASHHOOK", "exception", t)
                     null
@@ -435,13 +441,15 @@ class SettingsActivity : Activity() {
     private fun testGerman() {
         // English-voice comparison test: Reed(1) → Sandy(2) → Grandpa(8)
         Thread {
+            val eng = engine ?: return@Thread
+            val cfg = voiceConfig ?: return@Thread
             val t0 = System.currentTimeMillis()
-            val pcm1 = engine!!.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, 1)
-            val pcm2 = engine!!.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, 2)
-            val pcm3 = engine!!.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, voiceConfig!!.volume, 8)
+            val pcm1 = eng.synthesizeCore("Hello, this is a voice test.",
+                EloquenceEngine.DIALECT_EN_US, cfg.volume, 1)
+            val pcm2 = eng.synthesizeCore("Hello, this is a voice test.",
+                EloquenceEngine.DIALECT_EN_US, cfg.volume, 2)
+            val pcm3 = eng.synthesizeCore("Hello, this is a voice test.",
+                EloquenceEngine.DIALECT_EN_US, cfg.volume, 8)
             val ms = System.currentTimeMillis() - t0
             val total = (pcm1?.size ?: 0) + (pcm2?.size ?: 0) + (pcm3?.size ?: 0)
             Log.e("RoleTest", "three roles total=$total shorts in $ms ms")
@@ -475,8 +483,9 @@ class SettingsActivity : Activity() {
 
     /** Play and block until done (duration = samples / rate) */
     private fun playPcmAndWait(pcm: ShortArray, sampleRate: Int) {
+        if (pcm.isEmpty() || sampleRate <= 0) return
         val bytes = shortsToBytes(pcm)
-        val track = AudioTrack.Builder()
+        val track = try { AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -489,6 +498,10 @@ class SettingsActivity : Activity() {
             .setBufferSizeInBytes(bytes.size)
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "AudioTrack create failed", t)
+            return
+        }
         try {
             track.write(bytes, 0, bytes.size)
             track.play()
@@ -840,22 +853,28 @@ class SettingsActivity : Activity() {
         }.apply { isDaemon = true; name = "dictionary-import" }.start()
     }
     private fun exportDictToUri(uri: android.net.Uri) {
+        val entries = voiceConfig?.dictEntries() ?: return
         Thread {
-            val out = contentResolver.openOutputStream(uri) ?: return@Thread
-            val sb = StringBuilder()
-        sb.append('\uFEFF')
-        for (e in voiceConfig!!.dictEntries()) {
+            val ok = runCatching {
+                val sb = StringBuilder()
+                sb.append('\uFEFF')
+                for (e in entries) {
                     sb.append(e.word).append('|').append(e.spoken)
                     if (e.caseSensitive) sb.append("|cs")
                     sb.append('\n')
                 }
-        out.write(sb.toString().toByteArray(Charsets.UTF_8))
-                    out.close()
-                    runOnUiThread {
-                        Toast.makeText(this,  getString(R.string.dict_exported),  Toast.LENGTH_SHORT).show()
-                    }
-                }.start()
+                val out = contentResolver.openOutputStream(uri) ?: error("Cannot open output")
+                out.use { it.write(sb.toString().toByteArray(Charsets.UTF_8)) }
+            }.onFailure { Log.e("SettingsActivity", "dictionary export failed", it) }.isSuccess
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) {
+                    Toast.makeText(this,
+                        if (ok) getString(R.string.dict_exported) else getString(R.string.synth_failed),
+                        Toast.LENGTH_SHORT).show()
+                }
             }
+        }.start()
+    }
     private fun confirmResetDefaults() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.reset_title))
