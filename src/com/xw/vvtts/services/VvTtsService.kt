@@ -972,6 +972,36 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
              * within one bounded native synth call instead of waiting out a
              * giant segment.
              */
+                        /**
+             * True when the cut boundary before text[i] separates two pieces of a numeric
+             * quantity / duration phrase ("20 minutes, 49 seconds") which must stay in a
+             * single chunk: splitting it into two synth utterances inserts an audible pause
+             * the ear reads as wrong. Protects the number+unit spaces AND the comma between
+             * quantity terms, so durations are never cut mid-phrase. Pass B calls this as
+             * an extra non-boundary guard (alongside isNumericBoundary).
+             */
+            private fun isQuantityBoundary(text: String, i: Int): Boolean {
+                if (i <= 0 || i >= text.length) return true
+                val b = text[i - 1]
+                if (b != ' ' && b != ',' && b != '，') return false
+                val left = text.substring(0, i).trimEnd()
+                if (left.isEmpty()) return false
+                val punct = charArrayOf(' ', ',', '.', ';', '!', '?', '。', '，', '！', '？', '、', '．')
+                val lastTokRaw = left.substringAfterLast(' ')
+                val lastTok = lastTokRaw.trim(*punct)
+                val prevTok = left.dropLast(lastTokRaw.length).trimEnd().substringAfterLast(' ').trim(*punct)
+                val rightTok = text.substring(i).trimStart().substringBefore(' ').trim(*punct)
+                fun num(t: String) = t.isNotEmpty() && t[0].isDigit()
+                fun unit(t: String) = t.isNotEmpty() && t.all { it.isLetter() }
+                val leftNum = num(lastTok)
+                val leftUnitPrevNum = unit(lastTok) && num(prevTok)
+                val rightNum = num(rightTok)
+                val rightUnit = unit(rightTok)
+                if (leftNum && rightUnit) return true            // "49 seconds", "20 minutes"
+                if (rightNum && leftUnitPrevNum) return true   // "minutes, 49 seconds"
+                return false
+            }
+
                         private fun splitSynthChunks(text: String): List<String> {
                 val chunks = mutableListOf<String>()
                 val n = text.length
@@ -1026,19 +1056,23 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                                 val prev = if (j >= 2) text[j - 2] else ' '
                                 val next = if (j < n) text[j] else ' '
                                 if (!isNumericBoundary(c, prev, next)) {
-                                    if (fallback < 0) fallback = j
-                                    if (c == ' ') {
-                                        val prevWord = text.substring(start, j).trimEnd().substringAfterLast(' ').lowercase()
-                                        val nextWord = text.substring(j).trimStart().substringBefore(' ').lowercase()
-                                        if (prevWord !in danglingWords && nextWord !in danglingWords) {
-                                            cut = j
-                                            break
-                                        }
-                                    } else {
-                                        cut = j
-                                        break
-                                    }
-                                }
+                                                                    // keep quantity/duration phrases ("20 minutes, 49 seconds")
+                                                                    // intact -- splitting them into two utterances inserts a pause.
+                                                                    if (!isQuantityBoundary(text, j)) {
+                                                                        if (fallback < 0) fallback = j
+                                                                        if (c == ' ') {
+                                                                            val prevWord = text.substring(start, j).trimEnd().substringAfterLast(' ').lowercase()
+                                                                            val nextWord = text.substring(j).trimStart().substringBefore(' ').lowercase()
+                                                                            if (prevWord !in danglingWords && nextWord !in danglingWords) {
+                                                                                cut = j
+                                                                                break
+                                                                            }
+                                                                        } else {
+                                                                            cut = j
+                                                                            break
+                                                                        }
+                                                                    }
+                                                                }
                             }
                             j--
                         }
