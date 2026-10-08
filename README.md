@@ -46,7 +46,7 @@ the bridge resamples it to 44,100 Hz for Android playback.
 
 Chinese Simplified (`zh-CN`) uses the in-tree oracle audio bank, generated as C
 from consolidated tables. The other 13 shipped locales use `openevv` language
-modules. Runtime synthesis does not load converted Apple engine libraries.
+modules. Runtime synthesis is performed by the in-tree engine.
 The bridge's lifecycle, cancellation, size, and encoding constraints are
 described in [`jni/README.md`](jni/README.md).
 
