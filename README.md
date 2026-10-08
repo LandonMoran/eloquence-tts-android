@@ -1,6 +1,6 @@
-# Eloquence TTS for Android
+# Eloquence for Android
 
-Eloquence TTS is an Android text-to-speech engine based on the native
+Eloquence is an Android text-to-speech engine based on the native
 [`openevv`](native/openevv/README.md) engine. It is designed for Android's
 system Text-to-Speech interface, including screen readers such as TalkBack.
 Synthesis runs locally; speech text is not sent to a speech service.
@@ -46,7 +46,8 @@ the bridge resamples it to 44,100 Hz for Android playback.
 
 Chinese Simplified (`zh-CN`) uses the in-tree oracle audio bank, generated as C
 from consolidated tables. The other 13 shipped locales use `openevv` language
-modules. Runtime synthesis does not load converted Apple engine libraries.
+modules. Runtime synthesis uses the in-tree engine rather than converted
+external engine libraries.
 The bridge's lifecycle, cancellation, size, and encoding constraints are
 described in [`jni/README.md`](jni/README.md).
 
