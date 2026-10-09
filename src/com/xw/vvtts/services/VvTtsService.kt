@@ -593,7 +593,8 @@ synchronized(synthesisLock) {
                         val volume = cfgVolume
 
             val pace = Pace(activeEngine.getCoreSampleRate())
-                        val synthBudget = SynthesisBudget(UTT_BUDGET_MS)
+                        var lastProgressAt = SystemClock.elapsedRealtime() // last time PCM was handed; stall guard (no-progress), not a length budget
+                        fun stalledNoProgress(): Boolean = (SystemClock.elapsedRealtime() - lastProgressAt) > UTT_STALL_MS
             // Start the framework's audio pipe BEFORE synthesis: first-audio
             // latency must not include the first segment's native synth time.
             // The finally block terminates normal or canceled synthesis.
@@ -612,9 +613,8 @@ synchronized(synthesisLock) {
                             // cannot abandon an in-flight synthesis, so a new utterance
                             // must never cut this one mid-stream.
                             if (stopping) break
-                            if (synthBudget.exhausted) {
-
-                                Log.e(TAG, "utterance truncated: synthesis-work budget (" + UTT_BUDGET_MS + " ms( exceeded; skipping remaining segments")
+                            if (stalledNoProgress()) {
+                                Log.e(TAG, "utterance truncated: no synthesis progress for " + UTT_STALL_MS + " ms; skipping remaining segments")
                                 synthFailedOrTruncated = true   // truncated: error(), not done()
                                 break
                             }
@@ -637,7 +637,7 @@ synchronized(synthesisLock) {
                 for (chunkText in splitSynthChunks(segText)) {
                     // stop() only, same rule as the segment loop above.
                     if (stopping) break
-                    if (synthBudget.exhausted) {
+                    if (stalledNoProgress()) {
                         synthFailedOrTruncated = true   // truncated: error(), not done()
                         break
                     }
@@ -651,7 +651,7 @@ synchronized(synthesisLock) {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = synthBudget.measure { currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate) }
+                    val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if (voiceConfig?.extraLogging == true) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
@@ -682,6 +682,7 @@ synchronized(synthesisLock) {
                                 hold(pace)
                             }
                         }
+                        lastProgressAt = SystemClock.elapsedRealtime() // progress: PCM handed
                     } else {
                         // Null/empty PCM from the native synth (a failure, not a silence: the
                         // pipeline must hear error(), not a false-success done().
@@ -904,10 +905,14 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                         // watchdog's budget for a single chunk, so a slow-but-legitimate chunk
                         // (still under the freeze guard) already exceeded the budget and truncated
                         // the WHOLE utterance -> "the engine stops on passages longer than ~40s".
-                        // Raised so a long reading that is merely making slow progress always
-                        // completes; it still bounds a real hang-cascade (several stalled chunks)
-                        // from wedging TalkBack.
-                        private const val UTT_BUDGET_MS = 150000L
+                        // Utterance stall guard (fires when no PCM has been handed for UTT_STALL_MS).
+                        // Stall guard, not a length budget: an utterance truncates only when NO PCM has
+                        // been handed for UTT_STALL_MS. A legitimately long read that keeps making
+                        // progress can run any length; the old cumulative synthesis-time budget
+                        // (UTT_BUDGET_MS) cut marathon reads at ~150s of aggregate synth time mid-way.
+                        // Kept far below HANG_TIMEOUT_S*1000 (=120000ms) so a cascading null run errors
+                        // out before the per-call watchdog would, and above PACE_LEAD_MS (=3000ms).
+                        private const val UTT_STALL_MS = 20000L
                         // Synth chunk caps: the first piece is smaller so first audio
                         // lands fast; later pieces cap the worst-case wait for a swipe,
                         // which now lands within one bounded native call instead of a

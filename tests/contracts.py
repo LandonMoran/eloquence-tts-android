@@ -197,28 +197,32 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('android.permission.BIND_TEXT_TO_SPEECH',manifest)
 
     def test_synthesis_timing_chain_invariant(self):
-        """Guard the #312 stall-fix constants:the synth watchdog timeout must outrank
-        the retire/truncation windows, or slow-but-legal chunks trip it into a stacked-retire
-        dead zone."""
+        """Guard the stall-fix constants so a regression cannot re-land the two failure
+        signatures: a per-call hang watchdog that does not outlast the retire window
+        (stacked-retire ~24s dead zone), a service stall guard that sits outside the
+        benign window, or a native cancelled-drain bound large enough to wedge a fresh
+        generation for ~20s."""
 
         engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
         service = (ROOT/'src/com/xw/vvtts/services/VvTtsService.kt').read_text()
+        core = (ROOT/'jni/vvtts_core.c').read_text()
         hang_s = int(re.search(r'val HANG_TIMEOUT_S = (\d+)L',engine).group(1))
         grace_ms = int(re.search(r'val ZOMBIE_GRACE_MS = (\d+)L',engine).group(1))
-        budget_ms = int(re.search(r'const val UTT_BUDGET_MS = (\d+)L',service).group(1))
+        stall_ms = int(re.search(r'const val UTT_STALL_MS = (\d+)L',service).group(1))
+        stop_drain_iters = int(re.search(r'#define VV_STOP_DRAIN_MAX_ITERS (\d+)',core).group(1))
 
-        # Watchdog must outlastthe retire window,so a single fire cannot immediately re-trip
-        # into a second retire -- the ~24s dead zone = two stacked ZOMBIE_GRACE windows.
-
+        # A watchdog fire must not be able to stack a retire window onto a legitimate chunk.
         self.assertGreater(hang_s * 1000, grace_ms)
 
+        # The stall guard must fire before the per-call watchdog (a cascading null run errors
+        # out promptly), and after the ~3s pacing lead (normal pacing is never a false stall).
+        self.assertLess(stall_ms, hang_s * 1000)
+        self.assertGreater(stall_ms, 3000)
 
-        # The last-resort truncation budget must outranksthe watchdog,so truncation-facing
-        # segments are not silently killed for chunks that have not actually hung. Ancestral
-        # inversion of small budget + longer watchdog was the original long-passage-stop root.
-
-
-        self.assertGreaterEqual(budget_ms, hang_s * 1000)
+        # The cancelled-drain bound (0.5ms per iteration) must stay well under ~2s, else a stale
+        # cancelled generation delays a fresh one ~20s again: the 24s residual = 20s drain + reopen.
+        self.assertLess(stop_drain_iters * 0.5, 2000.0)
+        self.assertGreater(stop_drain_iters, 0)
 
 
 if __name__=='__main__':unittest.main()
