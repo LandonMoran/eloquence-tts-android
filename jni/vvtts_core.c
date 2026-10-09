@@ -261,10 +261,19 @@ static void vv_wait_till_done(VvtsSession *s) {
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
     int iters = 0;
     int stopSent = 0;
-    while (s->hECI && eciSpeaking(s->hECI) && iters < (vv_cancelled(s) ? VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS)) {
+    int stopAt = 0;
+    /* Anchor the cancelled-drain bound to the moment the stop is sent, not to a
+     * global iters floor: if onStop lands mid-drain on a legitimate long chunk
+     * (already past VV_STOP_DRAIN_MAX_ITERS), the engine still needs time to
+     * finish after eciStop.  Give it VV_STOP_DRAIN_MAX_ITERS more iters from
+     * stopAt, never exceeding the full VV_DRAIN_MAX_ITERS cap. */
+    while (s->hECI && eciSpeaking(s->hECI) &&
+           iters < VV_DRAIN_MAX_ITERS &&
+           iters < (stopSent ? stopAt + VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS)) {
         if (vv_cancelled(s) && !stopSent) {
             if (!eciStop(s->hECI)) atomic_store(&s->failed, 1);
             stopSent = 1;
+            stopAt = iters;
         }
         /* Polling is what collects the engine's queued samples: the engine
          * posts chunks into the app queue and only a poll delivers them, so

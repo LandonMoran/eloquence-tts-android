@@ -206,10 +206,17 @@ class Contracts(unittest.TestCase):
         engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
         service = (ROOT/'src/com/xw/vvtts/services/VvTtsService.kt').read_text()
         core = (ROOT/'jni/vvtts_core.c').read_text()
-        hang_s = int(re.search(r'val HANG_TIMEOUT_S = (\d+)L',engine).group(1))
-        grace_ms = int(re.search(r'val ZOMBIE_GRACE_MS = (\d+)L',engine).group(1))
-        stall_ms = int(re.search(r'const val UTT_STALL_MS = (\d+)L',service).group(1))
-        stop_drain_iters = int(re.search(r'#define VV_STOP_DRAIN_MAX_ITERS (\d+)',core).group(1))
+
+        def _m(p, src):
+            mm = re.search(p, src)
+            if mm is None:
+                raise AssertionError('constant pattern not found: ' + p)
+            return mm
+
+        hang_s = int(_m(r'val HANG_TIMEOUT_S = (\d+)L', engine).group(1))
+        grace_ms = int(_m(r'val ZOMBIE_GRACE_MS = (\d+)L', engine).group(1))
+        stall_ms = int(_m(r'const val UTT_STALL_MS = (\d+)L', service).group(1))
+        stop_drain_iters = int(_m(r'#define VV_STOP_DRAIN_MAX_ITERS (\d+)', core).group(1))
 
         # A watchdog fire must not be able to stack a retire window onto a legitimate chunk.
         self.assertGreater(hang_s * 1000, grace_ms)
@@ -223,6 +230,26 @@ class Contracts(unittest.TestCase):
         # cancelled generation delays a fresh one ~20s again: the 24s residual = 20s drain + reopen.
         self.assertLess(stop_drain_iters * 0.5, 2000.0)
         self.assertGreater(stop_drain_iters, 0)
+
+        # CodeRabbit (post-merge review): the bound must be ANCHORED to the moment the stop is
+        # sent (stopAt + VV_STOP_DRAIN_MAX_ITERS) with the 40k total cap preserved, so a stop that
+        # lands mid-drain on a legitimate long chunk gets fresh drain time instead of being cut at
+        # the global floor.  A revert to the blanket (vv_cancelled(s) ? STOP : DRAIN) form fails here.
+        # CodeRabbit (trivial, maintainability): scope the assertion to the ACTIVE while
+        # condition, not afile-wide regex sweep - a stale comment containing the anchored
+        # text would satisfy a whole-file assertRegex while the active condition reverted to
+        # the blanket vv_cancelled form. Grab the loop header (from \`while (s->hECI...\` to the
+        # opening brace) and assert the anchored bound is what gate-keeps it; assert the
+        # blanket mid-drain-shrink form survives nowhere (active or comment) in the file.
+
+
+        active_guard = re.search(r'while\s*\(s->hECI.*?\)\s*\{', core, re.S)
+        if active_guard is None:
+            self.fail('drain while-header not found')
+        self.assertRegex(active_guard.group(0),
+            r'iters < \(stopSent \? stopAt \+ VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS\)')
+        self.assertNotRegex(core, re.compile(
+            r'vv_cancelled\(s\) \? VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS'))
 
 
 if __name__=='__main__':unittest.main()
