@@ -244,6 +244,7 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
 }
 
 #define VV_DRAIN_MAX_ITERS 40000  /* 0.5 ms each: ~20 s of drain before retirement */
+#define VV_STOP_DRAIN_MAX_ITERS 2000  /* cancelled/stale gen: ~1 s is ample (eciStop already stopped samples) before the session is retired so a fresh generation can proceed */
 
 /** Poll until synthesis is quiet, forwarding cancellation and retiring sessions that exceed the drain bound. */
 static void vv_wait_till_done(VvtsSession *s) {
@@ -260,7 +261,7 @@ static void vv_wait_till_done(VvtsSession *s) {
     __android_log_print(ANDROID_LOG_INFO, "SPD", "wait_entry pcm=%zu", s->pcmLen);
     int iters = 0;
     int stopSent = 0;
-    while (s->hECI && eciSpeaking(s->hECI) && iters < VV_DRAIN_MAX_ITERS) {
+    while (s->hECI && eciSpeaking(s->hECI) && iters < (vv_cancelled(s) ? VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS)) {
         if (vv_cancelled(s) && !stopSent) {
             if (!eciStop(s->hECI)) atomic_store(&s->failed, 1);
             stopSent = 1;
@@ -286,7 +287,7 @@ static void vv_wait_till_done(VvtsSession *s) {
  * touching text/pcm again. */
 /** Prove the previous utterance is quiet before buffer reuse, or retire the session on timeout. */
 static int vv_settle(VvtsSession *s) {
-    for (int i = 0; i < VV_DRAIN_MAX_ITERS; i++) {
+    for (int i = 0; i < VV_STOP_DRAIN_MAX_ITERS; i++) {
         if (!eciSpeaking(s->hECI)) return 1;
         struct timespec ts = {0, 500000L};
         nanosleep(&ts, NULL);
