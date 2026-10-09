@@ -2,13 +2,12 @@
 
 ## Version and publication
 
-- **Publication status checked 2026-10-07:** GitHub currently has no published
-  Releases. Repository tags `v1.0` and `v1.1.0` exist, but tags alone do not
-  provide downloadable APKs or prove that the release workflow completed.
-  `AndroidManifest.xml` currently identifies the checkout as version name
-  `1.0.1` and version code `2000000002`; these are source-tree values, not
-  evidence of a published release. Update this status after checking GitHub
-  Releases and the tag-triggered workflow.
+- **Publication status checked 2026-10-09:** GitHub Releases carry `v1.0`,
+  `v1.0.1`–`v1.0.4`. Tags use `vMAJOR.MINOR[.PATCH]`; the APK
+  `versionName` must match the tag,validated by `tools/publish_release.py`.
+  `AndroidManifest.xml` currently identifies the checkout as version name `1.0.5`
+  and version code `6`; these are source-tree values -- evidence of a published
+  release comes from GitHub Releases plus the tag-triggered release workflow.
 - Release tags use `vMAJOR.MINOR[.PATCH]`; each numeric component is limited
   to three digits. The APK `versionName` must match the tag.
 - Android `versionCode` must increase independently. The semantic updater
