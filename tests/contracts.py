@@ -235,9 +235,21 @@ class Contracts(unittest.TestCase):
         # sent (stopAt + VV_STOP_DRAIN_MAX_ITERS) with the 40k total cap preserved, so a stop that
         # lands mid-drain on a legitimate long chunk gets fresh drain time instead of being cut at
         # the global floor.  A revert to the blanket (vv_cancelled(s) ? STOP : DRAIN) form fails here.
-        self.assertRegex(core, re.compile(
-            r'iters < \(stopSent \? stopAt \+ VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS\)'))
-        self.assertIn('iters < VV_DRAIN_MAX_ITERS', core)
+        # CodeRabbit (trivial, maintainability): scope the assertion to the ACTIVE while
+        # condition, not afile-wide regex sweep - a stale comment containing the anchored
+        # text would satisfy a whole-file assertRegex while the active condition reverted to
+        # the blanket vv_cancelled form. Grab the loop header (from \`while (s->hECI...\` to the
+        # opening brace) and assert the anchored bound is what gate-keeps it; assert the
+        # blanket mid-drain-shrink form survives nowhere (active or comment) in the file.
+
+
+        active_guard = re.search(r'while\s*\(s->hECI.*?\)\s*\{', core, re.S)
+        if active_guard is None:
+            self.fail('drain while-header not found')
+        self.assertRegex(active_guard.group(0),
+            r'iters < \(stopSent \? stopAt \+ VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS\)')
+        self.assertNotRegex(core, re.compile(
+            r'vv_cancelled\(s\) \? VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS'))
 
 
 if __name__=='__main__':unittest.main()
