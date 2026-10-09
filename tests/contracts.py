@@ -196,5 +196,29 @@ class Contracts(unittest.TestCase):
         self.assertIn('android:protectionLevel="signature"',manifest)
         self.assertNotIn('android.permission.BIND_TEXT_TO_SPEECH',manifest)
 
+    def test_synthesis_timing_chain_invariant(self):
+        """Guard the #312 stall-fix constants:the synth watchdog timeout must outrank
+        the retire/truncation windows, or slow-but-legal chunks trip it into a stacked-retire
+        dead zone."""
+
+        engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
+        service = (ROOT/'src/com/xw/vvtts/services/VvTtsService.kt').read_text()
+        hang_s = int(re.search(r'val HANG_TIMEOUT_S = (\d+)L',engine).group(1))
+        grace_ms = int(re.search(r'val ZOMBIE_GRACE_MS = (\d+)L',engine).group(1))
+        budget_ms = int(re.search(r'const val UTT_BUDGET_MS = (\d+)L',service).group(1))
+
+        # Watchdog must outlastthe retire window,so a single fire cannot immediately re-trip
+        # into a second retire -- the ~24s dead zone = two stacked ZOMBIE_GRACE windows.
+
+        self.assertGreater(hang_s * 1000, grace_ms)
+
+
+        # The last-resort truncation budget must outranksthe watchdog,so truncation-facing
+        # segments are not silently killed for chunks that have not actually hung. Ancestral
+        # inversion of small budget + longer watchdog was the original long-passage-stop root.
+
+
+        self.assertGreaterEqual(budget_ms, hang_s * 1000)
+
 
 if __name__=='__main__':unittest.main()
