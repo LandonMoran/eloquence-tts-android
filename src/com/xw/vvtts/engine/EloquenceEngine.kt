@@ -89,11 +89,13 @@ class EloquenceEngine(context: Context) {
         @Volatile private var retireUntilMs = 0L
         // Watchdog: a single native synth call that outlives this is treated as a frozen
         // engine and rotated (logged, fresh worker re-created). Must exceed the max a LEGAL
-        // chunk can take: the native layer writes up to VV_MAX_PCM_SAMPLES (60s audio), so a
-        // slow ~1:1 synthesis of a large expanded chunk is legitimate for tens of seconds --
-        // 30s wrongly killed those and cascaded (30s + 12s grace) into "passages >~40s just
-        // stop". 60s still bounds a true freeze, then rotates. Keep > ZOMBIE_GRACE.
-        private val HANG_TIMEOUT_S = 60L
+        // chunk can take: the native layer writes up to VV_MAX_PCM_SAMPLES (60s audio), and a
+        // slow (>1:1) synthesis of a large expanded chunk can legitimately need well over 60s
+        // of wall-clock. A 60s watchdog tripped merely-slow chunks (handshake budget-notch:
+        // user saw ~24s of dead silence = two 12s ZOMBIE_GRACE retires, then resume), which is
+        // NOT a freeze. 120s covers a ~2x realtime slow chunk while still bounding a true
+        // freeze; keep well above ZOMBIE_GRACE.
+        private val HANG_TIMEOUT_S = 120L
         private val ZOMBIE_GRACE_MS = 12000L
 
         /** Voice-profile source: custom overrides win during synthesis */
