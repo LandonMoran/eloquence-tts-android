@@ -260,7 +260,8 @@ class Contracts(unittest.TestCase):
             r'static int vv_has_audio\(const short \*pcm, size_t n\)'))
         self.assertRegex(core, re.compile(
             r'if \(!vv_has_audio\(s->pcm, s->pcmLen\)\)'))
-        self.assertRegex(core, re.compile(r'pcm\[i\] > 700 \|\| pcm\[i\] < -700'))
+        self.assertRegex(core, re.compile(
+            r'pcm\[i\] >= 700 \|\| pcm\[i\] <= -700'))
 
 
 if __name__=='__main__':unittest.main()

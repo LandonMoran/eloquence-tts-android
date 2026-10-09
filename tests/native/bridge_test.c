@@ -172,8 +172,14 @@ static void test_trim_silence_overlapping_edges(void) {
 static void test_silent_engine_output(void) {
     short zero[64] = {0};
     assert(vv_has_audio(zero, 64) == 0);
-    short voicedd[64]; for (int k=0;k<64;k++) voicedd[k]=(k==7)?800:0;
-    assert(vv_has_audio(voicedd, 64) == 1);
+    short voiced[64]; for (int k=0;k<64;k++) voiced[k]=(k==7)?800:0;
+        assert(vv_has_audio(voiced, 64) == 1);
+        short at700[64]; for (int k=0;k<64;k++) at700[k]=(k==7)?700:0;      /* |700| is voiced per vv_trim_silence */
+        assert(vv_has_audio(at700, 64) == 1);
+        short atNeg700[64];for (int k=0;k<64;k++) atNeg700[k]=(k==7)?-700:0;/* exact -700 voiced */
+        assert(vv_has_audio(atNeg700, 64) == 1);
+        short below[64]; for (int k=0;k<64;k++) below[k]=(k==7)?699:0;   /* 699 < TH: silent */
+        assert(vv_has_audio(below, 64) == 0);
     for (int i=0;i<256;i++) pcm_fixture[i]=0;         /* engine returns all-silent */
     jlong h = INIT(); assert(h);
     assert(SYNTH(h) == NULL);                          /* must fail, never silent 'speech' */

@@ -344,7 +344,7 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
  * fully at-or-under the floor is degenerate -- collapse it to failure instead
  * of handing silence for real speech (same ±700 floor as vv_trim_silence. */
 static int vv_has_audio(const short *pcm, size_t n) {
-    for (size_t i = 0; i < n; ++i) if (pcm[i] > 700 || pcm[i] < -700) return 1;
+    for (size_t i = 0; i < n; ++i) if (pcm[i] >= 700 || pcm[i] <= -700) return 1;
     return 0;
 }
 
