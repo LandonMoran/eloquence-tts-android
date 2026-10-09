@@ -900,10 +900,14 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
             // reappeared(; restored to the pre-merge 3000 ms. hold() polls every ~20ms
             // and exits as soon as stopping trips, so a swipe/stop stays responsive.
                         private const val PACE_LEAD_MS = 3000L
-                        // Per-utterance wall-clock budget: if synthesis (hang-cascades, 30s
-                        // watchdog rotations stacking behind each other( blows past this, we
-                        // truncate rather than let one utterance stall the whole TalkBack pipeline.
-                        private const val UTT_BUDGET_MS = 12000L
+                        // Per-utterance wall-clock budget. Was 12s: too small -- SMALLER than the
+                        // watchdog's budget for a single chunk, so a slow-but-legitimate chunk
+                        // (still under the freeze guard) already exceeded the budget and truncated
+                        // the WHOLE utterance -> "the engine stops on passages longer than ~40s".
+                        // Raised so a long reading that is merely making slow progress always
+                        // completes; it still bounds a real hang-cascade (several stalled chunks)
+                        // from wedging TalkBack.
+                        private const val UTT_BUDGET_MS = 150000L
                         // Synth chunk caps: the first piece is smaller so first audio
                         // lands fast; later pieces cap the worst-case wait for a swipe,
                         // which now lands within one bounded native call instead of a
