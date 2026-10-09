@@ -169,9 +169,23 @@ static void test_trim_silence_overlapping_edges(void) {
 }
 
 /** Exercise JNI setup failures, parameter bounds, PCM endpoints, cancellation, and session lifetime races. */
+static void test_silent_engine_output(void) {
+    short zero[64] = {0};
+    assert(vv_has_audio(zero, 64) == 0);
+    short voicedd[64]; for (int k=0;k<64;k++) voicedd[k]=(k==7)?800:0;
+    assert(vv_has_audio(voicedd, 64) == 1);
+    for (int i=0;i<256;i++) pcm_fixture[i]=0;         /* engine returns all-silent */
+    jlong h = INIT(); assert(h);
+    assert(SYNTH(h) == NULL);                          /* must fail, never silent 'speech' */
+    SHUT(h);
+    for (int i=0;i<256;i++) pcm_fixture[i]=(i>32 && i<220)?4000:0;
+}
+
+/** Exercise JNI setup failures, parameter bounds, PCM endpoints, cancellation, and session lifetime races. */
 int main(void) {
     test_resampler_equivalence();
     test_trim_silence_overlapping_edges();
+    test_silent_engine_output();
     for (int i=0;i<256;i++) pcm_fixture[i] = i > 32 && i < 220 ? 4000 : 0;
     for (fail_setup=1;fail_setup<=3;fail_setup++) { int before=deletes; assert(INIT()==0); assert(deletes==before+1); }
     fail_setup=0;

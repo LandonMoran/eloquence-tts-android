@@ -337,6 +337,17 @@ static void vv_trim_silence(short *pcm, size_t *pn) {
     *pn = keep;
 }
 
+/* #313: An engine 'success' that delivers NO sample above the speech floor is
+ * silent output: the engine failed to voice the text, but handing it on as
+ * valid PCM would have the utterance progress with no audible speech.  The
+ * engine already trims edge silence, so any sustained region surviving that is
+ * fully at-or-under the floor is degenerate -- collapse it to failure instead
+ * of handing silence for real speech (same ±700 floor as vv_trim_silence. */
+static int vv_has_audio(const short *pcm, size_t n) {
+    for (size_t i = 0; i < n; ++i) if (pcm[i] > 700 || pcm[i] < -700) return 1;
+    return 0;
+}
+
 /* IDs never expose addresses or get reused. The registry owns the lifetime;
  * every JNI operation acquires a reference before touching session storage. */
 static pthread_mutex_t vv_registry_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -688,6 +699,14 @@ static jshortArray vv_synthesize(
     short *rs = NULL;
     size_t outLen = 0;
     vv_trim_silence(s->pcm, &s->pcmLen);
+    /* #313: an engine result that is fully silent is silent speech:the engine failed
+     * to voice the text but returned a nonempty buffer.  Handing it to the framework
+     * would advance utterance progress with no audible output.  Collapse to failure. */
+    if (!vv_has_audio(s->pcm, s->pcmLen)) {
+
+        __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: engine returned silent PCM; treating as failure (#313)");
+        return NULL;
+    }
     operation = "vv_resample_4x";
     if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0 || !rs || outLen == 0) {
         /* #137: resampler failure is synthesis failure -- never silently return

@@ -252,4 +252,15 @@ class Contracts(unittest.TestCase):
             r'vv_cancelled\(s\) \? VV_STOP_DRAIN_MAX_ITERS : VV_DRAIN_MAX_ITERS'))
 
 
+# #313: engine silence must never be delivered as speech.  The collapse guard
+        # (vv_has_audio over the post-trim PCM) must gate synthesis, and the speech floor
+        # must match vv_trim_silence's TH so a legit soft-but-voiced chunk is never falsely
+        # collapsed: a silent engine 'success' must fail, not advance progress silently.
+        self.assertRegex(core, re.compile(
+            r'static int vv_has_audio\(const short \*pcm, size_t n\)'))
+        self.assertRegex(core, re.compile(
+            r'if \(!vv_has_audio\(s->pcm, s->pcmLen\)\)'))
+        self.assertRegex(core, re.compile(r'pcm\[i\] > 700 \|\| pcm\[i\] < -700'))
+
+
 if __name__=='__main__':unittest.main()
