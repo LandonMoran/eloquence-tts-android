@@ -101,6 +101,7 @@ fi
         jni/vvtts_core.c \
         jni/eci_compat.c \
         jni/chs_oracle_synth.c \
+        jni/vv_resample.c \
         "$LIBEVV" \
             -lm -llog
 

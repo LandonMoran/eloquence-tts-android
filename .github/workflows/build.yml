@@ -173,3 +173,11 @@ jobs:
             oracle/chs_smoke.c jni/chs_oracle_synth.c jni/eci_compat.c \
             native/openevv/build/libevv-enus-chs.a -lm -lpthread
           /tmp/chs_smoke
+
+      - name: Compile and run engine-native rate regression
+        run: |
+          cc -O2 -Itests/native/stubs -I native/openevv/include -I native/openevv/src -I jni \
+            -o /tmp/rate_test \
+            tests/native/rate_test.c jni/vv_resample.c jni/eci_compat.c \
+            native/openevv/build/libevv-enus-chs.a -lm -lpthread
+          /tmp/rate_test
