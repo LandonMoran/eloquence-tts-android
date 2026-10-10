@@ -279,6 +279,44 @@ int STDCALL es_delete(OldInst *h)
     return 0;
 }
 
+int es_delete_checked(OldInst *h)
+{
+    OldInst *inst;
+
+    if (es_reentered(h))
+        return 0;
+    if (h)
+        OI_BUSY(h) = 1;
+
+    inst = h;
+    if (!inst)
+        return 0;
+
+    if (api_delete(OI_NEW(inst)) != 0) {
+        OI_BUSY(inst) = 0;
+        return 0;
+    }
+
+    if (OI_DICT_XLAT(inst))
+        OI_DICT_XLAT(inst) = 0;
+    if (OI_DICT_KEY(inst))
+        OI_DICT_KEY(inst) = 0;
+    if (OI_OWNED1(inst)) {
+        cpp_delete(OI_OWNED1(inst));
+        OI_OWNED1(inst) = 0;
+    }
+    if (OI_OWNED2(inst)) {
+        cpp_delete(OI_OWNED2(inst));
+        OI_OWNED2(inst) = 0;
+    }
+    if (OI_CONCAT(inst))
+        cpp_delete(OI_CONCAT(inst));
+
+    eo_clearManualQueue(inst);
+    free(inst);
+    return 1;
+}
+
 /* Put an instance back the way a new one would be: the defaults afresh, the
    eight editable voices back to the standard ones, the queue emptied, and
    the output rebuilt. The rate is tried as it stands, then eleven thousand,
