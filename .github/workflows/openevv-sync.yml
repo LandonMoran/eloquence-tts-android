@@ -50,7 +50,7 @@ jobs:
           BR=openevv/auto-sync
           git config user.email "actions@github.com"
           git config user.name "openevv-sync[bot]"
-          git checkout -q -B "$BR" origin/main
+          git checkout -q -B "$BR" HEAD
           git commit -q -m "chore(openevv): sync vendored engine from fork main\n\nRefresh native/openevv from LandonMoran/openevv main (upstream + our engine mods: followed_by_er, chs fusions, es_delete_checked). Sources branch main; see tools/vendor-openevv.sh and .openevv-pin." || true
           git push -f --quiet origin "$BR"
           EXISTING=$(gh pr list --head "$BR" --json number --jq '.[0].number' 2>/dev/null)
