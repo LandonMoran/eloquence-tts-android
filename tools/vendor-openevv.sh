@@ -36,6 +36,14 @@ rm -rf "$DST"; mkdir -p "$DST"
 cp -a "$SNAP"/. "$DST"/
 rm -rf "$SNAP"
 
+# The generated delta_rules_*.{c,h} family is gitignored upstream ( never carried by
+# the fork trick(; our vendor Makefile's entrysig( record( seeds on the existing base. Restore
+# the committed bases from app HEAD ( so the build regenerates stale ones from the new rules tables(
+cd "$ROOT"
+git ls-tree -r --name-only HEAD native/openevv/lang | grep -E '/delta_rules_' | while IFS= read -r f; do
+  git checkout -q HEAD -- "$f" 2>/dev/null || true
+done
+
 # pin file describing the sync source
 SHORT=$(git -C "$SRC" rev-parse --short vendored)
 {
