@@ -35,6 +35,15 @@ the rest of that language, on the terms below. Putting the two in one
 directory would have been tidier and would have made the licence line harder
 to state truthfully.
 
+Two pieces of that code were written outside this repository and came in
+from their authors' own projects, under the same MIT licence, and their
+copyright notices are in LICENSE beside ours. The arena allocator's walk from
+the first free block, in `src/port/evv_arena.c`, is Josh Kennedy's, from
+OpenEvv-sapi5, whose notice gives it to the OpenEVV SAPI5 contributors. The
+NVDA add-on's per-language text encoding and its return to the reader's own
+language, in `nvda/addon/synthDrivers/_openevv.py` and `openevv.py`, are
+Felix Steindorff's, from openevv-nvda.
+
 IBM's
 -----
 
@@ -82,15 +91,30 @@ IBM's too, and so is anything of IBM's copied byte for byte into
 are ours. The language in front of every name is ours as well, and is there so
 that two languages can be linked into one program.
 
+A language's `letters` file is its letter rules written another way, and is
+IBM's on the same terms: `lang/enus/letters`, `lang/eses/letters` and
+`lang/itit/letters` are transcriptions of IBM's own.
+
 A rule written for a language rather than transcribed out of an object is ours,
-and `lang/plpl/rules/is_val.up` and `lang/plpl/rules/it_phone.up` are that:
-the formant targets of sounds Italian has not got, and the letter-to-sound
-rules for Polish's digraphs and for its own letters. What those rules name is
+and `lang/plpl/rules/is_val.up` and the Polish blocks of `lang/plpl/letters`
+are that: the formant targets of sounds Italian has not got, and the
+letter-to-sound rules for Polish's spelling and for its own letters. The blocks
+of `lang/plpl/letters` that it says are still Italian's -- f, p, t, v, k, x,
+a, l and m, copied from `lang/itit/letters` -- are IBM's Italian as that
+file is, apart from the arms written into f, p, t and k for Polish, which
+are ours. What those rules name is
 still IBM's -- a phoneme number, a statement type and the code the alphabet
 gives a character are its numbering, and a byte in `lang/plpl/rules/constants`
 that stands for one of those stands for a number of its -- but what the rules
 say with them was written here. That does not soften the paragraph above:
 everything else in that module is IBM's Italian until it has been replaced.
+
+So are `lang/enus/rules/ut_numbr.up` and `lang/engb/rules/ut_numbr.up`,
+which read a long number's groups of noughts the way the same number without
+commas is read, where IBM's rules read the comma after such a group as a
+digit. They are written here and stand on IBM's rules rather than replacing
+them: the two calls in each `ut_numbr.dr` that were pointed at them are an
+edit to IBM's text, and the rest of that text is IBM's as it was.
 
 That data is IBM's work, not ours. The MIT licence does not cover it and we are
 in no position to license it to anyone. The SDK it was read out of says as much
@@ -113,6 +137,23 @@ and are now the subject of Cerence Inc. v. Microsoft Corporation and Nuance
 Communications, Inc., D. Del. 1:25-cv-00553, filed 6 May 2025. None of this is
 legal advice.
 
+ETI's
+-----
+
+In `lang/enus` and in `lang/engb` alike: the rules at the end of
+`rules/ut_norm.up` that say they were lifted by `tools/rules/lift64.py`, the
+bytes named `eti_` in `rules/constants`, the sixth character type and the
+records that use it in the statements, the six variables at the end of the
+globals, the three of them that `set_global_constants` in `rules/u_vars.dr`
+now sets to 6.1's values, and the set of three-letter domain names in the sets
+are ETI Eloquence 6.1's, read out of the US and British English language
+modules Apple ships with its operating systems. They are on the same
+footing as everything under `lang`: no more ours to license than IBM's are,
+and nothing here grants anything in them. Two things in those rules are not
+6.1's, and both are edits to its text rather than anything with a claim of its
+own: the call `normalize_text` makes to IBM's `backquote`, and the annotations
+three of the `eti_` strings write with IBM's mark rather than 6.1's.
+
 Where it came from
 ------------------
 
@@ -123,6 +164,10 @@ IBM's Embedded ViaVoice 4.3 SDK for Windows, which IBM still serves at
 `docs/building.md` says what to do with it, and every tool that reads it is in
 `tools`, so anything under `lang` can be produced again from IBM's own file
 rather than taken on trust.
+
+What is ETI's came out of `enu.dylib` and `eng.dylib` as Apple's tvOS 18.2
+ships them, read by `tools/rules/lift64.py`, which works on any of Apple's
+modules of that engine.
 
 Measured against
 ----------------

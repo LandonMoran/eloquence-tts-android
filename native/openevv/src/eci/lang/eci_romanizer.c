@@ -95,8 +95,8 @@ const uint32_t rm_bytes = sizeof(RomanizerManager);
 extern THIS void *sy_mutexCtor(void *m, int32_t recursive)
     MANGLED("??0Mutex@@QAE@H@Z");
 extern THIS void sy_mutexDtor(void *m) MANGLED("??1Mutex@@QAE@XZ");
-extern THIS int sy_mutexWait(void *m, int32_t ms) MANGLED("?wait@Mutex@@QAEHJ@Z");
-extern THIS int sy_mutexRelease(void *m) MANGLED("?release@Mutex@@QAEHXZ");
+extern THIS int32_t sy_mutexWait(void *m, int32_t ms) MANGLED("?wait@Mutex@@QAEHJ@Z");
+extern THIS int32_t sy_mutexRelease(void *m) MANGLED("?release@Mutex@@QAEHXZ");
 extern THIS void *ini_ctor(void *r)
     MANGLED("??0IniFileReader@@QAE@XZ");
 extern THIS void ini_dtor(void *r)
@@ -138,14 +138,13 @@ void rz_removeUnusedByCode(RomanizerManager *m, uint8_t f, uint8_t d);
 
 /* ---- which languages have a romanizer at all ------------------------- */
 
-/* Four families do,and only some of their dialects. Everything else is
-   spoken as it is written. (ja-JP had a romanizer slot, but this tree has
-   no rom/jajp module -- so it stays spoken-as-written.) */
-int rz_isRomExist(int32_t family,int32_t dialect)
+/* Five families do, and only some of their dialects. Everything else is
+   spoken as it is written. */
+int rz_isRomExist(int32_t family, int32_t dialect)
 {
     switch (family) {
     case 6:  return dialect == 0 || dialect == 1;
-    case 8: return 0; /* no rom/jajp module in this tree */
+    case 8:  return dialect == 0;
     case 10: return dialect == 0;
     case 11: return dialect == 0 || dialect == 1;
     case 16: return dialect == 0;

@@ -3739,29 +3739,6 @@ int setscan_r(delta_state *d, uint8_t f)     { return setscan(d, f, 1, 1); }
 int setscan_nof_l(delta_state *d, uint8_t f) { return setscan(d, f, 0, 0); }
 int setscan_nof_r(delta_state *d, uint8_t f) { return setscan(d, f, 1, 0); }
 
-/* The Chinese rules load a token and scan in the same step. */
-void lpta_loadp_setscan_l(delta_state *d, const delta_token *p, uint8_t f)
-{
-    lpta_loadp(d, p);
-    setscan_l(d, f);
-}
-
-void lpta_loadp_setscan_r(delta_state *d, const delta_token *p, uint8_t f)
-{
-    lpta_loadp(d, p);
-    setscan_r(d, f);
-}
-
-/* The Chinese er-hua (rhotacised final) lookahead.  The Apple rules test
-   for a following er-grapheme before choosing the rhotic insert.  The
-   context lives in the token stream; this is the surface the rules call.
-   Not-followed is the conservative default. */
-int followed_by_er(delta_state *d)
-{
-    (void)d;
-    return 0;
-}
-
 /* Where a context starts. With no context wanted it is just the neighbour in
    the field; with one, either the cheap spine walk or the full lookup,
    depending on whether the node is sequential and the field is fenced. */
@@ -6373,8 +6350,13 @@ int forall_to_test(delta_state *d, delta_loc *a, delta_loc *b)
 }
 
 /* Mark a field across the range the two pointers span. Only a short field
-   can carry a mark, and a range the pointers cannot span is a refusal. */
-int mark_i(delta_state *d, uint8_t st, uint8_t fld, const void *v,
+   can carry a mark, and a range the pointers cannot span is a refusal.
+
+   The value is a value, as mark_s's is: what is written is the argument's
+   own bytes. Declared as a pointer it would be masked as a reference, and
+   the crossing would add the region's base to it, which only looks right
+   while the base falls on a boundary the field's sixteen bits cannot see. */
+int mark_i(delta_state *d, uint8_t st, uint8_t fld, int32_t v,
            uint8_t mode)
 {
     if (vrange_2pt(d, &d->lpta, &d->rpta, (int8_t)st, mode))
@@ -6389,7 +6371,7 @@ int mark_i(delta_state *d, uint8_t st, uint8_t fld, const void *v,
 /* The same mark in the other two widths. Each refuses a field whose kind is
    not the one it is named for, and no rule in the nine languages IBM shipped
    names either -- their fields are bytes and short2s. */
-int mark_l(delta_state *d, uint8_t st, uint8_t fld, const void *v,
+int mark_l(delta_state *d, uint8_t st, uint8_t fld, int32_t v,
            uint8_t mode)
 {
     if (vrange_2pt(d, &d->lpta, &d->rpta, (int8_t)st, mode))
@@ -6401,7 +6383,7 @@ int mark_l(delta_state *d, uint8_t st, uint8_t fld, const void *v,
     return 0;
 }
 
-int mark_lng(delta_state *d, uint8_t st, uint8_t fld, const void *v,
+int mark_lng(delta_state *d, uint8_t st, uint8_t fld, int32_t v,
              uint8_t mode)
 {
     if (vrange_2pt(d, &d->lpta, &d->rpta, (int8_t)st, mode))

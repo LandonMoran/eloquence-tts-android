@@ -22,7 +22,7 @@ exactly would be hard. Reading and round-tripping are different jobs, so they
 have different forms.
 
 usage: tools/rules/notation.py build            the three files a build compiles
-       tools/rules/notation.py rewrite          the same, IBM's rules alone
+       tools/rules/notation.py rewrite          the same, IBM's where ours would stand in
        tools/rules/notation.py authored         the same, the module's trials in too
        tools/rules/notation.py write  <object> [> file]
        tools/rules/notation.py read   <file>
@@ -252,7 +252,7 @@ def write_symbols():
     for (obj, real), nm in zip(e.sym.items, names):
         store, _plus, off = nm.split()
         out.append("at %s %s %s %s" % (obj, real, store, off))
-    open(SYMBOLS, "w").write("\n".join(out) + "\n")
+    open(SYMBOLS, "w", encoding="utf-8").write("\n".join(out) + "\n")
     print("%d stores and %d addresses in %s"
           % (len(stores), len(names), os.path.relpath(SYMBOLS, ROOT)))
     return True
@@ -262,7 +262,7 @@ def read_symbols():
     """The stores, and where each object's symbol falls in one of them."""
     stores = []
     where = {}
-    for line in open(SYMBOLS):
+    for line in open(SYMBOLS, encoding="utf-8"):
         w = line.split()
         if not w or w[0].startswith("#"):
             continue
@@ -325,8 +325,21 @@ def trials():
     """
     if not os.path.exists(TRIALS):
         return set()
-    return set(line.split()[0] for line in open(TRIALS)
+    return set(line.split()[0] for line in open(TRIALS, encoding="utf-8")
                if line.strip() and not line.lstrip().startswith("#"))
+
+
+def instead_of(path):
+    """The rules in an upper-form file that say `instead': written in place
+    of IBM's on purpose, and so taken on IBM's side as well as ours."""
+    out, name = set(), None
+    for line in open(path, encoding="utf-8"):
+        w = line.split("#")[0].split()
+        if w and w[0] == "rule":
+            name = w[1]
+        elif w == ["instead"] and name:
+            out.add(name)
+    return out
 
 
 def text_files():
@@ -349,14 +362,19 @@ def text_rules(upper=True, trial=False):
     everything else reaches it by. A name that is only in the upper form
     comes after that object's own.
 
-    Asked for the lower form alone, it ignores the upper files altogether,
-    which is what a check against IBM's objects wants: a rule written afresh
-    is meant to differ, so counting it there would turn that check red and
-    leave it red. Asked for the trials as well, it takes in the files the
-    module says are not its own, which is the second of the two builds
-    tools/rules/check-upper.sh holds against each other.
+    Asked for the lower form alone, it takes no rule of the upper form that
+    stands in for one of the lower, which is what a check against IBM's
+    objects wants: a rule written afresh is meant to differ, so counting it
+    there would turn that check red and leave it red. A name only the upper
+    form has still comes in, because the lower form may have been edited to
+    call it, and without it what is left does not link. So does a rule that
+    says `instead', in place of IBM's of the same name: it was taken to read
+    differently, so IBM's side is the only side there is. Asked for the trials
+    as well, it takes in the files the module says are not its own, which is
+    the second of the two builds tools/rules/check-upper.sh holds against
+    each other.
     """
-    du = sibling("rules/upper") if upper else None
+    du = sibling("rules/upper")
     left_out = set() if trial else trials()
     out = []
     authored = []
@@ -365,14 +383,21 @@ def text_rules(upper=True, trial=False):
         up = os.path.join(TREE, stem + ".up")
         rules, tables = ([], {})
         if os.path.exists(low):
-            rules, tables = read_rules(open(low))
-        if upper and os.path.exists(up) and stem + ".up" not in left_out:
+            rules, tables = read_rules(open(low, encoding="utf-8"))
+        if os.path.exists(up) and stem + ".up" not in left_out:
             written = du.compile_file(up, LANG)
             by_name = dict((r[0], r) for r in written)
-            rules = [by_name.pop(name, (name, d, obj))
-                     for name, d, obj in rules]
+            if upper:
+                rules = [by_name.pop(name, (name, d, obj))
+                         for name, d, obj in rules]
+            else:
+                instead = instead_of(up)
+                rules = [by_name.pop(name) if name in instead
+                         else (name, d, obj) for name, d, obj in rules]
+                for name, _d, _obj in rules:
+                    by_name.pop(name, None)
             rules += [by_name[r[0]] for r in written if r[0] in by_name]
-            authored += [r[0] for r in written]
+            authored += [r[0] for r in written if upper or r[0] in by_name]
         out.append((stem, rules, tables))
     return out, authored
 
@@ -404,8 +429,9 @@ def write_files(upper=True, trial=False):
     silently did not happen.
 
     `upper' takes the module's own rules written in the upper form in, which
-    is what an ordinary build wants; without it only the lifted text is read,
-    which is IBM's rules and nothing of ours. `trial' takes in the upper-form
+    is what an ordinary build wants; without it the lifted text is read with
+    nothing of ours standing in for IBM's rules, and only the rules of ours
+    that stand in for nothing taken in beside it. `trial' takes in the upper-form
     files the module says are not its own as well. The three answers are the
     three builds anything here ever wants: what IBM compiled, what the module
     is, and what the module would be if its trials were part of it.
@@ -424,6 +450,16 @@ def write_files(upper=True, trial=False):
     for what in (BUILT_C, BUILT_H, BUILT_SHIM):
         print("%-26s %d bytes, written"
               % (os.path.basename(what), os.path.getsize(what)))
+    # The record the build asks whether the masks have moved since, as old as
+    # what was just written. Whatever writes the rule code writes it, the
+    # check's rewrite of IBM's rules alone included: a record missing beside
+    # rule code is one make has just made, and make takes that as reason to
+    # write the module's own rules over whatever was there.
+    record = os.path.join(TREE, ".declared")
+    if not os.path.exists(record):
+        open(record, "w", encoding="utf-8").close()
+    st = os.stat(BUILT_C)
+    os.utime(record, ns=(st.st_atime_ns, st.st_mtime_ns))
     return True
 
 
@@ -471,7 +507,7 @@ def prove():
     files = ([f for f in files if f != "glob.dr"]
              + [f for f in files if f == "glob.dr"])
     for f in files:
-        rules, tables = read_rules(open(os.path.join(TREE, f)))
+        rules, tables = read_rules(open(os.path.join(TREE, f), encoding="utf-8"))
         for name, d, obj in rules:
             from_tree.rule(name, d, tables, obj)
             from_tree.origin[name] = obj
@@ -532,7 +568,7 @@ def to_tree():
             write_rule(name, obj, d, tables, out)
             out.append("")
         where = os.path.join(TREE, obj[:-4] + ".dr")
-        open(where, "w").write("\n".join(out) + "\n")
+        open(where, "w", encoding="utf-8").write("\n".join(out) + "\n")
         rules += len(per_object[obj])
         print("%-16s %4d rules" % (obj, len(per_object[obj])))
     print("%d rules in %s" % (rules, os.path.relpath(TREE, ROOT)))
@@ -563,7 +599,7 @@ def verify():
             print("%-16s no text in the tree" % obj)
             ok = False
             continue
-        written, wtables = read_rules(open(where))
+        written, wtables = read_rules(open(where, encoding="utf-8"))
         by_name = lifted_by_object[obj]
         ltables = tables_by_object[obj]
         for name, d2, o in written:
@@ -775,7 +811,7 @@ def upper_compile(name, params, calls, truth=False):
 
 
 def write_upper():
-    lifted, tables = read_rules(open(os.path.join(TREE, "glob.dr")))
+    lifted, tables = read_rules(open(os.path.join(TREE, "glob.dr"), encoding="utf-8"))
     out = ["# The wrappers, as the primitive each stands for. Written by",
            "# tools/rules/notation.py. Every one takes the machine's state as",
            "# its first argument, so that is not written; `arg n' is the",
@@ -801,7 +837,7 @@ def write_upper():
             continue
         out.extend(lines)
         done += 1
-    open(UPPER, "w").write("\n".join(out) + "\n")
+    open(UPPER, "w", encoding="utf-8").write("\n".join(out) + "\n")
     print("%d wrappers written to %s, %d left in the lower form"
           % (done, os.path.relpath(UPPER, ROOT), left))
     print("  of those left, %d because this could not reproduce them exactly"
@@ -815,11 +851,11 @@ def upper_prove():
     bytecode. Byte-identity is the point: this is a re-expression of a rule
     that already exists, so anything but identical is a difference nobody
     asked for."""
-    lifted, tables = read_rules(open(os.path.join(TREE, "glob.dr")))
+    lifted, tables = read_rules(open(os.path.join(TREE, "glob.dr"), encoding="utf-8"))
     have = dict((n, d) for n, d, _o in lifted)
     same = 0
     differed = []
-    for name, params, calls, truth in upper_read(open(UPPER)):
+    for name, params, calls, truth in upper_read(open(UPPER, encoding="utf-8")):
         if name not in have:
             differed.append((name, "not in the lower form"))
             continue
@@ -856,7 +892,7 @@ def main():
         return 0
 
     if what == "read":
-        rules, _t = read_rules(open(sys.argv[2]))
+        rules, _t = read_rules(open(sys.argv[2], encoding="utf-8"))
         print("%d rules read" % len(rules))
         return 0
 
@@ -879,7 +915,7 @@ def main():
     if what == "build":
         return 0 if write_files() else 1
 
-    # IBM's rules and nothing of ours, which is the side
+    # IBM's rules with nothing of ours standing in for them, which is the side
     # tools/rules/check-upper.sh holds an authored rule against.
     if what == "rewrite":
         return 0 if write_files(upper=False) else 1

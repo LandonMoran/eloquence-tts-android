@@ -224,9 +224,6 @@ class Rule:
         t = {1: 'int8_t', 2: 'int16_t', 4: 'int32_t'}[width]
         if kind == 'slot':
             return 'AT(%s, %d)' % (t, val), width
-        if kind == 'slotaddr':
-            # The slot's address, so a store through it is a slot write.
-            return '*(%s *)SLOT(%d)' % (t, val), width
         if kind == 'statefld':
             got = variable_at(val)
             if got is not None:
@@ -651,7 +648,7 @@ def write(names):
                 text.append('    %s_delta_rule_native_p%02d,\n'
                             % (census.LANG_TAG, k))
             text.append('    0,\n};\n')
-        open(part_path(n), 'w').write(''.join(text))
+        open(part_path(n), 'w', encoding="utf-8").write(''.join(text))
     return done, refused
 
 
@@ -917,7 +914,7 @@ SHAPES = {}
 def c_rule_shape(name):
     if not SHAPES:
         import re
-        text = open(census.RULES_C).read()
+        text = open(census.RULES_C, encoding="utf-8").read()
         for m in re.finditer(r'\{\s*"([^"]*)",\s*"[^"]*",\s*-?\d+,\s*-?\d+,'
                              r'\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\}',
                              census.span(text, 'delta_rules[]')):
@@ -1187,7 +1184,7 @@ def cells(base):
                         'delta_globals_%s.c' % census.LANG_TAG)
     if not os.path.exists(path):
         return []
-    text = open(path).read()
+    text = open(path, encoding="utf-8").read()
     kinds = re.findall(r'DG_(WORD|LONG|SHORT|COMPOUND)', text)
     decls = re.findall(r'\{\s*(\d+),\s*(\d+)\s*\}',
                        text[text.index('delta_compounds[]'):])
@@ -1477,7 +1474,7 @@ def write_prov_sites(tag):
     if not PROVENANCE:
         return
     path = os.path.join(census.LANG_DIR, 'provenance-sites-%s.txt' % tag)
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding="utf-8") as f:
         f.write('# site  rule  offset  kind\n')
         for n, name, off, kind in PROV_SITES:
             f.write('%d %s %s %s\n' % (n, name, off, kind))
@@ -1592,7 +1589,7 @@ def entry_ptrs():
     """Which of each entry's arguments are pointers to a record we name."""
     if ENTRY_PTRS:
         return ENTRY_PTRS
-    text = open(os.path.join(ROOT, 'src', 'delta', 'delta.h')).read()
+    text = open(os.path.join(ROOT, 'src', 'delta', 'delta.h'), encoding="utf-8").read()
     for m in re.finditer(r'^(?:int32_t|int|void|uint8_t|int16_t|int8_t)\s*\**'
                          r'([a-z_][a-z0-9_]*)\(([^;]*)\);', text, re.M):
         params = [q.strip() for q in m.group(2).split(',')
@@ -1827,7 +1824,7 @@ def entry_spans():
     and how many bytes that is."""
     if ENTRY_SPANS:
         return ENTRY_SPANS
-    text = open(os.path.join(ROOT, 'src', 'delta', 'delta.h')).read()
+    text = open(os.path.join(ROOT, 'src', 'delta', 'delta.h'), encoding="utf-8").read()
     for m in re.finditer(r'^(?:int32_t|int|void|uint8_t|int16_t|int8_t)\s*\**'
                          r'([a-z_][a-z0-9_]*)\(([^;]*)\);', text, re.M):
         params = [q.strip() for q in m.group(2).split(',')

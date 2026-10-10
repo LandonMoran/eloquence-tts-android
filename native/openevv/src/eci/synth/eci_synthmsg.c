@@ -74,6 +74,9 @@ typedef struct MessageVtbl MessageVtbl;
 #define MSG_CHANGE_EMPHASIS 0x7de
 #define MSG_STRING_INDEX    0x7df
 #define MSG_AUDIO_INDEX     0x7e0
+/* Ours. */
+#define MSG_WIDEBAND        0x7e1
+#define MSG_PAUSES          0x7e2
 
 /* The shapes. In nearly all of them the thread the message is for sits at
    +0x20 and the application-queue slot it claimed comes last. */
@@ -221,6 +224,8 @@ extern THIS void changeEmphasisRun(SynthThread *t, int32_t seq)
     MANGLED("?changeEmphasisRun@SynthThread@@QAEXJ@Z");
 extern THIS void setPhonemeIndiciesRun(SynthThread *t, int32_t v, int32_t seq)
     MANGLED("?setPhonemeIndiciesRun@SynthThread@@AAEXJJ@Z");
+extern void setWidebandRun(SynthThread *t, int32_t v, int32_t seq);
+extern void setPausesRun(SynthThread *t, int32_t v, int32_t seq);
 extern THIS void insertIndexRun(SynthThread *t, int32_t v, int32_t seq)
     MANGLED("?insertIndexRun@SynthThread@@AAEXJJ@Z");
 extern THIS void insertStringIndexRun(SynthThread *t, char *s, int32_t seq)
@@ -238,6 +243,7 @@ extern const MessageVtbl vt_changePitch, vt_changePitchString;
 extern const MessageVtbl vt_changeFluctuation, vt_changeFluctuationString;
 extern const MessageVtbl vt_changeVoice, vt_changeEmphasis;
 extern const MessageVtbl vt_setPhonemeIndicies, vt_insertIndex;
+extern const MessageVtbl vt_setWideband, vt_setPauses;
 extern const MessageVtbl vt_insertStringIndex, vt_insertAudioIndex;
 
 /* ---- what each kind does when the thread gets to it ------------------ */
@@ -341,6 +347,18 @@ THIS void run_setPhonemeIndicies(ETImessage *m)
 {
     MsgValue *x = (MsgValue *)m;
     setPhonemeIndiciesRun(x->thread, x->value, x->seq);
+}
+
+THIS void run_setWideband(ETImessage *m)
+{
+    MsgValue *x = (MsgValue *)m;
+    setWidebandRun(x->thread, x->value, x->seq);
+}
+
+THIS void run_setPauses(ETImessage *m)
+{
+    MsgValue *x = (MsgValue *)m;
+    setPausesRun(x->thread, x->value, x->seq);
 }
 
 THIS void run_insertIndex(ETImessage *m)
@@ -907,6 +925,16 @@ THIS int32_t st_setPhonemeIndicies(SynthThread *t, int32_t v)
     return sendValue(t, MSG_PHONEME_INDEX, &vt_setPhonemeIndicies, v);
 }
 
+int32_t st_setWideband(SynthThread *t, int32_t v)
+{
+    return sendValue(t, MSG_WIDEBAND, &vt_setWideband, v);
+}
+
+int32_t st_setPauses(SynthThread *t, int32_t v)
+{
+    return sendValue(t, MSG_PAUSES, &vt_setPauses, v);
+}
+
 THIS int32_t st_changeETIEmphasis(SynthThread *t)
 {
     void *lock = ST_LOCK(t);
@@ -985,6 +1013,8 @@ TABLE(vt_changeVoice, destroy_plain, run_changeVoice);
 TABLE(vt_changeEmphasis, destroy_plain, run_changeEmphasis);
 TABLE(vt_setPhonemeIndicies, destroy_plain, run_setPhonemeIndicies);
 TABLE(vt_insertIndex, destroy_plain, run_insertIndex);
+TABLE(vt_setWideband, destroy_plain, run_setWideband);
+TABLE(vt_setPauses, destroy_plain, run_setPauses);
 
 /* The names the rest of the engine reaches all of this by. */
 ALIAS("??_7ETImsgAddText@@6B@", "vt_addText");

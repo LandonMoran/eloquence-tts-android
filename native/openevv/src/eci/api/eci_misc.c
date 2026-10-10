@@ -35,6 +35,8 @@
 
 extern int32_t STDCALL api_reset(void *h2, int32_t language)
     MANGLED("_eciReset2@8");
+extern int32_t STDCALL api_set_param(void *h2, int32_t k, int32_t p,
+                                      int32_t v) MANGLED("_eciSetParam2@16");
 extern int32_t STDCALL api_delete(void *h2) MANGLED("_eciDelete2@4");
 extern int32_t STDCALL api_synchronize(void *h2)
     MANGLED("_eciSynchronize2@4");
@@ -99,6 +101,10 @@ int32_t STDCALL eo_getParam(OldInst *h, int32_t which)
 
     if (!inst)
         return v;
+    if (which == ECI_OLD_WIDEBAND)
+        return inst->wideband;
+    if (which == ECI_OLD_PAUSES)
+        return inst->pauses;
     if (which >= 0x11)
         return v;
     if (which == 0x0b)
@@ -120,10 +126,14 @@ int32_t STDCALL eo_getParam(OldInst *h, int32_t which)
 /* The same, but of the defaults a new instance would start from. A language
    of nought means none has been chosen, and the answer is the one built
    in. */
+int32_t g_DefaultPauses = PAUSES_DEFAULT;
+
 int32_t STDCALL es_getDefaultParam(int32_t which)
 {
     int32_t v = -1;
 
+    if (which == ECI_OLD_PAUSES)
+        return g_DefaultPauses;
     if (which < 0 || which >= ENV_WORDS)
         return v;
 
@@ -141,6 +151,13 @@ int32_t STDCALL es_setDefaultParam(int32_t which, int32_t value)
     int32_t old = -1;
     int accepted;
 
+    if (which == ECI_OLD_PAUSES) {
+        if (value < PAUSES_NONE || value > PAUSES_ALWAYS)
+            return -1;
+        old = g_DefaultPauses;
+        g_DefaultPauses = value;
+        return old;
+    }
     if (which < 0 || which >= ENV_WORDS)
         return -1;
     if (value < ev_paramRange[which][0] || value > ev_paramRange[which][1])
@@ -225,9 +242,9 @@ int STDCALL es_pause(OldInst *h, int32_t on)
     return setECIerror(api_pause(OI_NEW(inst), on), inst) >= 0;
 }
 
-/* Checked destruction for the Android bridge: refusal retains ownership. */
-/** Destroy an engine and owned allocations; return zero without transferring ownership if deletion is refused. */
-int es_delete_checked(OldInst *h)
+/* End an instance and give back everything it holds. Answers nought
+   always. */
+int STDCALL es_delete(OldInst *h)
 {
     OldInst *inst;
 
@@ -240,10 +257,7 @@ int es_delete_checked(OldInst *h)
     if (!inst)
         return 0;
 
-    if (api_delete(OI_NEW(inst)) != 0) {
-        OI_BUSY(inst) = 0;
-        return 0;
-    }
+    api_delete(OI_NEW(inst));
 
     if (OI_DICT_XLAT(inst))
         OI_DICT_XLAT(inst) = 0;
@@ -262,14 +276,6 @@ int es_delete_checked(OldInst *h)
 
     eo_clearManualQueue(inst);
     free(inst);
-    return 1;
-}
-
-/* Preserve the legacy ABI, whose documented result is always zero. */
-/** Preserve the legacy deletion ABI by returning zero regardless of checked deletion status. */
-int STDCALL es_delete(OldInst *h)
-{
-    es_delete_checked(h);
     return 0;
 }
 
@@ -297,6 +303,12 @@ int STDCALL es_reset(OldInst *h)
         OI_BUSY(inst) = 0;
         return 0;
     }
+
+    /* A reset puts every setting back, the wideband voice with them. The
+       engine keeps its own across a reset, so it is told at the next
+       utterance, as it is of any other change. */
+    inst->wideband = 0;
+    inst->pauses = g_DefaultPauses;
 
     eo_clearManualQueue(inst);
     if (!eo_getDefaultEnvironment(inst, 0)

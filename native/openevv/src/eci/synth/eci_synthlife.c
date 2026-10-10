@@ -70,8 +70,12 @@ typedef ENGCALL void (*EngSetAnno)(void *engine, AnnoCallback cb, void *p);
 typedef ENGCALL void (*EngSetVoice)(void *engine, VoiceCallback cb, void *p);
 
 /* The line every engine is put through when it is first settled on a
-   language, and the one an engine with newer corpora gets as well. */
-static const char CMD_DEFAULTS[] = "`v1 `ts0 `da1 `ty1 `pp1";
+   language, and the one an engine with newer corpora gets as well. The
+   abbreviation dictionary and phrase prediction are off in it as they are in
+   g_DefaultEnvironment, where IBM had both on: the older interface sends its
+   own settings after this and overrides it, and this is what the newer
+   interface starts from. */
+static const char CMD_DEFAULTS[] = "`v1 `ts0 `da0 `ty1 `pp0";
 static const char CMD_NORMALISE[] = "`nor";
 static const char CMD_CONCATENATIVE[] = "`esp2";
 
@@ -328,6 +332,9 @@ static void stl_build(SynthThread *t, void *app, void *state)
     ST_FILTER(t) = 0;
     ST_FRESH(t) = 0;
     ST_TOLD_CAT(t) = 0;
+    ST_WIDEBAND(t) = 0;
+    ST_PAUSES(t) = PAUSES_DEFAULT;
+    ST_TAIL(t) = 0;
 
     p = cpp_new(rm_bytes);
     ST_ROMAN(t) = p ? rz_ctor(p, t) : 0;
@@ -593,6 +600,7 @@ THIS int32_t stl_stop(SynthThread *t)
     ST_PENDING(t) = 0;
     ST_STOPPED(t) = 0;
     ST_POSTED(t) = 0;
+    ST_TAIL(t) = 0;
     sy_eventUnsignal(ST_SYNCED(t));
 
     if (ST_SOUND(t))

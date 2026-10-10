@@ -33,6 +33,11 @@
 /* Eighty bytes, and eight of them is all the alignment it asks for. */
 #define EVV_LAND_WORDS 10
 
+#elif defined(__thumb2__)
+
+/* r4-r11, the stack pointer and the return address, then d8-d15. */
+#define EVV_LAND_WORDS 13
+
 #else
 
 /* Elsewhere the place holds the C library's own buffer, so it is as big as
@@ -40,6 +45,14 @@
    which is the other half of why it cannot go in the machine's. */
 #include <setjmp.h>
 #define EVV_LAND_WORDS ((sizeof(jmp_buf) + 7) / 8)
+
+/* And the save is setjmp itself, made in the rule that plants the landing. A
+   function calling setjmp on the rule's behalf saves its own frame, which has
+   gone by the time anything lands, so longjmp would carry on in a stack that
+   has been used again since. The pairs above save their caller's registers,
+   which is why they can be functions and this cannot. The jump can stay one:
+   longjmp may be called from anywhere. */
+#define EVV_LAND_SAVE(p)     setjmp(*(jmp_buf *)evv_land_place((uintptr_t)(p)))
 
 #endif
 
@@ -53,11 +66,15 @@ int   evv_land_mark(void);
 void  evv_land_release(int mark);
 void  evv_land_outermost(uintptr_t name);
 void  evv_land_no_outermost(void);
+/* Every place this thread made, given back once the thread is done. */
+void  evv_land_done(void);
 
+#ifndef EVV_LAND_SAVE
 int  evv_land_save(void *place) __attribute__((returns_twice));
+#define EVV_LAND_SAVE(p)     evv_land_save(evv_land_place((uintptr_t)(p)))
+#endif
 void evv_land_jump(void *place, int value) __attribute__((noreturn));
 
-#define EVV_LAND_SAVE(p)     evv_land_save(evv_land_place((uintptr_t)(p)))
 #define EVV_LAND_JUMP(p, v)  evv_land_jump(evv_land_planted((uintptr_t)(p)), (v))
 
 #endif
