@@ -3741,17 +3741,25 @@ int setscan_nof_r(delta_state *d, uint8_t f) { return setscan(d, f, 1, 0); }
 
 /* The Chinese rules load a token and scan in the same step, and compare the
    setscan result in r0 afterwards, so these fuse the load and propagate the
-   scan status. */
-int lpta_loadp_setscan_l(delta_state *d, const delta_token *p, uint8_t f)
+   scan status. They are dispatched at arity 2 as (delta_state*, token) -- the
+   bytecode pushes `slotaddr ...` then `state 0`, and call_entry() hands the
+   last-pushed operand to the first parameter, exactly like the sibling
+   setscan_l(d,f) arms that push `imm 1` then `state 0`. The scan runs on
+   field 1, the canonical chs context field (the same field every split rule
+   passes as `imm 1`; the original engine's fused routine called it with 1
+   too). The int return matters: call_entry() casts every CSR to an
+   int-returning cdecl and stores the masked return in r0, so a void helper
+   would leave the post-call `cmp testl r0,r0` / branch reading garbage. */
+int lpta_loadp_setscan_l(delta_state *d, const delta_token *p)
 {
     lpta_loadp(d, p);
-    return setscan_l(d, f);
+    return setscan_l(d, 1);
 }
 
-int lpta_loadp_setscan_r(delta_state *d, const delta_token *p, uint8_t f)
+int lpta_loadp_setscan_r(delta_state *d, const delta_token *p)
 {
     lpta_loadp(d, p);
-    return setscan_r(d, f);
+    return setscan_r(d, 1);
 }
 
 /* Where a context starts. With no context wanted it is just the neighbour in
