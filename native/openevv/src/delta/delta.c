@@ -3739,6 +3739,19 @@ int setscan_r(delta_state *d, uint8_t f)     { return setscan(d, f, 1, 1); }
 int setscan_nof_l(delta_state *d, uint8_t f) { return setscan(d, f, 0, 0); }
 int setscan_nof_r(delta_state *d, uint8_t f) { return setscan(d, f, 1, 0); }
 
+/* The Chinese rules load a token and scan in the same step. */
+void lpta_loadp_setscan_l(delta_state *d, const delta_token *p, uint8_t f)
+{
+    lpta_loadp(d, p);
+    setscan_l(d, f);
+}
+
+void lpta_loadp_setscan_r(delta_state *d, const delta_token *p, uint8_t f)
+{
+    lpta_loadp(d, p);
+    setscan_r(d, f);
+}
+
 /* Where a context starts. With no context wanted it is just the neighbour in
    the field; with one, either the cheap spine walk or the full lookup,
    depending on whether the node is sequential and the field is fenced. */

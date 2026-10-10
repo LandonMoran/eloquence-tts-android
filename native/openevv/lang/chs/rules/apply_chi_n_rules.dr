@@ -108,8 +108,8 @@ label L4 was_at_b_arm
   call insert_2pt_s arity 4 depth 36
   cmp testl reg r0 reg r0
   branch je to L2
-  push state 0
-  call followed_by_er arity 1 depth 36
+  push imm 0
+  popreg r0
   cmp testl reg r0 reg r0
   branch jne to L4
 label L2 was_at_done
