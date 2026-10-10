@@ -246,7 +246,7 @@ class EloquenceEngine(context: Context) {
             // corrupts "1,000,000"/"$1,000,000" into "...hundred" when the trailing
             // comma-group(s( are all zeros (heading off the number-reading modes(.
             if (dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB) {
-                t = spellGroupedMagnitude(t)
+                t = spellGroupedMagnitude(t, userDict)
             }
 
             // User dictionary: wire the existing applyDict() helper ( committed but
@@ -390,7 +390,7 @@ class EloquenceEngine(context: Context) {
         private val magTens = arrayOf("", "", "twenty", "thirty", "forty", "fifty",
             "sixty", "seventy", "eighty", "ninety")
         private val magScale = arrayOf("", "thousand", "million", "billion", "trillion")
-        private val groupedRun = Regex("[0-9]{1,3}(,[0-9]{3})+")
+        private val groupedRun = Regex("(?<![0-9])[0-9]{1,3}(,[0-9]{3})+(?![0-9])")
 
         private fun magHundreds(g: Int): String {
             val out = StringBuilder()
@@ -411,9 +411,14 @@ class EloquenceEngine(context: Context) {
             return out.toString()
         }
 
-        private fun spellGroupedMagnitude(text: String): String {
+        private fun spellGroupedMagnitude(text: String, userDict: List<Pair<Regex, String>> = emptyList()): String {
             return groupedRun.replace(text) { m ->
                 val run = m.value
+                // Leave runs that a user-dictionary rule fully matches unchanged, so
+                // applyDict( applied later in preprocess( can apply the user's override.
+                for ((ruleRe, _) in userDict) {
+                    if (ruleRe.matches(run)) return@replace run
+                }
                 val grps = run.split(",")
                 val n = grps.size
                 if (n < 3) return@replace run
