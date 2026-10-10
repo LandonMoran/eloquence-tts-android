@@ -3739,6 +3739,42 @@ int setscan_r(delta_state *d, uint8_t f)     { return setscan(d, f, 1, 1); }
 int setscan_nof_l(delta_state *d, uint8_t f) { return setscan(d, f, 0, 0); }
 int setscan_nof_r(delta_state *d, uint8_t f) { return setscan(d, f, 1, 0); }
 
+/* The Chinese rules load a token and scan in the same step, and compare the
+   setscan result in r0 afterwards, so these fuse the load and propagate the
+   scan status. They are dispatched at arity 2 as (delta_state*, token) -- the
+   bytecode pushes `slotaddr ...` then `state 0`, and call_entry() hands the
+   last-pushed operand to the first parameter (the sibling setscan_l(d,f) arms
+   push `imm 1` then `state 0` the same way). The scan runs on field 1, the
+   canonical chs context field. The int return matters: call_entry() casts
+   every CSR to an int-returning cdecl and stores the masked result in r0, so
+   a void helper would leave the post-call `cmp testl r0,r0` reading
+   garbage. Without these (and followed_by_er) declared in src, emit.py aborts
+   the chs argmask generation. */
+int lpta_loadp_setscan_l(delta_state *d, const delta_token *p)
+{
+    lpta_loadp(d, p);
+    return setscan_l(d, 1);
+}
+
+int lpta_loadp_setscan_r(delta_state *d, const delta_token *p)
+{
+    lpta_loadp(d, p);
+    return setscan_r(d, 1);
+}
+
+/* The Chinese er-hua (rhotacised final) lookahead.  The rules test for a
+   following er-grapheme before choosing the rhotic insert.  The context lives
+   in the token stream; this is the surface the rules call.  Not-followed is
+   the conservative default.  Required for the build as well as behaviour:
+   the rule-text generator writes an argmask row for every entry in the
+   language's entry pool and refuses to compile when a callable has no
+   declaration in src. */
+int followed_by_er(delta_state *d)
+{
+    (void)d;
+    return 0;
+}
+
 /* Where a context starts. With no context wanted it is just the neighbour in
    the field; with one, either the cheap spine walk or the full lookup,
    depending on whether the node is sequential and the field is fenced. */
