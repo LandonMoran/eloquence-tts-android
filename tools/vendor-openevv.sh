@@ -47,7 +47,6 @@ SHORT=$(git -C "$SRC" rev-parse --short main)
   echo "openevv_source=fork main (LandonMoran/openevv; carries our engine mods)"
   echo "openevv_behind_upstream=0"
   if [ "$UPSTREAM" != unknown ]; then echo "openevv_upstream=$UPSTREAM"; fi
-  date -u +'synced_at=%Y-%m-%dT%H:%M:%SZ'
 } > "$DST/.openevv-pin"
 
 echo "main@$SHORT"
