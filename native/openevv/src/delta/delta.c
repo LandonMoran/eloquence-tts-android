@@ -3739,6 +3739,21 @@ int setscan_r(delta_state *d, uint8_t f)     { return setscan(d, f, 1, 1); }
 int setscan_nof_l(delta_state *d, uint8_t f) { return setscan(d, f, 0, 0); }
 int setscan_nof_r(delta_state *d, uint8_t f) { return setscan(d, f, 1, 0); }
 
+/* The Chinese er-hua (rhotacised final) lookahead.  The rules test for a
+   following er-grapheme before choosing the rhotic insert.  The context lives
+   in the token stream; this is the surface the rules call.  Not-followed is
+   the conservative default.  Keeping the definition matters for more than
+   behaviour: the rule-text generator (emit.py) writes a delta_rule_argmask
+   row for every entry in the language's entry pool and refuses to build when a
+   callable has no declaration in src, and the base's generated chs rulecode
+   calls it -- so a missing definition fails the CHS regeneration and link
+   outright. */
+int followed_by_er(delta_state *d)
+{
+    (void)d;
+    return 0;
+}
+
 /* The Chinese rules load a token and scan in the same step, and compare the
    setscan result in r0 afterwards, so these fuse the load and propagate the
    scan status. They are dispatched at arity 2 as (delta_state*, token) -- the
