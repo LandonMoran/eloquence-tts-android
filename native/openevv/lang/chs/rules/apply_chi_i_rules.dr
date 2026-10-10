@@ -83,8 +83,8 @@ label Lf18 was follow_18_at_0x583a0
   push imm 20
   push state 0
   call starttest arity 2 depth 8
-  push state 0
-  call followed_by_er arity 1 depth 36
+  push imm	0
+ 	popreg	r0
   cmp testl reg r0 reg r0
   branch jne to Lx5879c
   load movl slotaddr 216 into r0
@@ -418,8 +418,8 @@ label Lf29 was follow_29_at_0x586fc
   push imm 38
   push state 0
   call starttest arity 2 depth 8
-  push state 0
-  call followed_by_er arity 1 depth 36
+  push imm	0
+ 	popreg	r0
   cmp testl reg r0 reg r0
   branch je to Lx58a68
   jump to Lf38
@@ -437,8 +437,8 @@ label Lf24 was follow_24_at_0x58768
   push imm 27
   push state 0
   call starttest arity 2 depth 8
-  push state 0
-  call followed_by_er arity 1 depth 36
+  push imm	0
+ 	popreg	r0
   cmp testl reg r0 reg r0
   branch jne to Lx587bc
   load movl slotaddr 216 into r0
@@ -586,8 +586,8 @@ label Lx588cc was mid_37_at_0x588cc
   push imm 48
   push state 0
   call starttest arity 2 depth 8
-  push state 0
-  call followed_by_er arity 1 depth 36
+  push imm	0
+ 	popreg	r0
   cmp testl reg r0 reg r0
   branch jne to Lx589f4
   load movl slotaddr 216 into r0
@@ -640,8 +640,8 @@ label Lx58958 was mid_44_at_0x58958
   push imm 45
   push state 0
   call starttest arity 2 depth 8
-  push state 0
-  call followed_by_er arity 1 depth 36
+  push imm	0
+ 	popreg	r0
   cmp testl reg r0 reg r0
   branch jne to Lx589d8
   load movl slotaddr 216 into r0
