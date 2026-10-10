@@ -245,8 +245,6 @@ class EloquenceEngine(context: Context) {
             // Comma-grouped magnitude expansion ( #313 followup:. The native reader
             // corrupts "1,000,000"/"$1,000,000" into "...hundred" when the trailing
             // comma-group(s( are all zeros (heading off the number-reading modes(.
-            // Applying regardless of numberMode because the misread also occurs with
-            // reading OFF; non-corrupting shapes (1,150, 205,558,107( pass through.
             if (dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB) {
                 t = spellGroupedMagnitude(t)
             }
