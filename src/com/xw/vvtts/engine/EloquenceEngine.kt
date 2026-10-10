@@ -390,7 +390,7 @@ class EloquenceEngine(context: Context) {
         private val magTens = arrayOf("", "", "twenty", "thirty", "forty", "fifty",
             "sixty", "seventy", "eighty", "ninety")
         private val magScale = arrayOf("", "thousand", "million", "billion", "trillion")
-        private val groupedRun = Regex("(?<![0-9])[0-9]{1,3}(,[0-9]{3})+(?![0-9])")
+        private val groupedRun = Regex("(?<![0-9,])[0-9]{1,3}(,[0-9]{3})+(?![0-9])")
 
         private fun magHundreds(g: Int): String {
             val out = StringBuilder()
