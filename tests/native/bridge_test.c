@@ -217,9 +217,9 @@ int main(void) {
     s->synthBusy=1; assert(SYNTH(h)==NULL); s->synthBusy=0;
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,8,0)>=0);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,7,2)==-1);
-    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,2)>=0 && s->outputHz==22050);
-    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)>=0 && s->outputHz==11025);
-    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,5)>=0 && s->outputHz==44100);
+    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,2)>=0 && s->outputHz==22050 && s->maxPcm==22050u*60);
+    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)>=0 && s->outputHz==11025 && s->maxPcm==11025u*60);
+    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,5)>=0 && s->outputHz==44100 && s->maxPcm==44100u*60);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,11,0)==-1);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,18,0)==-1);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(&env,NULL,h,0,2,101)==-1);
