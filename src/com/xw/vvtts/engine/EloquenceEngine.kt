@@ -639,7 +639,7 @@ class EloquenceEngine(context: Context) {
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
                 val configured = copied >= 0 && params.indices.all { p ->
                     VvttsCore.setVoiceParam(handle, 0, p, params[p]) >= 0
-                } && VvttsCore.setParam(handle, VvttsCore.ECI_SAMPLE_RATE, 1) >= 0
+                } && VvttsCore.setParam(handle, VvttsCore.ECI_SAMPLE_RATE, 5) >= 0
                 if (!configured) {
                     retireHandle(worker, dialect, handle)
                     return@synthWithTimeout null

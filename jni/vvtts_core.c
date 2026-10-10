@@ -23,6 +23,7 @@
 #include <stdatomic.h>
 #include "eci_compat.h"
 #include "pcm_limits.h"
+#include "vv_resample.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -42,122 +43,13 @@ extern int et_synthesize(void *h);
 #define APP_SAMPLES 4096
 
 /* ------------------------------------------------------------------ */
-/* 4x polyphase windowed-sinc resampler (11,025 Hz ->  44,100 Hz(.
- *  Zero-dependency (libm only(, Kaiser-windowed sinc anti-aliasing
- *  low-pass with a ~5.5 kHz cutoff, 64 taps per phase.  The engine
- *  itself stays at its native 11,025 Hz (eciSampleRate =  1(; this
- *  block is the single place the 44.1k upsampling happens, right before
- *  the PCM is handed to the Java layer.  (Resampling approach reviewed
- *  against the NVDA-IBMTTS-Driver: that driver leaves the rate to the synth;
- *  quality upsample belongs in the audio path, so we do it here.(
- */
-#define VV_RSP_TAPS 64        /* taps per polyphase branch */
-#define VV_RSP_PHASES 4      /* upsampling factor */
-#define VV_RSP_HALF (VV_RSP_TAPS / 2)
-#define VV_RSP_CUTOFF 0.498f  /* ~5500 Hz / 11025 Hz (cycles per input sample; sinc t is in input-sample units) */
-#define VV_RSP_BETA 8.0f    /* Kaiser window shape (~50 dB stopband( */
-
-/* Hard ceiling on accumulated engine-rate PCM (in samples): keeps every
- * later size_t multiply within size_t/jsize bounds and caps the resampler's
- * input so its 4x output always fits a jsize short array (INT32_MAX(. */
-/* Shared with the oracle allocator; bounded before allocation. */
-
-/* Modified Bessel I0 (series, 15 terms plenty for x <=  16(. */
-static float vv_rsp_bessel_i0(float x) {
-    float sum =  1.0f, term =  1.0f;
-    for (int k =  1; k <=  15; k++) {
-        term *= (x / (2.0f * k)) * (x / (2.0f * k));
-        sum += term;
-        if (term <  1e-12f) break;
-    }
-    return sum;
-}
-
-/* Static polyphase coefficient table, built exactly once.  A plain
- * guarded init is NOT thread-safe (the warm-up path and first utterance
- * can race and both threads build the table); pthread_once serialises it. */
-static float vv_rsp_coeff[VV_RSP_PHASES][VV_RSP_TAPS];
-static pthread_once_t vv_rsp_once = PTHREAD_ONCE_INIT;
-
-static void vv_rsp_build(void) {
-    const float L2 = (float)VV_RSP_HALF;
-    const float fc = VV_RSP_CUTOFF;
-    for (int p =  0; p < VV_RSP_PHASES; p++) {
-        float sum =  0.0f;
-        for (int k =  0; k < VV_RSP_TAPS; k++) {
-                    /* fractional position of this tap within the prototype:  taps
-                     * sit at t = (k - L2) - (p/4), so phase p advances the output
-                     * grid by p/4 sample.  Window spans
-                     * t/L2 in [-1,1]. */
-                    float t = ((float)k - L2) - ((float)p / (float)VV_RSP_PHASES);
-                    float s = t / L2;
-                                        if (s >  1.0f) s =  1.0f; else if (s < -1.0f) s = -1.0f;
-                                        float w = vv_rsp_bessel_i0(VV_RSP_BETA * (float)sqrt(1.0f - s * s)) / vv_rsp_bessel_i0(VV_RSP_BETA);
-                    float sinc = (t ==  0.0f) ? (float)(2.0 * 3.14159265358979323846 * fc) :
-                                          (float)(sin(2.0 * 3.14159265358979323846 * fc * t) / t);
-                    vv_rsp_coeff[p][k] = sinc * w;
-                    sum += vv_rsp_coeff[p][k];
-                }
-        /* Normalize: preserve unity DC gain per phase (polyphase upsample
-         * must not change overall loudness(. */
-        for (int k =  0; k < VV_RSP_TAPS; k++)
-            vv_rsp_coeff[p][k] /= sum;
-    }
-}
-
-/* Resample a signed 16-bit mono buffer 4x.  Returns  0 on success
- * with *out allocated (caller frees( and *outn =  4*in_n;  -1 on alloc failure. */
-static int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn) {
-    if (in_n ==  0) { *outn =  0; return  0; }
-    /* Overflow-proof sizing before ANY allocation:the 4x output must fit
-     * a jsize array (INT32_MAX( and the zero-pad input buffer must survive
-     * in_n +  2*HALF without wrapping size_t.  Check the inputs first,
-     * not the results of the multiply.  (#41,#133( */
-    if (in_n > VV_MAX_PCM_SAMPLES) return -1;
-    if (in_n > (SIZE_MAX -  2 * (size_t)VV_RSP_HALF)) return -1;
-
-    pthread_once(&vv_rsp_once, vv_rsp_build);
-
-    size_t out_n = in_n * VV_RSP_PHASES;
-    short *o = (short *)malloc(out_n * sizeof(short));
-    if (!o) return -1;
-    for (size_t i = 0; i < in_n; i++) {
-        /* All phases at this source position use the same zero-padded input
-         * interval. Calculate its bounds once rather than checking each tap
-         * in all four output-phase loops. */
-        const size_t first_tap = i < VV_RSP_HALF ? VV_RSP_HALF - i : 0;
-        const size_t available = in_n + VV_RSP_HALF - i;
-        const size_t tap_end = available < VV_RSP_TAPS ? available : VV_RSP_TAPS;
-        for (int p = 0; p < VV_RSP_PHASES; p++) {
-            float acc = 0.0f;
-            for (size_t k = first_tap; k < tap_end; k++) {
-                const size_t sample = i + k - VV_RSP_HALF;
-                acc += vv_rsp_coeff[p][k] * (float)in[sample];
-            }
-            /* Round-to-nearest with 16-bit clipping. */
-            float v = acc;
-            if (v > 32767.0f) v = 32767.0f;
-            else if (v < -32768.0f) v = -32768.0f;
-            o[i * VV_RSP_PHASES + (size_t)p] =
-                (short)(v >= 0.0f ? v + 0.5f : v - 0.5f);
-        }
-    }
-    *out = o;
-    *outn = out_n;
-    return  0;
-}
-/** Taper both PCM endpoints to zero over at most 88 samples per edge. */
-static void vv_fade_edges(short *pcm, size_t n) {
-    size_t fade = n / 2 < 88 ? n / 2 : 88;
-    for (size_t i = 0; i < fade; i++) {
-        pcm[i] = (short)((int)pcm[i] * (int)i / (int)fade);
-        pcm[n - 1 - i] = (short)((int)pcm[n - 1 - i] * (int)i / (int)fade);
-    }
-}
 
 /* ------------------------------------------------------------------ */
 
 typedef struct VvtsSession {
+    int32_t outputHz; /* current output sample rate; engine-native 44,100 default */
+    size_t maxPcm;    /* 60 s of PCM at outputHz: callback accumulation cap */
+
     ECIHand hECI;
     int32_t dialect;            /* dialect the handle was initialized for (#113) */
     short   chunk[APP_SAMPLES]; /* callback scratch */
@@ -219,14 +111,14 @@ static int vv_cb(ECIHand h, ECIMessage message, int param, void *data) {
         if (n > APP_SAMPLES) return vv_fail(s);  /* contract violation:the engine sent more samples than the configured output buffer holds -- never silently truncate (#46( */
         if (n > SIZE_MAX - s->pcmLen) return vv_fail(s);  /* size_t add would wrap (#39( */
         size_t need = s->pcmLen + n;
-        if (need > VV_MAX_PCM_SAMPLES) return vv_fail(s);  /* hard cap:resampled output must stay within jsize bounds (#39( */
+        if (need > s->maxPcm) return vv_fail(s);  /* 60 s cap at the current output rate keeps jsize bounds (#39( */
         if (need > s->pcmCap) {
             size_t cap = s->pcmCap ? s->pcmCap : 16384;
             while (cap < need) {
                 if (cap > SIZE_MAX /  2) return vv_fail(s);
                 cap *=  2;
             }
-            if (cap > VV_MAX_PCM_SAMPLES) cap = VV_MAX_PCM_SAMPLES;  /* cap >= need already, so squeezing keeps it valid */
+            if (cap > s->maxPcm) cap = s->maxPcm;  /* cap >= need already, so squeezing keeps it valid */
             if (cap > SIZE_MAX / sizeof(short)) return vv_fail(s);
             short *p = (short *)realloc(s->pcm, cap * sizeof(short));
             if (!p) {
@@ -309,34 +201,6 @@ static int vv_settle(VvtsSession *s) {
  * for short TalkBack labels those fixed pauses dominate the perceived swipe
  * latency, so trim them before resampling.  A >-33 dBFS sample stops the
  * scan, so real speech is never eaten; near-empty blips are left alone. */
-/** Trim bounded edge silence in place and update the sample count, retaining and tapering padding. */
-static void vv_trim_silence(short *pcm, size_t *pn) {
-    size_t n = *pn;
-    if (n < 32) return;
-    const int TH = 700;
-    size_t cap = (n < 2 * 11025) ? n : (2 * 11025);
-    size_t lead = 0;
-    while (lead < n && lead < cap && pcm[lead] > -TH && pcm[lead] < TH) lead++;
-    if (n - lead < 16) return;
-    size_t tail = 0;
-    while (tail < n - 1 && tail < cap && pcm[n - 1 - tail] > -TH && pcm[n - 1 - tail] < TH) tail++;
-    // Keep 2 ms of natural padding, then taper 2 ms to zero at both ends.
-    // This avoids threshold discontinuities without restoring fixed engine pauses.
-    const size_t pad = 22;
-    lead = lead > pad ? lead - pad : 0;
-    tail = tail > pad ? tail - pad : 0;
-    if (lead > n || tail > n - lead) return;
-    size_t keep = n - lead - tail;
-    if (keep < 16) return;
-    memmove(pcm, pcm + lead, keep * sizeof(short));
-    size_t fade = keep / 2 < pad ? keep / 2 : pad;
-    for (size_t k = 0; k < fade; k++) {
-        pcm[k] = (short)((int)pcm[k] * (int)k / (int)fade);
-        pcm[keep - 1 - k] = (short)((int)pcm[keep - 1 - k] * (int)k / (int)fade);
-    }
-    *pn = keep;
-}
-
 /* #313: An engine 'success' that delivers NO sample above the speech floor is
  * silent output: the engine failed to voice the text, but handing it on as
  * valid PCM would have the utterance progress with no audible speech.  The
@@ -504,10 +368,16 @@ Java_com_xw_vvtts_core_VvttsCore_nativeInitEngine(
     }
     if (!vv_register_callback(s->hECI, vv_cb, s) ||
         !eciSetOutputBuffer(s->hECI, APP_SAMPLES, s->chunk) ||
-        eciSetParam(s->hECI, eciSampleRate, 1) < 0) {
+        eciSetParam(s->hECI, eciSampleRate, VV_ENGINE_RATE) < 0) {
         vv_dispose(s);
         return 0;
     }
+    /* Engine-native resampling: eciSampleRate code 5 == 44,100 Hz output, the
+     * Android playback rate kotlin advertises.  The engine builds its sinc
+     * converter under this (see vv_resample.h); trim/fade/cap all key off
+     * outputHz, so a later rate change via nativeSetParam stays consistent. */
+    s->outputHz = VV_OUTPUT_HZ;
+    s->maxPcm = (size_t)VV_OUTPUT_HZ * 60;
     pthread_mutex_lock(&vv_registry_lock);
     if (vv_next_id == INT64_MAX) {
         pthread_mutex_unlock(&vv_registry_lock);
@@ -620,7 +490,7 @@ static jshortArray vv_synthesize(
          * too fast (chipmunk/high-pitched( and comes out as garbled noise. */
         short *rs = NULL;
         size_t outLen = 0;
-        vv_trim_silence(pcm, &samples);
+        vv_trim_silence(pcm, &samples, 11025); /* oracle clips are engine-native rate */
         operation = "vv_resample_4x (oracle)";
     if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0 || !rs || outLen == 0) {
     /* #137: never fall back to the engine's native 11,025 Hz -- Kotlin
@@ -629,7 +499,7 @@ static jshortArray vv_synthesize(
     return NULL;
     }
     free(pcm);
-    vv_fade_edges(rs, outLen);
+    vv_fade_edges(rs, outLen, 44100);
     pcm = rs;
     samples = outLen;
         free(s->pcm);
@@ -696,9 +566,10 @@ static jshortArray vv_synthesize(
         return vv_empty_result(env);
     }
     if (s->pcmLen == 0) return NULL;
-    short *rs = NULL;
-    size_t outLen = 0;
-    vv_trim_silence(s->pcm, &s->pcmLen);
+    /* Engine synthesized natively at s->outputHz (44,100 default): trim and
+     * edge-fade only -- no 4x sinc; the engine's own resampler already
+     * produced the Android playback rate (see vv_resample.h). */
+    vv_trim_silence(s->pcm, &s->pcmLen, s->outputHz);
     /* #313: an engine result that is fully silent is silent speech:the engine failed
      * to voice the text but returned a nonempty buffer.  Handing it to the framework
      * would advance utterance progress with no audible output.  Collapse to failure. */
@@ -707,23 +578,13 @@ static jshortArray vv_synthesize(
         __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: engine returned silent PCM; treating as failure (#313)");
         return NULL;
     }
-    operation = "vv_resample_4x";
-    if (vv_resample_4x(s->pcm, s->pcmLen, &rs, &outLen) != 0 || !rs || outLen == 0) {
-        /* #137: resampler failure is synthesis failure -- never silently return
-         * the engine native 11,025 Hz PCM while Kotlin always advertises 44,100. */
-        __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "44.1k resampler failed: refusing to return 11.025k PCM (#137)");
-        return NULL;
-    }
-    vv_fade_edges(rs, outLen);
+    vv_fade_edges(s->pcm, s->pcmLen, s->outputHz);
+    size_t outLen = s->pcmLen;
     operation = "NewShortArray";
     jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);
-    if (!out || (*env)->ExceptionCheck(env)) {
-        free(rs);
-        goto failed;
-    }
+    if (!out || (*env)->ExceptionCheck(env)) goto failed;
     operation = "SetShortArrayRegion";
-    (*env)->SetShortArrayRegion(env, out, 0, (jsize)outLen, rs);
-    free(rs);
+    (*env)->SetShortArrayRegion(env, out, 0, (jsize)outLen, s->pcm);
     if ((*env)->ExceptionCheck(env)) goto failed;
     return vv_cancelled(s) ? NULL : out;
 
@@ -790,11 +651,24 @@ Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(
     extern const int32_t ev_paramRange[18][2];
     if (param == 11 || param == 17 || value < ev_paramRange[param][0] ||
         value > ev_paramRange[param][1]) return -1;
-    // The bridge owns encoding, rate conversion and voice parameter units.
-    if ((param == eciSampleRate && value != 1) ||
-        (param == eciLanguageDialect && value != s->dialect) ||
-        (param == eciRealWorldUnits && value != 0)) return -1;
-    return eciSetParam(s->hECI, param, value);
+    // The bridge owns encoding and voice-parameter units.
+    // Native-rate locking was the old engine-native guard: it kept the voice
+    // at 11,025 and forced our 4x sinc.  With engine-native resampling the
+    // whole valid range is allowed and s->outputHz tracks the live rate so
+    // trim/fade/cap stay mathematically attached to what the engine emits.
+    if (param == eciLanguageDialect && value != s->dialect) return -1;
+    if (param == eciRealWorldUnits && value != 0) return -1;
+    int32_t r = eciSetParam(s->hECI, param, value);
+    if (r < 0) return r;
+    if (param == eciSampleRate) {
+        static const int32_t CODE_HZ[7] = {8000, 11025, 22050, 16000, 32000, 44100, 48000};
+        int32_t hz = (value >= 0 && value <= 6) ? CODE_HZ[value] : value;
+        if (hz >= 8000 && hz <= 48000) {
+            s->outputHz = hz;
+            s->maxPcm = (size_t)hz * 60;
+        }
+    }
+    return 0;
 }
 
 /* The app's presets are numbered like the old Apple CSV (which skips 5);
