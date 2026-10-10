@@ -10,9 +10,23 @@
  * The allocator is a plain first-fit with boundary tags. It is not clever and
  * does not need to be: the Delta heap takes segments in big pieces and gives
  * them back whole, and what else asks is small and long-lived.
+ *
+ * Except that a dictionary is neither. Reading one in is three small blocks an
+ * entry, all of them kept, and a walk over every block of the arena for each
+ * made it quadratic in the entries: 69,000 of them took over a minute in a
+ * 64-bit build and 86 milliseconds in a 32-bit one, which never comes here.
+ * Starting the walk at the first free block took that to a fifth of a
+ * second, but a dictionary updated a word at a time leaves small holes behind,
+ * and every walk then still passed over every block in use after the first
+ * hole. So the free blocks are a list of their own, in address order, and only
+ * they are walked. A block given back is joined at once to a free block on
+ * either side of it. Which block a request is given is still the first free one
+ * that is big enough, exactly as when the whole arena was walked, so nothing is
+ * placed anywhere it was not.
  */
 
 #include "evv_arena.h"
+#include "evv_land.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +105,23 @@ typedef struct {
 
 static head *first;
 
+/* The free blocks, lowest first, each naming the next by its distance from the
+   base in the field that says who asked for a block in use. Nothing is written
+   into what a block holds once it is given back, so code that reads a block
+   after giving it back reads what it always read. Nought ends the list: the
+   first block is a word from the base, so no block is ever at nought. */
+static head *free_list;
+
+static head *free_next(const head *b)
+{
+    return b->whence != 0 ? (head *)(evv_arena_base + b->whence) : 0;
+}
+
+static uint32_t free_ref(const head *b)
+{
+    return b != 0 ? (uint32_t)((const unsigned char *)b - evv_arena_base) : 0;
+}
+
 static void bad_block(const head *b, const char *what)
 {
     const head *w = first;
@@ -105,9 +136,13 @@ static void bad_block(const head *b, const char *what)
         const head *n = (const head *)((const unsigned char *)w + w->size);
 
         if (n == b) {
-            fprintf(stderr, "evv: the block in front is at %p, %u bytes,"
-                    " %s, asked for from %08x\n", (const void *)w, w->size,
-                    w->used ? "in use" : "free", w->whence);
+            if (w->used)
+                fprintf(stderr, "evv: the block in front is at %p, %u bytes,"
+                        " in use, asked for from %08x\n", (const void *)w,
+                        w->size, w->whence);
+            else
+                fprintf(stderr, "evv: the block in front is at %p, %u bytes,"
+                        " free\n", (const void *)w, w->size);
             break;
         }
         if (n >= b)
@@ -211,6 +246,8 @@ int evv_arena_open(size_t bytes)
     first->mark = HEAD_MARK;
     first->size = (uint32_t)(evv_arena_size - ALIGN);
     first->used = 0;
+    first->whence = 0;
+    free_list = first;
     return 1;
 }
 
@@ -225,6 +262,7 @@ void evv_arena_close(void)
     evv_arena_base = 0;
     evv_arena_size = 0;
     first = 0;
+    free_list = 0;
 }
 
 /* Whether something came out of here at all. */
@@ -267,7 +305,7 @@ int evv_arena_whence_of2(const void *p, uint32_t *whence, uint32_t *bytes)
 
         if (c >= body && c < body + (b->size - sizeof(head))) {
             if (whence != 0)
-                *whence = b->whence;
+                *whence = b->used ? b->whence : 0;
             if (bytes != 0)
                 *bytes = (uint32_t)(b->size - sizeof(head));
             return b->used != 0;
@@ -450,7 +488,7 @@ static void guard_check(const char *doing)
 static void *arena_alloc(size_t n, uint32_t whence)
 {
     size_t want = ROUND(n) + ALIGN + GUARD_SLACK;
-    head *b;
+    head *b, *prev;
 
     if (n == 0)
         return 0;
@@ -461,19 +499,30 @@ static void *arena_alloc(size_t n, uint32_t whence)
     if (evv_arena_base == 0 && !evv_arena_open(ARENA_DEFAULT))
         return 0;
 
-    for (b = first; b != 0; b = next_block(b)) {
-        head *rest;
+    for (prev = 0, b = free_list; b != 0; prev = b, b = free_next(b)) {
+        head *next;
 
-        if (b->used || b->size < want)
+        check(b);
+        if (b->size < want)
             continue;
 
+        /* What is left of it stays on the list where it was. */
+        next = free_next(b);
         if (b->size >= want + ALIGN * 2) {
-            rest = (head *)((unsigned char *)b + want);
+            head *rest = (head *)((unsigned char *)b + want);
+
             rest->mark = HEAD_MARK;
             rest->size = (uint32_t)(b->size - want);
             rest->used = 0;
+            rest->whence = free_ref(next);
             b->size = (uint32_t)want;
+            next = rest;
         }
+        if (prev != 0)
+            prev->whence = free_ref(next);
+        else
+            free_list = next;
+
         b->used = 1;
         b->whence = whence;
         guard_took(b, (unsigned char *)b + ALIGN, n);
@@ -484,7 +533,7 @@ static void *arena_alloc(size_t n, uint32_t whence)
 
 static void arena_free(void *p)
 {
-    head *b, *w;
+    head *b, *prev, *next;
 
     if (p == 0)
         return;
@@ -502,15 +551,26 @@ static void arena_free(void *p)
     b->used = 0;
     guard_gave_back(p);
 
-    /* Join what is free, from the front, so that the big pieces the heap
-       gives back can be handed out again. */
-    for (w = first; w != 0; w = next_block(w)) {
-        head *n = next_block(w);
-
-        while (!w->used && n != 0 && !n->used) {
-            w->size += n->size;
-            n = next_block(w);
-        }
+    /* Its place among the free blocks, which are in address order, and then
+       joined to the one in front if they touch and to the one behind if they
+       touch, so that the big pieces the heap gives back can be handed out
+       again and no two free blocks are ever side by side. */
+    for (prev = 0, next = free_list; next != 0 && next < b;
+         prev = next, next = free_next(next))
+        ;
+    if (prev != 0 && (unsigned char *)prev + prev->size == (unsigned char *)b) {
+        prev->size += b->size;
+        b = prev;
+    } else {
+        b->whence = free_ref(next);
+        if (prev != 0)
+            prev->whence = free_ref(b);
+        else
+            free_list = b;
+    }
+    if (next != 0 && (unsigned char *)b + b->size == (unsigned char *)next) {
+        b->size += next->size;
+        b->whence = next->whence;
     }
 }
 
@@ -650,15 +710,15 @@ static int low_open(void)
     return 1;
 }
 
-char *evv_low_strdup(const char *s)
+void *evv_low_alloc(size_t n)
 {
     size_t    want;
     low_head *b;
 
-    if (s == 0 || !low_open())
+    if (n == 0 || !low_open())
         return 0;
 
-    want = (strlen(s) + 1 + 7u) & ~(size_t)7u;
+    want = (n + 7u) & ~(size_t)7u;
     for (b = low_free; b != 0; b = b->next) {
         if (b->used || b->size < want)
             continue;
@@ -673,10 +733,21 @@ char *evv_low_strdup(const char *s)
             b->size = want;
         }
         b->used = 1;
-        memcpy(b + 1, s, strlen(s) + 1);
-        return (char *)(b + 1);
+        return (void *)(b + 1);
     }
     return 0;
+}
+
+char *evv_low_strdup(const char *s)
+{
+    char *got;
+
+    if (s == 0)
+        return 0;
+    got = (char *)evv_low_alloc(strlen(s) + 1);
+    if (got != 0)
+        memcpy(got, s, strlen(s) + 1);
+    return got;
 }
 
 void evv_low_free(void *p)
@@ -790,11 +861,104 @@ void evv_arena_outstanding(const char *when)
 
 /* ---- one rule's frame ------------------------------------------------ */
 
+/* Measured use is 8 KB on the caller's thread and 10-16 KB on the synthesis
+   thread, so a machine without megabytes to spare can say far less. */
+#ifdef EVV_FRAME_STACK
+#define FRAME_STACK ((size_t)(EVV_FRAME_STACK))
+#else
 #define FRAME_STACK (4u * 1024u * 1024u)
+#endif
 #define FRAME_ALIGN 16
 #define FRAME_ROUND(n) (((n) + (FRAME_ALIGN - 1)) & ~(size_t)(FRAME_ALIGN - 1))
 
 static __thread unsigned char *fs_base, *fs_top, *fs_end;
+
+/* A thread the engine did not start gives its frames back as well.
+
+   The engine's own threads call evv_frame_done as they finish, from the
+   trampoline that started them. A caller's thread runs rules too -- eciStop
+   and eciSynchronize run them on whichever thread asks -- and nothing gave
+   its four megabytes back, so a program that stopped from a fresh thread
+   each time went quiet on the sixty-third. So the first rule a thread runs
+   asks the system to say when the thread ends. It says so on that thread,
+   before its thread-local storage goes, and evv_frame_done does the rest; on
+   a thread its trampoline has already finished, there is nothing left to do. */
+#if defined(_WIN32)
+
+#include <windows.h>
+
+static INIT_ONCE fs_once = INIT_ONCE_STATIC_INIT;
+static DWORD     fs_slot = FLS_OUT_OF_INDEXES;
+
+static void WINAPI fs_gone(void *unused)
+{
+    (void)unused;
+    evv_frame_done();
+}
+
+static BOOL CALLBACK fs_open(INIT_ONCE *once, void *arg, void **ctx)
+{
+    (void)once;
+    (void)arg;
+    (void)ctx;
+    fs_slot = FlsAlloc(fs_gone);
+    return TRUE;
+}
+
+static void fs_watch(void)
+{
+    InitOnceExecuteOnce(&fs_once, fs_open, 0, 0);
+    if (fs_slot != FLS_OUT_OF_INDEXES)
+        FlsSetValue(fs_slot, (void *)1);
+}
+
+/* A library let go of while threads that used it live on would otherwise
+   leave the system holding a callback into code that has gone. */
+__attribute__((destructor)) static void fs_close(void)
+{
+    if (fs_slot != FLS_OUT_OF_INDEXES)
+        FlsFree(fs_slot);
+}
+
+#elif defined(__unix__) || defined(__APPLE__)
+
+#include <pthread.h>
+
+static pthread_once_t fs_once = PTHREAD_ONCE_INIT;
+static pthread_key_t  fs_key;
+static int            fs_keyed;
+
+static void fs_gone(void *unused)
+{
+    (void)unused;
+    evv_frame_done();
+}
+
+static void fs_open(void)
+{
+    fs_keyed = pthread_key_create(&fs_key, fs_gone) == 0;
+}
+
+static void fs_watch(void)
+{
+    pthread_once(&fs_once, fs_open);
+    if (fs_keyed)
+        pthread_setspecific(fs_key, (void *)1);
+}
+
+__attribute__((destructor)) static void fs_close(void)
+{
+    if (fs_keyed)
+        pthread_key_delete(fs_key);
+}
+
+#else
+
+/* Nothing to ask: the port's own trampoline is the only way out of a thread
+   anyone here knows about. */
+#define fs_watch() ((void)0)
+
+#endif
 
 /* A thread's frame stack, given back when the thread is done with it.
 
@@ -806,7 +970,8 @@ static __thread unsigned char *fs_base, *fs_top, *fs_end;
    engine went quiet on the 63rd instance and reported nothing.
 
    Safe here and only here: the thread body has returned, so no rule of that
-   thread is running and nothing holds a frame. */
+   thread is running and nothing holds a frame. The landing places go with
+   the frames, since their names were addresses in them. */
 void evv_frame_done(void)
 {
     if (fs_base != 0) {
@@ -815,6 +980,7 @@ void evv_frame_done(void)
         fs_top = 0;
         fs_end = 0;
     }
+    evv_land_done();
 }
 
 void *evv_frame_push(size_t n)
@@ -827,6 +993,7 @@ void *evv_frame_push(size_t n)
             return 0;
         fs_top = fs_base;
         fs_end = fs_base + FRAME_STACK;
+        fs_watch();
     }
 
     n = FRAME_ROUND(n);

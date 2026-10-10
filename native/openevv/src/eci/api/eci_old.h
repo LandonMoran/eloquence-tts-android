@@ -68,7 +68,20 @@ typedef struct OldInst {
     void    *owned1;              /* +0x6c0, the translation */
     void    *owned2;              /* +0x6c4, and the key */
     void    *concat;              /* +0x6c8 */
+    /* Ours: whether eciWideband is set, and what the engine was last told.
+       It has no place among the eighteen words of environment, which are
+       IBM's and are saved and sent as a block, but it is sent when they are;
+       see ev_sendChangedEnvironment. */
+    int32_t  wideband;
+    int32_t  wideband_sent;
+    /* And eciPauseMode, which goes the same way. */
+    int32_t  pauses;
+    int32_t  pauses_sent;
 } OldInst;
+
+/* What eciPauseMode a new instance starts with, which eciSetDefaultParam
+   sets as it does the eighteen it has a table for. */
+extern int32_t g_DefaultPauses;
 
 #define OI_NEW(h)            ((h)->fresh)
 #define OI_CALLBACK(h)       ((h)->callback)

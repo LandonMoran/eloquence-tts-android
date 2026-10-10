@@ -58,7 +58,7 @@ An instance is not cheap. It starts a synthesis thread of its own, and that thre
 
 `eciDelete` ends it and gives back what it held. It answers a handle in IBM's declaration, which is always nothing.
 
-`eciReset` puts an instance back to the settings a new one would have. `eciTestPhrase` says "1 2 3." in the first standard voice, which is what it is for.
+`eciReset` puts an instance back to the settings a new one would have, and that includes where the samples go: back to the device, so a buffer registered with `eciSetOutputBuffer` is dropped and the instance says nothing until it is registered again. The callback is kept. `eciTestPhrase` says "1 2 3." in the first standard voice, which is what it is for.
 
 Calls are refused rather than serialised while another call on the same instance is running. There is no lock: a second thread calling in during the first call is turned away, and `eciIsBeingReentered` was published to say so and always answers nought.
 
@@ -72,7 +72,7 @@ A language is one word: the family in the top half, the code set in the third by
 
 Family seventeen is Polish here and Thai in IBM's tables. That is the twelfth deliberate divergence and it costs nothing, there being no Thai in the SDK this engine came out of.
 
-The code set travels in that same word rather than in a setting of its own. ORing `eciUnicodeCodeSet` -- 0x800 -- into the language says that text handed over is UTF-16 rather than bytes, and `eciLanguageDialect` is what the engine reads to find out, not `eciTextMode`.
+The code set travels in that same word rather than in a setting of its own. ORing `eciUnicodeCodeSet` -- 0x800 -- into the language says that text handed over is UTF-16 rather than bytes, and `eciLanguageDialect` is what the engine reads to find out, not `eciTextMode`. Only a language with a romanizer takes it -- IBM's table groups code sets under Chinese, Japanese and Korean alone -- so here it is Japanese's: `eciNewEx(0x10800)` answers no instance, and asking an English instance for 0x10800 answers -1 and leaves it English.
 
 ## Text in
 
@@ -102,7 +102,11 @@ An annotation is a backtick, a letter or two, and usually a number. They are rea
 
 The voice ones take the same numbers `eciSetVoiceParam` does. `` `vs `` is speed, `` `vb `` pitch baseline, `` `vf `` fluctuation, `` `vr `` roughness, `` `vh `` head size, `` `vv `` volume and `` `vg `` gender; `` `v `` followed by a digit selects one of the eight voices, so `` `v2 `` is voice two. Several of them also take a name rather than a number -- `` `vsfast ``, `` `vsslow ``, `` `vsmed `` -- and a relative form: `` `vs%+25 `` is a quarter faster than now, `` `vbst-6 `` is six semitones down, `` `vbhz120 `` is a baseline in hertz and `` `vswpm180 `` a speed in words a minute.
 
-`` `0 `` to `` `4 `` are pauses of increasing length and `` `p `` followed by a number is a pause in milliseconds, so `` `p300 `` is three hundred of them.
+`` `0 `` to `` `4 `` are pauses of increasing length and `` `p `` followed by a number is a pause in milliseconds, so `` `p300 `` is three hundred of them. `` `p1 `` just before a mark, or at the end of the text, all but removes the pause the engine would have made there, which is what `eciPauseMode` below writes in for itself; `` `p0 `` changes nothing.
+
+`` `pp1 `` turns phrase prediction on and `` `pp0 `` off, for the instance from there on: it stays as set across utterances, voices and languages. It is off unless asked for, which is not what IBM's engine did.
+
+`` `da1 `` turns the abbreviation dictionary on and `` `da0 `` off. It is the switch `eciDictionary` is, though the right way up, so after `` `da1 `` `eciGetParam(h, eciDictionary)` answers nought. It lasts as `` `pp `` does, and it too is off unless asked for.
 
 `` `ui"name" `` is an index mark carrying a string rather than a number, and `` `aud"name" `` an audio marker. Both are reported through the callback.
 
@@ -116,9 +120,9 @@ A malformed annotation is spoken rather than refused, which is what `test/cases/
     int eciSetOutputDevice(ECIHand h, int device);
     int eciSetOutputFilename(ECIHand h, const void *filename);
 
-`eciSetOutputBuffer` is the one that works. The count is in samples, not bytes, and the buffer is the caller's: the engine fills it and calls back, and the caller must have copied what it wants before returning, because the next buffer goes in the same place.
+`eciSetOutputBuffer` is the one that works. The count is in samples, not bytes, and the buffer is the caller's: the engine fills it and calls back, and the caller must have copied what it wants before returning, because the next buffer goes in the same place. It refuses until a callback is registered -- answers nought and changes nothing -- so register the callback first: the other order is an instance that is silent and was told so only by an answer nobody checked.
 
-`eciSetOutputBuffer(h, 0, 0)` puts the instance back to the device, which is to say back to nothing.
+`eciSetOutputBuffer(h, 0, 0)` puts the instance back to the device, which is to say back to nothing, and puts the sample rate back to the default whatever the caller had set.
 
 `eciSetOutputDevice` names a device by number and there are no devices. `eciSetOutputFilename` and `eciSynthesizeFile` are empty in IBM's own object: they answer nought and write no file. There is no way to make the engine write a file; a program that wants one writes it from the callback, which is what `cli/evv.c` does.
 
@@ -132,9 +136,11 @@ Samples are signed sixteen bit, mono, little endian, at whatever `eciSampleRate`
 
 `data` is the caller's and is handed back untouched. The messages are `eciWaveformBuffer`, where `param` is a count of samples; `eciIndexReply`, where it is the number given to `eciInsertIndex`; and `eciPhonemeBuffer` and the phoneme, word, string and audio index replies, which arrive only when they were asked for.
 
+`eciPhonemeIndexReply` comes with `eciWantPhonemeIndices` set, once for every phoneme as it is reached, and `param` is the address of a record describing it: the phoneme's name in four characters, wide ones if the instance speaks UTF-16; the language; and eight bytes for the mouth -- its height, its width, its upturn, how far the jaw is open, how much of the upper and of the lower teeth show, where the tongue is and how tense the lips are, in the order IBM's own header names them. `param` is an `int`, so on a sixty-four bit build the record is a copy in a small region below two gigabytes, which is the one thing besides a string index mark's name that has to be. The copy is given back as soon as the callback returns: take what is wanted from it there.
+
 IBM's Linux header spells `param` as `long`, which is eight bytes on an ordinary sixty-four bit machine and four in everything the engine puts there. A program porting from that header should change the type rather than keep it.
 
-**The callback runs on the engine's own synthesis thread**, not on the thread that asked for the speech. What it may do is take the samples and return. What it may not do is call back into the same instance.
+**The callback runs on the thread that asks whether the engine is speaking**, not on the engine's own. The synthesis thread posts each buffer and waits for the answer; `eciSpeaking` and `eciSynchronize` are what run the callback, so a program that synthesises and then neither asks nor waits hears nothing at all. Measured: 28 callbacks of 28 on the caller's thread, and none while it slept without asking. What the callback may do is take the samples and return. What it may not do is call back into the same instance.
 
 What it answers matters more than it looks:
 
@@ -169,31 +175,37 @@ Because of that, all three ways of cancelling cost the same: letting the utteran
 
 `eciSetParam` answers what the setting was before, or -1 if it refused. The default ones are what a new instance starts from, so setting a default changes nothing about an instance that already exists.
 
-Eighteen settings, by the numbers `eci.h` names:
+Eighteen settings, by the numbers `eci.h` names, and one of ours numbered well past them:
 
 `eciSynthMode` (0), nought or one. One queues text with the settings it arrived under.
 
 `eciInputType` (1), nought or one. One turns annotations on.
 
-`eciTextMode` (2), nought to three.
+`eciTextMode` (2), nought to three. In English a sentence mark standing on its own is read in each of them as ETI Eloquence 6.1 reads it: `docs/quirks.md` says how.
 
-`eciDictionary` (3), nought or one, **and one turns the dictionary off**. The value is inverted on its way in and out, which is IBM's.
+`eciDictionary` (3), nought or one, **and one turns the dictionary off**. The value is inverted on its way in and out, which is IBM's. It is the abbreviation dictionary, which says "Dr." as doctor and "mg" as milligrams, and a new instance answers one here where IBM's answered nought: off unless asked for, which is the twenty-fourth deliberate divergence `docs/quirks.md` describes. Off, the caller's own `eciAbbvDict` volume goes unread as well.
 
-`eciSampleRate` (5). Nought to six are 8,000, 11,025, 22,050, 16,000, 32,000, 44,100 and 48,000 hertz, in the order IBM numbered the first four and this port the rest; a value of 8,000 or more is that rate in hertz, so 24,000 is a rate nobody numbered. Everything between seven and 7,999 is in range and is not a rate: the call answers -1 and leaves the rate where it was. Above 11,025 the engine goes on synthesising at 11,025 and the rate is raised from there by a windowed sinc, so the voice is the same one at every setting. IBM numbered 16 kHz rate three and then set the range of this parameter to two, so its own fourth rate could not be asked for; the range now runs to the highest rate the tables can be built for, which is the first of three divergences `docs/notes/sample-rates.md` describes.
+`eciSampleRate` (5). Nought to six are 8,000, 11,025, 22,050, 16,000, 32,000, 44,100 and 48,000 hertz, in the order IBM numbered the first four and this port the rest; a value of 8,000 or more is that rate in hertz, so 24,000 is a rate nobody numbered. Everything between seven and 7,999 is in range and is not a rate: the call answers -1 and leaves the rate where it was. Above 11,025 the engine goes on synthesising at 11,025 and the rate is raised from there by a windowed sinc, so the voice is the same one at every setting -- unless `eciWideband` below asks for a top above it. IBM numbered 16 kHz rate three and then set the range of this parameter to two, so its own fourth rate could not be asked for; the range now runs to the highest rate the tables can be built for, which is the first of three divergences `docs/notes/sample-rates.md` describes.
 
 `eciWantPhonemeIndices` (7), nought or one.
 
 `eciRealWorldUnits` (8), nought or one. With it on, a voice's speed is words a minute and its pitch is hertz, and both have ranges of their own.
 
-`eciLanguageDialect` (9). One of the numbers `eciGetAvailableLanguages` answered with, optionally with `eciUnicodeCodeSet` in it.
+`eciLanguageDialect` (9). One of the numbers `eciGetAvailableLanguages` answered with, and for Japanese optionally with `eciUnicodeCodeSet` in it.
 
 `eciNumberMode` (10), nought or one.
 
+Phrase prediction (11), nought or one, which only `eciSetDefaultParam` and the `` `pp `` annotation reach. One has the engine guess where a phrase ends in a stretch with no punctuation and pause there, and judge that some commas are not a break. It is nought here and was one in IBM's engine, which is the twenty-third deliberate divergence `docs/quirks.md` describes.
+
 `eciRomanizer` (12), nought or one. Only reachable in a language written in another script.
 
-`eciAudioFormatA` through `eciAudioFormatD` (13 to 16) are the four an audio device's format is built from. Nothing in the tree knows what any of them means. Setting one while the samples are going to a buffer records the number and rebuilds nothing, which is the second deliberate divergence -- IBM's engine rebuilds regardless and the registered buffer is lost, so the instance goes silent and reports success ever after.
+`eciAudioFormatA` through `eciAudioFormatD` (13 to 16) are the four an audio device's format is built from: how many blocks the device keeps, how many bytes each holds, and how many blocks and bytes it fills before it starts to play. They default to 10, 2,200, nought and 2,200 and may not go below 2, 220, nought and 220. Nothing here plays through a device, so none of them changes what a buffer receives. Setting one while the samples are going to a buffer records the number and rebuilds nothing, which is the second deliberate divergence -- IBM's engine rebuilds regardless and the registered buffer is lost, so the instance goes silent and reports success ever after.
 
-Numbers 11 and 17 are refused by both `eciGetParam` and `eciSetParam`, which is IBM's own refusal transcribed. Seventeen holds the number of the voice being spoken in; `eciCopyVoice` is what moves it. Numbers 4 and 6 can be set and read and nothing anywhere reads them.
+`eciWideband` (32), nought or one, and ours. One makes every rate above 11,025 the wideband voice. Below about 5.4 kHz it is the 11,025 voice exactly as the default raises it; above that, a second synthesiser running the same frames at 22,050 adds a top, which in this model is the noise of the fricatives, since the voiced harmonics and the breath under them are fifty decibels down by then. It changes what the samples are and not the rate they arrive at, and at 8,000 and 11,025 it does nothing. `eciReset` puts it back to nought; the default settings do not include it. Like the settings IBM numbered, it reaches the engine with the next utterance rather than when it is set, so setting it leaves the rate and the output buffer free to change. In processor time it costs two to three times what the default does at the same rate, which is a sixteenth of a core at most for speech in real time. `docs/notes/sample-rates.md` says why it is built that way rather than by synthesising higher.
+
+`eciPauseMode` (33), nought to two, and ours. The engine pauses for as long as at a full stop wherever it is made to finish a stretch of text -- the end of an utterance, and every change of voice, speed, pitch, inflection, volume or language -- whether or not the text ended in punctuation there. One, the default, shortens that pause where the text does not end in punctuation; two shortens the pause at every hyphen, comma, full stop, colon, semicolon, question mark, exclamation mark and en or em dash as well, where the mark follows a letter, a digit or a space and is followed by a space, a slash or the end; nought shortens none, which is what IBM's engine did and is the twenty-seventh deliberate divergence `docs/quirks.md` describes. The three are the values the IBMTTS and Eloquence 64 drivers give their own setting of the same name, and each is exactly what those drivers get by writing `` `p1 `` into their text, sample for sample. A pause annotation at the very end -- `` `p300 ``, or Eloquence 64's `` `p0 `` -- is the caller's own choice and is left alone. It acts whatever `eciInputType` says, and not at all on what `eciGeneratePhonemes` answers, which is the same with it as without. `eciSetDefaultParam` takes it for instances made afterwards, `eciReset` puts back the default, and like the settings IBM numbered it reaches the engine with the next utterance.
+
+Numbers 11 and 17 are refused by both `eciGetParam` and `eciSetParam`, which is IBM's own refusal transcribed. Eleven is phrase prediction, above. Seventeen holds the number of the voice being spoken in; `eciCopyVoice` is what moves it. Numbers 4 and 6 can be set and read and nothing anywhere reads them.
 
 ## Voices
 
@@ -317,4 +329,4 @@ So a program judges by return values. Everything above that answers an int answe
 
 Four numbers with dots between them, and this engine answers `7.0.0.0`, which is IBM's own number for the Embedded ViaVoice engine and is lifted rather than chosen. A program keying on the version cannot tell ours from IBM's by it; the Windows version resource is what says `openevv`. The call is never told how big the buffer is.
 
-On Windows the libraries also carry a version resource, and that is not decoration: the most used screen reader driver reads `ProductName` out of it to decide which engine it is talking to, and NVDA's own reader refuses a library with no version information at all. Ours says `openevv`. `docs/windows.md` says what that buys.
+On Windows the libraries also carry a version resource, and that is not decoration: the most used screen reader driver reads `ProductName` out of it to decide which engine it is talking to, and NVDA's own reader refuses a library with no version information at all. Ours says `OpenEVV`. `docs/windows.md` says what that buys.

@@ -1,4 +1,4 @@
-# Building openevv
+# Building OpenEVV
 
 What you need, what to build, and what every variable does. The rules are the long part of a build and have a file of their own in `docs/rules.md`; adding a language is in `docs/language.md`, the Windows side in `docs/windows.md`, and what proves any of it in `docs/testing.md`.
 
@@ -14,7 +14,7 @@ On this machine all of those come from the flake, and `nix develop` puts them on
 
     make
 
-That builds `build/libevv.a`, the WAV-producing `build/evv`, and `build/openevv-say`, which plays it. From nothing, that is about two and a half minutes: two seconds to write the rules out of the text, a little over two minutes for Python to decompile them into C, and about fifteen seconds to compile the thirteen megabytes of it across twenty-four cores. Once those files exist they are not written again unless the text, the decompiler or the bytecode changes.
+That builds `build/libevv.a`, the WAV-producing `build/evv`, and `build/openevv-say`, which plays it. From nothing, that is about two and a half minutes: two seconds to write the rules out of the text, a little over two minutes for Python to decompile them into C, and about fifteen seconds to compile the thirteen megabytes of it across twenty-four cores. Once those files exist they are not written again unless something the decompiler reads has changed. That is decided by content rather than by date: the rules are written out of the text again whenever anything they are made from is newer, a change to one language or to a tool rewrites all nine, and nearly every one comes out as it was. So what the decompiler would read is summed into `build/decompiled-<tag>.sum` before it runs, and a language whose sum has not moved keeps the files it has, which make then finds no newer than before.
 
     make RULES=bytecode
 
@@ -37,11 +37,15 @@ On a Nix machine `nix build` makes both commands under `result/bin`, and `nix ru
 
 `make install` copies `evv` and `openevv-say` to `/usr/local/bin`, or wherever `PREFIX` and `DESTDIR` say. The engine reads no file of its own at run time and wants no library but the C one, libm and pthreads; the speaking helper also needs one of `pw-play`, `paplay` or `aplay`. `make install-lib` is the other half and puts the shared library and the header under `LIBDIR` and `INCDIR`, which default to `PREFIX`; it is a separate target because it is a separate build, so `make so` comes first. `make clean` takes the objects and the binaries away and leaves the generated C alone.
 
+`make letters` writes a language's letter-to-sound rules out of `lang/<tag>/letters` and lays down the byte strings their arms name, `EVVLANG` saying which language as everywhere else. Every ordinary build does the first half already, so this is only wanted after an arm names a string nothing has named before: a string lives in the language's own store, which is a file in the tree, and laying it down there is the half a build cannot do for itself. The compiler says by name when that has happened.
+
 `make speechd` builds the Speech Dispatcher output module, which wants Speech Dispatcher's own headers, its out-of-tree module helper library and `pkg-config` beside the usual compiler; `nix develop` has all three. `make speechd-test` drives the module through its own protocol without playing anything, and `make speechd-test-all` does that with every language linked in, which is the configuration a release ships. `make speechd-install` puts the module and its configuration file where `SPEECHD_MODULEDIR` and `SPEECHD_CONFDIR` say, and is deliberately not part of `make install`: putting a module into Speech Dispatcher's directories is a decision about somebody's speech rather than a build step, and even then a line has to be added to `speechd.conf` by hand. `docs/speech-dispatcher.md` is the rest of it.
 
 ## The variables
 
-`CC` is the compiler for this machine, `cc` by default. `CC32` is the thirty-two bit one, which on this machine is the cross compiler the flake provides, `i686-unknown-linux-gnu-gcc`, and elsewhere is usually the host compiler with a flag: `make evv32 CC32="gcc -m32"`. `NM` is used by `make missing`. `OPT` is the optimisation level, `-O2`. `CFLAGS` is added to both builds after everything else, so it can override.
+`CC` is the compiler for this machine, `cc` by default. `CC32` is the thirty-two bit one, which on this machine is the cross compiler the flake provides, `i686-unknown-linux-gnu-gcc`, and elsewhere is usually the host compiler with a flag: `make evv32 CC32="gcc -m32"`. `NM` is used by `make missing`. `OPT` is the optimisation level, `-O2`. `ALIAS` turns strict aliasing off in every build, and it is not optional: the rules written as C reach memory through pointers cast to whatever width an operation has, and a rule lifted from 6.1 writes a place four bytes wide and then compares two bytes of it, which the compiler is otherwise free to do before the write. IBM's rules never mixed widths on one place, so nothing showed until those did, and then only in the C form. `CFLAGS` is added to both builds after everything else, so it can override.
+
+`CCACHE` goes in front of every compile to an object, and is ccache wherever one is on the path, which the flake's shell puts there; `make CCACHE=` leaves it out. Every object depends on every header, the rule headers of each language among them, so writing one language's rules out again compiles every object of every build -- 1,740 for the three binaries the gate builds in one form -- and a cache hands back each one whose source and headers came out as they were.
 
 `LANGS` says which language modules go in, and `EVVLANG` is the name for one of them: `make LANGS="lang/enus lang/dede"` builds both and the first named is what a caller gets when it asks for nothing in particular. A build with anything but English alone names what it makes after what is in it, so builds sit beside each other rather than over each other, and so that an archive left over from another language set cannot be linked in by mistake.
 
@@ -60,10 +64,10 @@ On a Nix machine `nix build` makes both commands under `result/bin`, and `nix ru
 
 The lower-level command is useful for piping WAV data to another program:
 
-    ./build/evv -o hello.wav "Hello from Eloquence."
+    ./build/evv -o hello.wav "Hello from OpenEVV."
     ./build/evv -f speech.txt -o speech.wav
-    ./build/evv "Hello from Eloquence." | aplay -q -
-    echo "Hello from Eloquence." | ./build/evv | pw-play -
+    ./build/evv "Hello from OpenEVV." | aplay -q -
+    echo "Hello from OpenEVV." | ./build/evv | pw-play -
 
 With no `-o` it writes the wave to standard output, unless that is a terminal, in which case it says so rather than filling the terminal with samples. With no text it reads standard input.
 
@@ -77,6 +81,10 @@ Above 11,025 the engine goes on running at 11,025 and the rate is raised from th
     ./build/evv -R 2 -o held22.wav "She sells sea shells."
     EVV_UPSAMPLE=hold ./build/evv -R 2 -o held22.wav "She sells sea shells."
     tools/measure/rates.py held11.wav held22.wav native22.wav
+
+`-W` is the wideband voice: the 11,025 voice below about 5.4 kHz, as every other rate has it, and above that a top made by a second synthesiser running the same frames at 22,050 -- the frication and breath a higher rate has room for. It does nothing at 8,000 and 11,025. How loud the top is and where its noise stops were settled by ear, at 14 dB above what the second synthesiser makes and 8 kHz; `EVV_WIDE_TOP`, in decibels, and `EVV_WIDE_EDGE`, in hertz with nought for none, move them, as experiments rather than settings. `docs/notes/sample-rates.md` says how it is built and why that way.
+
+    ./build/evv -W -R 5 -o wide44.wav "She sells sea shells."
 
 ## The sixty-four bit build
 

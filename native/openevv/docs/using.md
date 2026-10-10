@@ -59,7 +59,7 @@ Here is the whole of a program that speaks. It compiles as it stands.
 
     int main(int argc, char **argv)
     {
-        const char  *text = argc > 1 ? argv[1] : "Hello from Eloquence.";
+        const char  *text = argc > 1 ? argv[1] : "Hello from OpenEVV.";
         unsigned int langs[32];
         int          n = 0;
         ECIHand      h;
@@ -117,7 +117,7 @@ speech-dispatcher's `sd_eloquence` module resolves forty-two names when it loads
 
     ./build/openevv-say "Hello from Openevv."
     ./build/openevv-say -w hello.wav "Hello from Openevv."
-    ./build/evv -o hello.wav "Hello from Eloquence."
+    ./build/evv -o hello.wav "Hello from OpenEVV."
     ./build/evv "Hello." | aplay -q -
 
 `build/openevv-say` is the convenient human-facing command: it plays the WAV from `build/evv` through the first installed client among `pw-play`, `paplay` and `aplay`, or `-w` saves it. `build/evv` writes a wave file, or writes the wave to standard output when there is no `-o` and standard output is not a terminal. For a program that wants a file now and again rather than a synthesiser in its own process, this is the whole of the integration. Both commands describe their options with `-h`.
@@ -126,9 +126,9 @@ speech-dispatcher's `sd_eloquence` module resolves forty-two names when it loads
 
 The engine's threading model is worth stating outright, because most of what goes wrong with it is a program assuming one of these is different.
 
-Each instance owns a synthesis thread. `eciSynthesize` returns as soon as the work is queued; the speaking happens on that thread, and so does every callback.
+Each instance owns a synthesis thread. `eciSynthesize` returns as soon as the work is queued, and the speaking happens on that thread. The callbacks do not: the synthesis thread posts each one and waits for its answer, and it is run on whichever thread next calls `eciSpeaking` or `eciSynchronize`.
 
-**The callback runs on the engine's thread.** Whatever it does, the engine is not synthesising while it does it. A callback that hands the samples to a player and blocks until the player has room is pacing the engine on purpose, which is usually what you want; a callback that takes a lock the driving thread might hold is a deadlock.
+**The callback runs on the thread that asks.** Whatever it does, the engine is not synthesising while it does it, because it is waiting for the answer. A callback that hands the samples to a player and blocks until the player has room is pacing the engine on purpose, which is usually what you want; a callback that takes a lock the asking thread already holds is a deadlock.
 
 **A callback may not call back into the same instance.** Calls are refused rather than serialised while another is running, so what happens is not a crash but a nought nobody checked.
 
@@ -148,7 +148,7 @@ If you are discarding samples, answer `eciDataProcessed`. Answering `eciDataNotP
 
 ## Where a program may cut an utterance
 
-A sentence end is free. A cut in the middle of a sentence costs a full-stop pause when speech resumes, because the engine is starting a new utterance and prosody starts over. A program feeding a screen reader's worth of text does better to submit whole sentences and cancel between them than to submit a paragraph and cut into it.
+A sentence end is free. A cut in the middle of a sentence costs a pause, because the engine is starting a new utterance and prosody starts over: about a tenth of a second with `eciPauseMode` at its default, which shortens the pause where text stops without punctuation, and the full-stop pause IBM's engine made, nearly four tenths, with it at nought. Three cuts at whitespace in a five-sentence message cost 0.33 seconds and 1.12. A program feeding a screen reader's worth of text does better to submit whole sentences and cancel between them than to submit a paragraph and cut into it.
 
 ## Several languages
 
@@ -158,13 +158,15 @@ puts both in one library, `eciGetAvailableLanguages` answers both, and the first
 
 Change language with `eciSetParam(h, eciLanguageDialect, ...)` on an instance that is not speaking, or make an instance per language. Both work. The speak window on Windows does the first, setting the language on the instance it already has rather than building another, and it will not do it while something is being said; `test/lib/langs.py` does the second, and holds each language to what it says alone.
 
+A dictionary belongs to the language that was in force when `eciNewDict` made it, and it stays good across changes of language until `eciDeleteDict`. So make one per language and put each back in force with `eciSetDict` when its language returns, which is what the IBMTTS and Eloquence 64 drivers do. Before 9 October 2026 a language change let go of the old language's engine with every dictionary in it, and putting one of those back faulted the process. The engine of a language with a dictionary open is now kept until the instance goes. `test/lib/dictlangs.py` is the check.
+
 Ten languages are in the tree: US and British English, German, Castilian and American Spanish, French and Canadian French, Italian, Japanese, and Polish. The released library and the released DLLs carry all ten. Nine of those are IBM's own data lifted out of its objects. Polish is not IBM's and is not finished -- its rules are still Italian's where nothing here has replaced them, and `make EVVLANG=lang/plpl census` counts how much. `docs/status.md` says where each stands.
 
 ## Sample rates
 
 The default is 11,025 hertz and that is what Eloquence has always sounded like. `eciSetParam(h, eciSampleRate, n)` takes nought to six for 8,000, 11,025, 22,050, 16,000, 32,000, 44,100 and 48,000, or any number of 8,000 or more as a rate in hertz.
 
-Above 11,025 the engine goes on synthesising at 11,025 and the rate is raised from there, so the voice is the same one at every setting rather than a different one at each. `docs/notes/sample-rates.md` says why that is better than synthesising at the higher rate, and it is not a shortcut: synthesised outright above 11,025 the engine loses up to 24 dB through the consonant band, for a reason in the Klatt design rather than in this port.
+Above 11,025 the engine goes on synthesising at 11,025 and the rate is raised from there, so the voice is the same one at every setting rather than a different one at each. `docs/notes/sample-rates.md` says why that is better than synthesising at the higher rate, and it is not a shortcut: synthesised outright above 11,025 the engine loses up to 24 dB through the consonant band, for a reason in the Klatt design rather than in this port. What a higher rate can add without that loss is the wideband voice, which `eciWideband` turns on: the same voice below about 5.4 kHz and a second synthesiser's top above it. `docs/api.md` says what it costs.
 
 Four environment variables reach the engine from outside and are worth knowing exist, since they work on a library as well as on the command. `EVV_UPSAMPLE` chooses how a rate is raised -- `sinc` by default, or `cubic`, `linear`, `hold`, `zeros`, or `none` to synthesise at the rate instead. `EVV_SINC_CUTOFF` and `EVV_SINC_TAPS` move where the sinc stops passing the band and over how many samples. `EVV_ARENA_TRACE` reports what the engine's low memory region is holding.
 
@@ -182,4 +184,4 @@ Three things in this tree are worth running against a program that embeds the en
 
 `test/lib/langs.py build/libeci.so` speaks every language the build has from one process and holds each against what it says alone. That is the check for anything that has quietly stayed global.
 
-`make matrix` is the engine's own gate -- 979 cases over ten languages -- and it wants neither Wine nor IBM's objects. If you have changed anything under `src` or `lang`, that is what says whether it moved.
+`make matrix` is the engine's own gate -- 1,073 cases over ten languages -- and it wants neither Wine nor IBM's objects. If you have changed anything under `src` or `lang`, that is what says whether it moved.

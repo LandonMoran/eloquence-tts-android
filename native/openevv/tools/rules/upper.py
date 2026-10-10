@@ -143,7 +143,7 @@ def fault(where, what):
 def lines_of(path):
     """Every line that says something, as words, with where it came from."""
     out = []
-    for n, raw in enumerate(open(path), 1):
+    for n, raw in enumerate(open(path, encoding="utf-8"), 1):
         line = raw.split("#")[0].strip()
         if line:
             out.append(("%s line %d" % (os.path.basename(path), n),
@@ -189,6 +189,13 @@ class Rule:
         # no record and commits nothing, because a wrapper stands inside
         # somebody else's rule and the choice points around it are theirs.
         self.bare = False
+        # A rule written anew rather than one of IBM's re-expressed. It says
+        # nothing about the compilation and everything about what may be
+        # asked of it afterwards; `declarations' says what.
+        self.afresh = False
+        # Written instead of IBM's rule of the same name, on purpose, so that
+        # it says what IBM's did not; `declarations' says what follows.
+        self.instead = False
         self.sizes = {}
         self.at = FIXED
         self.body = []
@@ -273,6 +280,28 @@ def declarations(words, i, r):
                 fault(where, "say `bare' before the locals: it moves them")
             r.bare = True
             r.at = 0
+        elif head == "afresh":
+            # This rule is not one of IBM's re-expressed. Nothing in the
+            # compilation changes; what changes is what may be asked of it.
+            # tools/rules/check-upper.sh holds a re-expressed rule to entering
+            # the same rules and making the same calls as the one it stands in
+            # for, and a rule written anew has nothing to be held against --
+            # it calls the primitives where IBM's called a wrapper, numbers
+            # its plants its own way, and will say what IBM never said. So it
+            # is left out of that comparison and held by the audio there, and
+            # by test/words.sh and test/matrix.sh outside it.
+            r.afresh = True
+        elif head == "instead":
+            # Written afresh and meant to read differently from the rule of
+            # IBM's it replaces: one lifted from ETI Eloquence 6.1 is that.
+            # Nothing can hold it against IBM's, and holding it there would
+            # turn the check red for the difference it was taken to make and
+            # leave it red, so tools/rules/check-upper.sh builds IBM's side
+            # with it as well, as it does a rule that stands in for nothing,
+            # and goes on holding the rest. test/matrix.sh, test/words.sh and
+            # test/harness/eti.sh are what hold it.
+            r.afresh = True
+            r.instead = True
         else:
             return i
         i += 1
@@ -367,9 +396,18 @@ class Compiler:
             name = w.pop(0)
             if name == "unwind":
                 return ("slotaddr", self.slot(self.r.unwind())), 4, False
-            if name not in self.r.locals:
-                fault(where, "%r is not a local of this rule" % name)
-            return ("slotaddr", self.slot(self.r.locals[name][0])), 4, False
+            if name in self.r.locals:
+                return ("slotaddr", self.slot(self.r.locals[name][0])), 4, False
+            # Where a variable of the language sits, rather than what is in
+            # it. The letter rules all want this: the scan pointer is saved
+            # into one and the range to be spelled is read out of two, and
+            # every one of those calls is handed the address rather than the
+            # pointer in it. The machine has an operand for it -- `state' with
+            # an offset is the address and `statefld' is what is there.
+            if name in self.r.variables:
+                return ("state", self.r.variables[name][0]), 4, False
+            fault(where, "%r is neither a local nor a variable of this rule"
+                  % name)
         if head == "cell":
             # A cell is what the machine writes where a rule hands it the
             # address of a local: a kind, a field and a value. Which of the
@@ -516,8 +554,12 @@ class Compiler:
                 fault(where, "a set says `set <place> to <value>'")
             src, sw, ssigned = self.value(where, w)
             if sw < width:
-                fault(where, "a %d byte value will not fill %d bytes"
-                      % (sw, width))
+                # Widened the way the value says, signed or not, which is
+                # what a rule lifted from 6.1 needs: its compiler loads a
+                # half with movzwl or movswl into a register that is a word.
+                # r0 is left alone, since it may be the answer still.
+                self.op("load", WIDEN[(sw, ssigned)], src, "%ecx")
+                src = ("reg", "%ecx")
             self.op("store", MOVE[width], src, place)
 
         elif head in ("add", "subtract", "and", "or", "shift"):
@@ -658,7 +700,13 @@ class Compiler:
             tag = max(self.at_tag) + 1 if self.at_tag else 1
         self.bind(where, tag, name)
         entry, wrapper = PLANTS[kind]
-        if self.r.wrappers:
+        # Through the language's own wrapper where it has one. A rule written
+        # here can want a tag IBM's never did -- Italian's i, as a letters
+        # file writes it, plants seventy -- and a wrapper nobody compiled is
+        # a call to nothing, so past the last one the plant is made directly,
+        # which is all a wrapper does.
+        known = getattr(self.r, "known_rules", None)
+        if self.r.wrappers and (known is None or wrapper % tag in known):
             self.call(where, wrapper % tag, [])
         else:
             self.call(where, entry, [str(tag)])
@@ -786,8 +834,19 @@ def compile_file(path, lang=None):
     own variables; without one, a variable is named by its offset as before.
     """
     named = dgl.names_of(lang) if lang else {}
+    known = None
+    if lang:
+        known = set()
+        import glob as _glob
+        for dr in _glob.glob(os.path.join(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))), "lang", lang,
+                "rules", "*.dr")):
+            for line in open(dr, encoding="utf-8"):
+                if line.startswith("rule "):
+                    known.add(line.split()[1])
     out = []
     for r in parse(path, named):
+        r.known_rules = known
         out.append((r.name, Compiler(r).rule(), r.obj))
     return out
 

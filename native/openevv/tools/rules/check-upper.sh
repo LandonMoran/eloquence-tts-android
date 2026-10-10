@@ -14,7 +14,7 @@
 # rule it enters and every call it makes with the arguments, and that is what
 # the audio is made of: a rule that enters the same rules and makes the same
 # calls with the same values in the same order is the same rule, whatever the
-# bytes look like. This speaks the seven plain cases through a build carrying
+# bytes look like. This speaks the plain cases through a build carrying
 # the authored rule and through one carrying IBM's, and the traces have to
 # match.
 #
@@ -44,7 +44,7 @@
 # does and feeding it that slowly faults part way through several sentences in
 # one run. That is tools/rules/check-c.sh's finding and it holds here.
 #
-# The sentences are the suite's seven plain ones and test/cases/upper.txt
+# The sentences are the suite's plain ones and test/cases/upper.txt
 # beside them, which is this harness's own; EVV_UPPER_CASES names another list
 # of files, which is how the workflow runs the short one. The seven were not
 # enough and saying why is worth more than the fix: has_lex_prefix takes one
@@ -84,6 +84,9 @@ suf=
 [ "$tag" = enus ] || suf=-$tag
 export EVV_NOTATION_LANG=$tag
 rules="$here/$lang/delta_rules_$tag.c"
+# How much may run at once, the builds' jobs and the sentences spoken side by
+# side alike, six unless told, as for test/matrix.sh.
+jobs=${EVV_JOBS:-6}
 work=$(mktemp -d)
 
 # The three files a build compiles are written out of the text rather than
@@ -116,9 +119,38 @@ named=$(for f in "${files[@]}"; do awk '$1 == "rule" { print $2 }' "$f"; done)
 [ -n "$named" ] || { echo "upper: those files name no rule" >&2; exit 2; }
 echo "upper: $(echo "$named" | wc -w) rules: $(echo $named)"
 
+# The rules that say `afresh'. A rule of ours that stands in for one of IBM's
+# has to enter the same rules and make the same calls; one written anew has
+# nothing to be held against, since it calls a primitive where IBM's called a
+# wrapper for it, numbers its plants its own way, and will say what IBM never
+# said. So its own trace is dropped from both sides and what holds it here is
+# the audio, with test/words.sh and test/matrix.sh outside.
+afresh=$(for f in "${files[@]}"; do
+    awk '$1 == "rule" { name = $2 } $1 == "afresh" { print name }' "$f"
+done)
+
+# A rule the lifted text has no rule of that name for stands in for nothing,
+# and the lifted text may call it, so IBM's side is built with it too. The two
+# sides cannot differ by it, which means nothing here holds it, and it is
+# named as that rather than among the rules the sound holds.
+lifted=$(awk '$1 == "rule" { print $2 }' "$here/$lang/rules"/*.dr)
+# And a rule that says `instead' replaces IBM's on purpose, to read
+# differently, so IBM's side is built with it too and it is on both sides.
+instead=$(for f in "${files[@]}"; do
+    awk '$1 == "rule" { name = $2 } $1 == "instead" && NF == 1 { print name }' "$f"
+done)
+alone=$(for r in $afresh; do echo "$lifted" | grep -qx "$r" \
+            && ! echo "$instead" | grep -qx "$r" && echo "$r"; done)
+new=$(for r in $named; do { ! echo "$lifted" | grep -qx "$r" \
+          || echo "$instead" | grep -qx "$r"; } && echo "$r"; done)
+[ -z "$alone" ] || echo "upper: written afresh, so held by the sound alone:" \
+                        "$(echo $alone)"
+[ -z "$new" ] || echo "upper: standing in for nothing or written instead, so on both sides:" \
+                      "$(echo $new)"
+
 build() {
     rm -f "$here/build/probe$suf"
-    make -C "$here" EVVLANG="$lang" RULES=bytecode probe >/dev/null || exit 1
+    make -C "$here" -j"$jobs" EVVLANG="$lang" RULES=bytecode probe >/dev/null || exit 1
     cp "$here/build/probe$suf" "$work/probe.$1"
 }
 
@@ -169,11 +201,11 @@ for line in sys.stdin:
 }
 
 speak() {
-    DELTA_RULE_TRACE=200000 timeout 900 "$work/probe.$1" \
-        "$2" "$work/$1.wav" 2>"$work/$1.raw" >/dev/null
-    sed -E 's/@[0-9a-f]{8}/ARENA/g' "$work/$1.raw" \
-        | grep -v '^rules run:\|in the area' | mask > "$work/$1.full"
-    grep -v '^# store ' "$work/$1.full" > "$work/$1.trace"
+    DELTA_RULE_TRACE=200000 EVV_PROBE_WAIT=900 timeout 900 "$work/probe.$1" \
+        "$2" "$3/$1.wav" 2>"$3/$1.raw" >/dev/null
+    sed -E 's/@[0-9a-f]{8}/ARENA/g' "$3/$1.raw" \
+        | grep -v '^rules run:\|in the area' | mask > "$3/$1.full"
+    grep -v '^# store ' "$3/$1.full" > "$3/$1.trace"
     # The same again with the running count of rules entered taken off, for
     # saying how far two traces are apart. A trace that is short of one entry
     # differs in the count on every line after it, so the raw figure would be
@@ -181,12 +213,64 @@ speak() {
     # is lost by masking it here: two runs that enter the same rules in the
     # same order count them the same, so the strict comparison above is the
     # one that reads it.
-    sed -E 's/^rule [0-9]+:/rule:/' "$work/$1.trace" > "$work/$1.plain"
+    sed -E 's/^rule [0-9]+:/rule:/' "$3/$1.trace" > "$3/$1.plain"
+    # And what the two sides are actually compared on. With nothing written
+    # afresh that is the trace as it stands, counter and all, which is what
+    # this has always compared. With something written afresh, its own lines
+    # come out of both sides -- and the running count has to go with them,
+    # since a masked rule legitimately enters a different number of rules and
+    # every count after it would differ. Nothing is lost: two runs that enter
+    # the same rules in the same order count them the same, so the count only
+    # ever restates what the lines already say.
+    if [ -z "$afresh" ]; then
+        cp "$3/$1.trace" "$3/$1.cmp"
+    else
+        drop "$3/$1.plain" > "$3/$1.cmp"
+    fi
 }
 
-# IBM's rules and nothing of ours, which is the side an authored rule has to
-# be held against. `rewrite' is that: the lifted text alone, with every
-# upper-form file left out whether the module claims it or not.
+# Every line from entering one of those rules to leaving it, taken out. A
+# trace says the call, then the rule it entered, then everything the rule did,
+# then what it left with, so the span is from the call to the leaving.
+drop() {
+    python3 -c '
+import re, sys
+
+names = set(sys.argv[2:])
+if not names:
+    sys.stdout.write(open(sys.argv[1]).read())
+    raise SystemExit
+call = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\(")
+entered = re.compile(r"^rule [0-9]*:\s*([A-Za-z_][A-Za-z_0-9]*)\(")
+left = re.compile(r"^# ([A-Za-z_][A-Za-z_0-9]*) left with")
+
+inside = None
+depth = 0
+for line in open(sys.argv[1]):
+    if inside is None:
+        m = call.match(line) or entered.match(line)
+        if m and m.group(1) in names:
+            inside = m.group(1)
+            depth = 1
+            continue
+        sys.stdout.write(line)
+        continue
+    m = call.match(line)
+    if m and m.group(1) == inside:
+        depth += 1
+    m = left.match(line)
+    if m and m.group(1) == inside:
+        depth -= 1
+        if depth == 0:
+            inside = None
+' "$1" $afresh
+}
+
+# IBM's rules with nothing of ours standing in for them, which is the side an
+# authored rule has to be held against. `rewrite' is that: the lifted text,
+# with every upper-form rule that stands in for one of IBM's left out whether
+# the module claims it or not, and only the ones the text calls that stand in
+# for nothing taken in.
 echo "upper: writing IBM's rules out of the lifted text"
 python3 "$tools/rules/notation.py" rewrite >/dev/null || exit 1
 cp "$rules" "$work/kept.c"
@@ -203,44 +287,75 @@ if cmp -s "$rules" "$work/kept.c"; then
 fi
 build ours
 
+# One sentence through both sides, in a directory of its own, with what the
+# reading below needs written down before the traces are let go: every
+# sentence is spoken at once, and each trace runs to hundreds of thousands of
+# lines a side.
+judge() {
+    local d=$1 same=1 apart=0 sounds=1 full=0
+    speak ibm "$2" "$d" &
+    speak ours "$2" "$d" &
+    wait
+    if ! cmp -s "$d/ibm.cmp" "$d/ours.cmp"; then
+        same=0
+        apart=$(diff "$d/ibm.cmp" "$d/ours.cmp" | grep -c '^[<>]')
+        diff "$d/ibm.cmp" "$d/ours.cmp" | head -20 > "$d/head"
+    fi
+    cmp -s "$d/ibm.wav" "$d/ours.wav" || sounds=0
+    cmp -s "$d/ibm.full" "$d/ours.full" && full=1
+    echo "$same $apart $(wc -l < "$d/ibm.cmp") $sounds" \
+         "$(wc -l < "$d/ibm.trace") $full" > "$d/result"
+    rm -f "$d"/*.raw "$d"/*.full "$d"/*.trace "$d"/*.plain "$d"/*.cmp \
+          "$d"/*.wav
+}
+
 n=0
-lines=0
-stores=0
+running=0
 while IFS= read -r sentence; do
     [ -n "$sentence" ] || continue
     n=$((n + 1))
-    speak ibm "$sentence"
-    speak ours "$sentence"
+    mkdir "$work/s$n"
+    judge "$work/s$n" "$sentence" < /dev/null &
+    running=$((running + 1))
+    if [ "$running" -ge "$jobs" ]; then
+        wait -n
+        running=$((running - 1))
+    fi
+done < <(cat ${EVV_UPPER_CASES:-"$here/test/cases/plain.txt" \
+                                 "$here/test/cases/upper.txt"})
+wait
 
-    if ! cmp -s "$work/ibm.trace" "$work/ours.trace"; then
-        apart=$(diff "$work/ibm.plain" "$work/ours.plain" \
-                | grep -c '^[<>]')
+lines=0
+stores=0
+for k in $(seq 1 "$n"); do
+    read -r same apart length sounds traced full < "$work/s$k/result" || {
+        echo "upper: sentence $k was not spoken" >&2
+        exit 1
+    }
+    if [ "$same" = 0 ]; then
         if [ "$sound" = 0 ]; then
             # How far apart, before the first twenty lines of it. Reading the
             # head alone once cost a week: it showed thirteen differing lines
             # and the traces were thirty-six thousand apart, so a fix was
             # believed finished when it had barely moved.
-            echo "upper: sentence $n parts company, $apart lines of" \
-                 "$(wc -l < "$work/ibm.trace")" >&2
-            diff "$work/ibm.trace" "$work/ours.trace" | head -20 >&2
+            echo "upper: sentence $k parts company, $apart lines of $length" >&2
+            cat "$work/s$k/head" >&2
             exit 1
         fi
-        echo "upper: sentence $n, $apart trace lines apart of" \
-             "$(wc -l < "$work/ibm.trace")"
+        echo "upper: sentence $k, $apart trace lines apart of $length"
     fi
-    if ! cmp -s "$work/ibm.wav" "$work/ours.wav"; then
-        echo "upper: sentence $n sounds different" >&2
+    if [ "$sounds" = 0 ]; then
+        echo "upper: sentence $k sounds different" >&2
         exit 1
     fi
-    lines=$((lines + $(wc -l < "$work/ibm.trace")))
-    if cmp -s "$work/ibm.full" "$work/ours.full"; then
+    lines=$((lines + traced))
+    if [ "$full" = 1 ]; then
         stores=$((stores + 1))
-        echo "upper: sentence $n, the same, stores and all"
+        echo "upper: sentence $k, the same, stores and all"
     else
-        echo "upper: sentence $n, the same"
+        echo "upper: sentence $k, the same"
     fi
-done < <(cat ${EVV_UPPER_CASES:-"$here/test/cases/plain.txt" \
-                                 "$here/test/cases/upper.txt"})
+done
 
 echo "upper: the same, call for call, over $lines lines of $n sentences"
 echo "upper: and the same store for store in $stores of the $n"

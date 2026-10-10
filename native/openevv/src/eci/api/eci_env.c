@@ -206,13 +206,18 @@ int ev_sampleRateSupported(int32_t rate)
 /* ---- the shape of the sound ------------------------------------------ */
 
 /* What an audio format says. The last four are the device's own business
-   and only the device form carries them. */
+   and only the device form carries them: parameters 13 to 16, which the
+   sound manager reads as how many blocks the device keeps, how big each is,
+   and how many blocks and bytes it fills before it starts to play. */
 typedef struct AudioFormat {
     int32_t  kind;          /* +0x00 */
     int32_t  hz;            /* +0x04 */
     int32_t  flags;         /* +0x08 */
     char    *filename;      /* +0x0c */
-    int32_t  a, b, c, d;    /* +0x10 */
+    int32_t  blocks;        /* +0x10 */
+    int32_t  blockBytes;
+    int32_t  prerollBlocks;
+    int32_t  prerollBytes;
 } AudioFormat;
 
 /* What the sample rate setting means, and how the engine is to produce it.
@@ -353,8 +358,9 @@ int32_t ev_engineHz(int32_t hz)
 
 /* Send the samples to the device. Whatever they were going to before has to
    be let go of first, and only then is the new format built. */
-int ev_setOutputToDevice(OldInst *h, int32_t rate, int32_t a, int32_t b,
-                         int32_t c, int32_t d)
+int ev_setOutputToDevice(OldInst *h, int32_t rate, int32_t blocks,
+                         int32_t blockBytes, int32_t prerollBlocks,
+                         int32_t prerollBytes)
 {
     AudioFormat fmt;
 
@@ -379,10 +385,10 @@ int ev_setOutputToDevice(OldInst *h, int32_t rate, int32_t a, int32_t b,
     memset(&fmt, 0, sizeof fmt);
     fmt.kind = 0;
     fmt.filename = OI_FILENAME(h);
-    fmt.a = a;
-    fmt.b = b;
-    fmt.c = c;
-    fmt.d = d;
+    fmt.blocks = blocks;
+    fmt.blockBytes = blockBytes;
+    fmt.prerollBlocks = prerollBlocks;
+    fmt.prerollBytes = prerollBytes;
     fmt.hz = ev_rateHz(rate);
     fmt.flags = 0;
 
@@ -535,6 +541,24 @@ int ev_sendChangedEnvironment(OldInst *h, Environment env, int32_t force)
         OI_READY2(h) = 0;
     }
 
+    /* The wideband voice goes now and not when it was set. Sent then, it
+       waited on the engine's queue until the next synthesis, and while it
+       waited the instance counted as speaking: a new rate was dropped and a
+       new buffer refused, which is issue 45. */
+    if (h->wideband != h->wideband_sent) {
+        if (setECIerror(api_set_param(OI_NEW(h), 0, ECI_PARAM_WIDEBAND,
+                                      h->wideband), h))
+            return 0;
+        h->wideband_sent = h->wideband;
+    }
+
+    if (h->pauses != h->pauses_sent) {
+        if (setECIerror(api_set_param(OI_NEW(h), 0, ECI_PARAM_PAUSES,
+                                      h->pauses), h))
+            return 0;
+        h->pauses_sent = h->pauses;
+    }
+
     /* The language first and on its own, because a change of family has to
        be noticed before the romanizer setting is decided. */
     if (force || e[ENV_LANGUAGE] != sent[ENV_LANGUAGE]) {
@@ -640,6 +664,22 @@ int32_t STDCALL ev_setParam(OldInst *h, int32_t which, int32_t value)
     v = value;
     if (!inst)
         goto done;
+
+    if (which == ECI_OLD_WIDEBAND) {
+        if (value < 0 || value > 1)
+            return -1;
+        old = inst->wideband;
+        inst->wideband = value;
+        return old;
+    }
+
+    if (which == ECI_OLD_PAUSES) {
+        if (value < PAUSES_NONE || value > PAUSES_ALWAYS)
+            return -1;
+        old = inst->pauses;
+        inst->pauses = value;
+        return old;
+    }
 
     if (which >= 0x11)
         return -1;
@@ -829,8 +869,6 @@ int STDCALL ev_setOutputBuffer(OldInst *h, int32_t n, void *buf)
         OI_RATE(inst) = g_DefaultEnvironment[ENV_RATE];
         return ev_setOutputDevice(inst, 0) ? 1 : 0;
     }
-    if (n < 0 || n > INT32_MAX / 2)
-        return 0;
 
     ev_saveInstanceData(inst);
     OI_SAMPBUF(inst) = buf;

@@ -42,7 +42,7 @@ Write the content first. Take the seventeen heteronyms and a slice of the commun
 
 ## What makes it safe
 
-`make words` -- 24,318 words, ten seconds, names what moved. Any layer that changes how words are said is precisely what it was built to police, and this plan would be much harder to justify without it.
+`make words` -- 24,317 words, ten seconds, names what moved. Any layer that changes how words are said is precisely what it was built to police, and this plan would be much harder to justify without it.
 
 ## What the seam turned out to be, 9 September 2026
 
@@ -924,3 +924,358 @@ With the run-on fixed, the second formant's remaining errors are 80 per cent the
 The full table on words it was harvested from is 1.178 per cent of parameter values wrong, twenty-nine of a hundred and fifty frame for frame. The same table on a different part of the same corpus -- also harvested, just not the part usually quoted -- is 1.805 per cent and thirty-six. **A table built from twelve thousand words, on words it has never seen, is 2.706 per cent and eleven of a hundred and twenty.**
 
 So the tables know English as they have measured it to about one per cent, and a word outside that to under three. Whether three per cent is audible is a question for an ear rather than for this file, and the confusion measure says 46 segments of 2,159 land on the wrong phoneme against the engine's own 555.
+
+## What crosses the seam, measured, 17 September 2026
+
+The plan above assumes a front end of ours can be a program that turns text into the engine's own annotations, and that the engine's back half will then say exactly what it says now. That was an assumption. It is measured now, and it is nearly true: **every synthesiser parameter but the pitch is decided entirely by the annotation.**
+
+`tools/measure/seam.py` is the measurement. For each case it speaks the text, asks `eciGeneratePhonemes` what the engine decided the text was made of, speaks that answer back with annotations on, and holds the two sets of synthesiser frames against each other parameter by parameter. `EVV_KLATT_TAP` is what writes the frames and the audio is byte identical with it idle, so nothing about the measurement disturbs what is being measured.
+
+**One repair is needed on the way and it is not a fudge.** The report separates words by nothing at all -- `` `[.1DIs]`[.0Xz] `` -- and two pronunciation annotations run together are one token to the engine, which then spells the whole run out: the first sentence of `test/cases/plain.txt` came back at 575,498 bytes against 84,502. A space in front of every annotation is the whole of the repair, and with it that sentence round trips byte for byte.
+
+**Over three hundred words, 293 reproduce frame for frame** -- every one of the sixty-two parameters, every frame. The seven that do not are six compounds carrying a secondary stress and one ordinary word, and in each the first thing to differ is the pitch.
+
+**Over sentences the answer is the same and sharper.** Of the ten cases in `test/cases/plain.txt` and `test/cases/long.txt`, two are frame for frame, three differ in the pitch alone, five differ in length -- and none differs in any other parameter. Not a formant, not a bandwidth, not an amplitude, not a phoneme duration.
+
+**The leak is prosody and nothing else.** `Testing 1 2.` and `Testing one two.` produce the *same* annotation, the same 297 frames and the same value for all sixty-one other parameters, and differ in f0 in 98 of those frames by at most 5.3 hertz. So the engine's intonation reads something the annotation cannot say -- the phrase structure the text analysis built -- and two texts that come to the same phonemes can still come to different melodies.
+
+**Two punctuation marks lose a pause as well.** Parentheses and a dash: `He said (the cat sat).` is 417 frames spoken and 351 when its own report is spoken back, because the report renders the parenthesis as a `` `2 `` and `` `2 `` is a shorter pause than a parenthesis makes. A colon, a semicolon, a comma, a question mark and an exclamation mark all round trip exactly, and so do quotation marks in length.
+
+### What that settles
+
+A front end of ours can be developed and proved as a text-to-text program, with no engine internals in it at all, and every segment it produces will be the engine's own to the sample. That is the whole of stage one and it is now known rather than hoped.
+
+What it cannot get that way is the melody. So the intonation is not on the far side of the seam waiting to be reused; it is on our side of it, and a front end that wants the original sound has to produce the pitch as well -- either by handing the back half the phrase structure through something other than an annotation, or by owning the intonation outright, which is where this ends up anyway. `EVV_F0_RULE=1` and the pitch rule in `tools/measure/generate.py` are the start of the second.
+
+### And a fault it found on the way
+
+`eciGeneratePhonemes` crashed the engine on every sixty-four bit build, which means `make words` -- the twenty-four thousand word gate -- had been dead rather than green. `eo_callbackFn` read the phoneme record it is handed as a bare address, where the engine passes a reference into the region, so it dereferenced the low half of one. Since the arena was retired the region goes wherever the system puts it, and the low half of that is nothing at all. The same call then handed the caller's callback the address of a record inside the instance, truncated to the thirty-two bits `ECICallback` takes, which is the defect the little low region already exists to answer for an index mark's name. Both are fixed and the gate answers again: 24,318 words, every one as it was.
+
+## What English letter-to-sound actually is, 17 September 2026
+
+The plan above assumed the front half would have to be written rather than recovered, and put letter-to-sound at the centre of it because the dictionary is small: of the 24,317 words in `test/cases/words-enus.txt`, 5,042 are in one of the module's dictionaries -- twenty per cent, and more than half of those are proper names -- and a crude strip of the common suffixes reaches a dictionary root for only 1,532 more. So something like 17,700 English words get their pronunciation from rules rather than from a lookup, and whatever those rules are is the front half's centre of gravity.
+
+**They are 32 rules, one to a letter, and 271 insertions between them.** `lang/enus/rules/et_phone.dr` holds `a_rules` through `z_rules` with `strong_vowel`, `generate_diaphones`, `change_british_spelling` and four more beside them. Counting the calls that put phones down: `o_rules` makes 47, `e_rules` and `a_rules` 33 each, `i_rules` 22, `u_rules` 21, and the consonants two to thirteen apiece. That is the whole of English letter-to-sound in this engine, and it is a size a person can read.
+
+**And they read as letter-to-sound rules rather than as machine code, once the strings are resolved.** `tools/rules/strings.py` is what resolves them: `lang/<tag>/rules/symbols` says which store a named string falls in and how far, `lang/<tag>/<tag>.consts` holds the bytes, and the bytes are in the language's own alphabets -- a letter is the code its input statement gives it and a phoneme the code its statement gives that, so the same byte is a different thing in each and both are printed.
+
+`b_rules` is 97 lines of the lower form and says this much: scan right, test `string_30`, and insert one of two strings. `string_30` is `bt`. The two insertions are the phoneme `t` and the phoneme `b`. So the rule is *b before t says /t/ alone, and b otherwise says /b/* -- and `debt` is `dEt` and `subtle` is `sHFxl` in the recorded baseline, which is that rule and nothing else.
+
+The vocabulary the letter rules call is small and regular: advance the token, set the scan left or right, test a string at the scan, save and restore the scan pointer, push and pop a backtracking alternative, insert phones, succeed. `advance_tok` 390 times, `lpta_loadp__test_ptr` 218, the scan setters 500-odd between them, and the string tests are mostly one letter each -- `e`, `n`, `l`, `t`.
+
+### What follows for the plan
+
+A front end of ours does not have to invent English letter-to-sound, and should not: 271 rules that decide seventeen thousand words are worth transcribing exactly, not re-deriving approximately. The word gate is what makes transcription safe -- `make words` names the word that moved, over 24,317 of them, in ten seconds.
+
+What is missing is a notation to transcribe them *into*. The upper form is not it: this file opens by saying so, and writing 271 letter rules in frames and planted tests would be the same mistake at greater length. What these rules want is the notation they are already written in underneath -- a letter, what is to its left, what is to its right, and what it says -- which is what every other synthesiser's letter-to-sound file looks like and what an author can actually edit.
+
+So the next design is that notation and a compiler for it, and the transcription is the work after. Neither is started.
+
+## A notation for letter-to-sound, 18 September 2026
+
+`lang/enus/letters` is the file, `tools/rules/letters.py` is the compiler, and what they do was proved end to end before anything else was attempted:
+
+    letter b
+      bt   says t     # debt
+      b    says b
+
+One block a letter, arms in order, the first that matches winning, the last arm the bare letter -- what it says when nothing else applies. The letters are the language's own characters and the phones the ETI phone letters `enus.dict` already uses.
+
+The compiler writes `lang/<tag>/rules/et_phone.up`, which the build compiles over the lifted text in the ordinary way, so a rule written here stands exactly where IBM's compiled one stood. It also mints the byte strings an arm names into `lang/<tag>/rules/constants.letters`, because a symbol belongs to the object the rule came out of and a letter rule of ours cannot name the strings IBM's rules name -- those belong to `glob.obj`. `tools/rules/consts.py` reads that file beside the hand-written one and lays both down under no object at all, which is where a constant of the language's own goes.
+
+**It reaches the audio, which was checked by breaking it on purpose.** With `bt says t` the engine says `debt` as `dEt`; changing that one line to `bt says d` and rebuilding, it says `dEd`. All 24,318 words are otherwise unchanged. So the chain from a word in a text file to the sound is real and complete.
+
+Two things the upper form needed on the way, both small and both proved inert for everything that existed. `addr <name>` now takes a variable of the language as well as a local, answering the machine's own `state` operand with an offset, which is the address rather than what is in it; every letter rule wants it, since the scan pointer is saved into one variable and the range to be spelled is read out of two. And `tools/rules/consts.py` reads `rules/constants.*` beside `rules/constants`. `make upper-prove` still compiles all 1,954 wrappers byte for byte.
+
+### What the second letter taught, which is the whole of the next design
+
+`w` was next and it is two arms -- `wr says r` for *write* and *wrong*, `w says w` otherwise. Written that way it silenced the w correctly and moved eight other words, and the eight say exactly what is missing.
+
+`obtainable`, `obtaining`, `obtrusive`, `obtuser`, `subterfuges`, `subtracted`, `subtraction` and `subtracts` all keep their b. **So `b` before `t` is not silent; `b` before `t` *inside one piece of the word* is.** `debt` and `subtle` are one piece and lose it; `ob-tain` and `sub-tract` are a prefix and a root and keep it. IBM's `b_rules` tests exactly that before it spells anything, through a pointer the earlier passes left in the state, and dropping the test is what moved those eight words.
+
+So an arm is not only a run of letters and the phones it says. It carries conditions, and the first of them is *in one piece*. The emission has that test in it now because `b` needs it, which is the wrong way round: it should be something the file says and the compiler emits, and `w`'s own guard is a different pointer again and has not been identified.
+
+**The conditions turned out to be two, and they are `at start` and `at end`.** `test_ptr` is not a test that a pointer is valid, which is what its name suggests; it walks the scan from where it is and answers yes when the scan arrives at the node the register points at. So the guard asks whether the run an arm matched begins or ends where the piece of the word does -- the piece being what the earlier passes decided is one root or one prefix, whose two ends are variables 110 and 111 at offsets 876 and 884.
+
+`b` is *bt at end says t*: `debt` yes, `ob-tain` and `sub-tract` no, because there the b ends a prefix and the t starts a root. `w` is *wr at start says r*: `write` and `wrong`.
+
+Both were proved to be live and to be able to fail, which is not the same as the gate being green. Giving `b`'s arm `at start` instead makes `debt` come out `dEbt`, because the b is not where the piece begins. `w`'s `at start` is the honest exception: no word in the list distinguishes it, because the earlier passes turn a mid-word `aw` into one vowel token before `w_rules` ever sees it, so a mid-word `wr` does not reach the rule. It is kept because IBM's rule tests it and it costs nothing, and it is recorded here as unobserved rather than proved.
+
+The letter rules work through two pairs of range ends, not one: variables 106 and 107 at offsets 844 and 852 are the range an arm spells, and 110 and 111 at 876 and 884 are the two ends of the piece being read -- the pair `setd_lookup` is run over, which `ZZlprp_load_vvg__setd0110_0111` loads.
+
+### A rule written afresh, and what holds it
+
+`make upper-check` speaks every case through a build carrying the authored rules and one carrying IBM's and requires the two to enter the same rules and make the same calls with the same arguments. A generated letter rule cannot pass that and should not be asked to: it calls the machine's primitives directly where IBM's calls a wrapper baked to one string, it numbers its plants its own way, and it will eventually say things IBM never said. That is the point of writing it.
+
+So a rule now says which of the two it is. **`afresh` in a rule's declarations means it is not one of IBM's re-expressed**, and `tools/rules/check-upper.sh` takes such a rule's own lines out of both traces before comparing them -- from the call that enters it to the line that says what it left with. The running count of rules entered goes with them, because a masked rule may legitimately enter a different number of rules and every count after it would otherwise differ; nothing is lost, since two runs that enter the same rules in the same order count them the same.
+
+Four things hold a rule written afresh instead, and the first is the surprise. **Masking a rule's own trace does not hide a wrong answer**, because the rest of the engine reacts to what the rule decided: setting English's `b` to say /p/ was caught by the trace, in lines entirely outside `b_rules` -- the rules downstream are handed different phonemes and behave differently, and that is what shows. Then the audio, which `upper-check` still requires over all nine sentences and which is identical. Then `test/words.sh` over 24,318 words, which is the instrument made for exactly this kind of rule -- a letter rule can do nothing except move a pronunciation, and that gate names the word. And `test/matrix.sh` over 979 cases.
+
+`upper-check` says which rules it is holding that way rather than leaving it to be noticed: *written afresh, so held by the sound alone: b_rules*.
+
+### How it reaches a build
+
+Every build writes the letter rules out of `lang/<tag>/letters`, the same way it writes the rules a build compiles out of the text beside them, so there is no second copy to go stale. `et_phone.up` and `constants.letters` are made and gitignored; `letters` is the only thing to edit.
+
+The one step that is not automatic is laying a new string down. A string an arm names lives in the language's own store, which is a file in the tree, so an arm that wants a string nothing has named yet needs `make letters` -- the compiler and `tools/rules/consts.py` together -- before an ordinary build will work. The compiler says so by name when it happens.
+
+## Six letters, and how a letter gets transcribed
+
+`b`, `w`, `d`, `m`, `n` and `q` are ours now, out of `lang/enus/letters`, with all 24,318 words unchanged. Between them they exercise everything the notation can say:
+
+    letter m
+      mech          says m E k # mechanic, mechanism
+      mn at start   says n     # mnemonic
+      mn at end     says m     # autumn, column, damn
+      mb at end     says m     # lamb, comb
+      m             says m
+
+An arm is a run of letters, optionally what must stand to its left and right, optionally where in the piece it must fall, and what it says. `before <letters>` and `after <letters>` require letters that are not swallowed -- `ng before then at end says G` is *strengthen* and `qu after i before et says k` is *etiquette* -- and `vowel`, `consonant` and `glide` stand in either place for a kind instead, which is the input statement's own `letter_type` field and not a list of ours.
+
+**The method is read, guess, and let the gate correct you, and it is quick.** `tools/rules/strings.py <tag> --rule <name>` prints a rule's calls with its strings read out in both alphabets, which says what the arms are within a minute. Write them, build, run `make words`, and the words that moved say what was wrong -- not vaguely, but by name. `m` took three rounds: `mn at start says n` moved nineteen words and every one of them said the rule was the other way round, `at end` left eight `mech` words, and adding `mech says m E k` left `mnemonic`, which wanted the first guess back as a second arm. Ten minutes, and nothing about it needed reading IBM's rule a second time.
+
+`d`, `n`, `q` and `z` were right first time or nearly.
+
+### The left context, and the fault underneath it
+
+`q` wanted one: *qu before e at end says k* gets `antique` and *qu before vowel says k w* gets `quick`, but `etiquette` and `tourniquet` want *qu after i before et says k*, and `banquet` must not take it. The first `after` written for it did nothing, and there were two reasons, one on top of the other.
+
+The first was one call. A scan is set on one of the two ends of the range the rule was handed, and those ends sit *outside* the letter, so a scan set on the left one and told to read leftwards already meets the letter before this one -- the mirror of the rightward scan, which is set on the same end and meets this letter first. The first version stepped the scan on once more before reading, and so tested the letter before that. With the step taken out, `q` goes in, and the gate proves the condition in both directions at once: `etiquette` takes that arm, `banquet` does not, and neither moved.
+
+**The second was worse and is the one to remember.** The compiler decided an arm's shape by looking at its run of letters alone: an arm whose run was the block's own letter was taken for the bare last arm and emitted as a plain insertion, with every condition on it *silently dropped*. So `z after r says nothing` and `r after u says x r` compiled into rules that tested nothing at all, and the natural reading of that -- that a left context cannot see a letter the earlier passes have folded into a token -- was wrong and was written down here for half an hour before the generated rule was read. An arm's shape is decided by whether it asks anything now, and `tests()` says so in one place.
+
+**Read the generated rule before believing a theory about the engine.** It is forty lines and it says exactly what was emitted.
+
+### How a letter is made silent, and why it is still not ready
+
+**By emptying the phones over the range**, which is what Spanish does for its `h`: `apply_span_h_rules` loads the two ends and calls `delete_2pt` on the phone field, and there is no insertion anywhere in the rule. This file said that was impossible for two days, on the strength of three experiments that all hung the engine -- and the hang was the arm bug above rather than the deletion.
+
+**Emitting only that call is not enough, and the words do not say so.** They all come out right. What says so is the clock: Spanish with `h says nothing` answers three thousand words in 39 seconds without the arm and takes over a second a word with it, getting steadily worse, so something is left behind every time it fires. IBM's own rule does more than the one call -- it plants a choice point, compares, and on one path pops it and calls `delete_1pt` as well -- and which of that the engine needs has not been read yet.
+
+So the compiler refuses `says nothing` and says that, rather than emitting something correct and unusable. **A gate that only reads answers cannot see this**, which is worth remembering: the word gate was perfectly happy.
+
+### What the eight languages come to
+
+Only English and British English keep their letter rules in `et_phone.dr`; every other module names the file for itself -- `gt_phone.dr`, `st_phone.dr`, `ft_phone.dr`, `it_phone.dr` -- and spells each letter's rule its own way: `apply_ger_b_rules`, `apply_span_b_rules`, `apply_ital_b_rules`, and French bare like English's. So a letters file says which object it stands in for and how a rule is spelled there, and a letter whose rule is not spelled after the character says so itself, which is what German's umlaut and Spanish's eñe want.
+
+The sizes, counting the calls that put phones down:
+
+English 271, British English 276, French Canadian 162, French 151, German 121, Italian 78, and the two Spanishes 58 each. About 1,175 arms in all, and rather fewer distinct ones: the two Spanishes differ in 262 lines of 4,645 and Polish is Italian with 32 lines changed.
+
+**Spanish is the place to start and it is largely one arm a letter**: `b` says /b/, `d` says /d/, `f` says /f/, `j` says /j/, `k` says /k/, `m` says /m/, `ñ` says /N/, `v` says /b/, `w` says /w/. The letters with real rules in them are `c`, `g`, `l`, `n`, `p`, `q`, `r`, `s`, `x`, `y`, `z` and the vowels.
+
+**And the field numbers are the language's own.** A field is a level of the spine, and which number the phones have is decided by the order a module declares its statements: every language but Spanish declares the phone statement third, and Spanish declares it fifth. An arm written with English's numbers would lay Spanish's phones into its words. The compiler reads both numbers out of `<tag>.statements` now.
+
+### A word gate for every language
+
+`test/words.sh` has always taken a language; only English had a list. All eight have one now, written by `tools/measure/wordlist.py` out of each language's own spelling dictionary -- SCOWL for the two Englishes, hunspell's German, Spanish, French and Italian -- twenty thousand words apiece, evenly spread, in that language's own letters rather than filtered to ASCII, which would have dropped every German word with an umlaut in it.
+
+That is the thing that makes transcribing the other seven safe. Before it, the only gate below the sentences was about a hundred matrix cases a language, and a change that mended forty words and broke four hundred would have passed without a murmur.
+
+## Spanish, the first language after English
+
+Nine letters are ours -- `b`, `d`, `f`, `j`, `k`, `m`, `ñ`, `v`, `w` -- and eight of them are one arm, because Spanish spells what it says. `v says b` is the whole of why *baca* and *vaca* sound alike. All 20,000 words unchanged and the 98 matrix cases with them.
+
+Three things the second family taught, none of which English could have.
+
+**The range comes from somewhere else.** English's letter rules take the state alone and read the two ends of the range they spell out of variables 106 and 107. Spanish's are *handed* them: `apply_span_b_rules` takes three arguments and its insert wrapper is `lprp_load` rather than `lprp_load_vvg_0106_0107`. A rule of ours that read the variables where the caller passes the range spelled nothing at all, and the whole of Spanish lost every `b`, `d` and `f` before that was noticed. The compiler reads the argument count out of the lower form now and uses whichever the rule it stands in for uses.
+
+**The phone field is not field 2.** Every module but Spanish declares its phone statement third; Spanish declares it fifth. Both numbers come out of `<tag>.statements`.
+
+**And the fence is named for a string of that language's own.** English's rules call `ZZfenceZZstring376` and Spanish's `ZZfenceZZstring109`, and both fence exactly one statement type, the third, which is `morph` everywhere. A wrapper named for English's string does not exist in Spanish's module, so the compiler mints its own constant and calls `fence` directly. The build says so rather than guessing, which is what `delta.h` declaring every entry is for.
+
+**Fifteen now**: `b`, `ç`, `d`, `f`, `j`, `k`, `l`, `m`, `ñ`, `q`, `s`, `t`, `v`, `w`, `z`. `ll says L` is *calle*, `z says T` is the Castilian theta, and `s` voices before four consonants -- `s before d says z` is *desde*, and l, m and n with it. Not before b, g or r, which was worth learning from the gate rather than from Spanish lessons: `atisbar`, `apesgar` and `desrabar` all keep their /s/.
+
+**A `before` on a bare letter scans from the other end**, which is a thing only Spanish could have shown. Where an arm has a run to match, the scan starts at the left end of the range and meets this letter first. Where it only looks at what follows, it has to start at the right end, or the first thing it meets is the letter itself: `s before m says z` read from the left tests an `s` against an `m` and never matches, which is what 455 words said before the compiler was taught the difference. No English arm has that shape -- `ng before then` and `qu before e` all have a run -- so the fault could not have turned up there.
+
+**And `q` is narrower than it looks.** *qu says k* passes 20,000 words and moves a matrix case: the `u` is only silent before `e` and `i`, accented or not, and IBM's rule tests exactly those four. The word list has no counter-example and the sentence gate does, which is the pair of gates doing what they are for.
+
+The letters left are `c`, `g`, `n`, `p`, `r`, `x`, `y` and the vowels, and `h` waits on `says nothing`.
+
+**The vowels are a glide system and they are done: twenty letters of Spanish now, 20,000 words and 98 cases unchanged.**
+
+A falling diphthong is spelled by the *first* vowel's own rule, both letters at once -- `ai says a y` is `aire` and `baile`, and `ei` the same. That is what the two-phone insert in `apply_span_a_rules` is, and it is why `apply_span_i_rules` never sees the `i` of `aire`.
+
+A rising one is spelled by the glide itself: `i before vowel says y` is `abecedario`, and `u` glides before a, e, i, í and o, and after a, e and o.
+
+**Only one of an adjacent pair glides and it is the first.** `u after vowel` is wrong where `u after a`, `e`, `o` is right, because in `ciudad` the `i` has already become the glide and the `u` stays a vowel. `u before u` is wrong from the other side: `duunviro` is two syllables.
+
+**An accent is stress, and a stressed vowel does not glide** -- `í says i` and `ú says u` and `ü says u`, which is `abolíais`, `aúlico` and `lingüística`. But an accent does not stop a *falling* diphthong, so `ái` and `éi` glide as their plain forms do, and `ói` does not: `óigame` is `o.0i.ga.me` where `agnusdéi` is `de.1y`. That asymmetry is IBM's and is written here because nothing about it is guessable.
+
+### The notation gained one thing, and it is what the accents needed
+
+**An arm may begin with a letter its block is not named after.** The dispatcher hands one rule several characters -- Spanish's `i` rule is entered for `i` and for `í` alike -- so `í says i` sits inside the `i` block and compiles to the field-0 test IBM's own arms use, asking which character this is rather than what stands beside it.
+
+The one trap in it, and it cost two builds: **`testFldeq` reads at the scan**, so the scan has to be put on this letter first. Emitted without that, the test asks about whatever the scan last pointed at, quietly answers no, and the arm never fires.
+
+### Twenty-six letters, and where a piece lives is the language's own
+
+Only `x` is left, and `h`, which waits on `says nothing`.
+
+`c` and `g` are the soft-hard pair -- `c before e says T` is the Castilian theta and `gu before e says g` is *guerra* -- and the diaeresis is the exception that proves it: `ü before e says w` is *bilingüe*, `ü before i says w` is *piragüismo*, and a bare `ü says u` for *lingüística*, where the stressed `í` after it takes the syllable.
+
+`r` is trilled in four places and tapped everywhere else: at the start of a piece, and after `l`, `n` or `s`. `p` is silent only at the start -- `ps at start says s` is *psique* where *apocalipsis* keeps its p. `n` swallows a final `g`: `ng at end says n` is *hong*.
+
+**And `at start` and `at end` needed something the file had to say.** Both test against the two ends of the piece being read, and where those live is the language's own: English holds them at 876 and 884 and Spanish at 704 and 872. Nothing in a rule says which is which, so a letters file says it once at the top:
+
+    a piece runs from 704 to 872
+
+Until that was there, every `at start` and `at end` arm in Spanish quietly failed -- `ps at start` and `ng at end` compiled, never fired, and the words that moved looked like a rule being wrong rather than a variable being another language's. The compiler refuses a condition now where the file has not said.
+
+**That also means English's `at start` has never been proved by anything**, and still is not: no word in the list distinguishes `wr at start` from a bare `wr`. Spanish's does, so the mechanism is sound; English's own arm is still only faithful to IBM's rule rather than measured.
+
+
+## Italian, and the word gate is not enough
+
+Six letters are in -- `b`, `d`, `f`, `p`, `t`, `v` -- and every one of them is the same shape, because Italian doubles its consonants and means it:
+
+    letter t
+      tt   says t t
+      t    says t
+
+The Spanish groundwork transferred whole. The header says `rules in it_phone.obj named apply_ital_%s_rules` and `a piece runs from 712 to 872`, the argument count and the field numbers come out of the module as before, and the first seven letters went in green on the first try.
+
+**And then ten more letters passed the word gate and moved matrix cases.** `l`, `m`, `n`, `r`, `j`, `k`, `w`, `x`, `q` and `a` all leave 20,000 Italian words exactly as they were, and `ll says l l` on its own moves fifteen of the 98 sentences. So they are out, and what that says is worth more than the letters would have been.
+
+**A word list cannot see a letter rule that only matters in a sentence.** The likeliest reason is that the common words in a list are answered from the dictionary and never reach the letter rules at all, so a list of twenty thousand words exercises the rules on the *uncommon* ones while a sentence exercises them on `il`, `la` and `alle`. Spanish's `q` said the same thing more quietly -- `qu says k` passed every word and moved one case.
+
+So both gates run for every letter from here, and the matrix is the one that decides. That is a build and a minute a letter rather than fifteen seconds, and it is what the letters cost.
+
+
+### Thirteen of Italian, and three letters the notation cannot reach
+
+`b`, `d`, `f`, `p`, `t`, `v`, `r`, `j`, `k`, `w`, `x`, `q` and `a`, each proved on both gates before the next went in.
+
+`l`, `m` and `n` are out, and they are out for three different reasons, which is why they are worth naming rather than lumping together.
+
+**`n` computes its phone.** The ordinary path through `apply_ital_n_rules` is not an insertion of a string at all: it calls `settvar_s`, `npush_s`, `npop` and `insert_2ptv2`, which build a phone at run time and put that in. Even `n says n` with no other arm moves nineteen of the 98 cases. Nothing in this notation can say that, and it is the only Italian letter that does it.
+
+**`m` starts by looking left.** Its first arm sets the scan leftwards before anything else, where every letter that went in starts rightwards. `m says m` alone moves one case.
+
+**`l` starts rightwards like the ones that work** and still moves fifteen, so it is neither of the above and has not been read yet.
+
+### The way to find that out is one letter at a time, and the old way was wrong
+
+Testing subsets does not attribute blame here, because the letters interact: a rule that swallows a letter changes what the next rule is handed. Fourteen letters moved three cases where ten of them moved nineteen -- dropping letters made it look worse. Only adding one letter to a green set and running both gates says anything, and it costs a build and a minute a letter.
+
+
+## What l, m and n actually need, measured rather than guessed
+
+`tools/rules/check-letters.sh` is the instrument, and it should have existed before any of the letters did. It speaks one word or sentence through a build with IBM's letter rules and one with ours, and compares *what the rules do to the word* rather than every call they make -- the phones that went in, what came out, what was marked. A rule of ours legitimately makes fewer calls, so comparing everything shows hundreds of differing lines on a word the two agree about; comparing the spine shows four.
+
+Over the Italian sentence that moves, with `l`, `m` and `n` all in, the whole difference is this. IBM makes four `mark_s(field 2, 12, 0, 0)`, four insertions of two phones in one call, and two `insert_2ptv` -- an insertion *by value* rather than of a string. Ours makes twelve insertions of one phone and no marks.
+
+So two things are missing and they are nameable, which is what a session of reading call lists never managed:
+
+**A mark.** `mark_s` puts something on the spine that no insertion does, and the word gate cannot see it at all: the answers are identical over 20,000 words. Only the sentences show it.
+
+**An insertion by value.** `insert_2ptv` inserts what a location holds rather than a string the rule names. What IBM pushes into that location in these rules is an immediate, so the *effect* is one phone -- but it is a different call and the engine can tell.
+
+And one guess that was wrong, and is kept because it cost a day: that our doubling arms were not firing in Italian. They were, and what they lacked was the mark. The section below says how that was settled.
+
+
+## Sixteen of Italian, and the doubling arms were firing all along
+
+`l`, `m` and `n` are in, and all 20,000 Italian words sound exactly as IBM's rules make them, sample for sample.
+
+**The guess that the doubling arms never fire was wrong.** Setting `bb` to say `p p` turns babbo into `bap.0po`, and `ll` said as `t t` turns palla into `pat.0ta`, so every doubled arm was matching. What they lacked was a mark, which is the first of the two things the section above named.
+
+**A doubled consonant is two phones and one long sound.** Nine of IBM's Italian letter rules, every doubling one but `r`'s, set the phone statement's `geminate` field on both phones once they are down, through `mark_s` on field 12. Without it the phones are right and the sound is not, which is why the word gate passed and the sentences moved: `ll says l l` moves eighteen of the 98 cases, and with the mark it moves none. `r` makes no mark because its double is one trill rather than two phones. So an arm may end in a mark now:
+
+    ll   says l l   marked geminate yes
+
+The field and the value are named as the phone statement declares them, and the compiler refuses a field or a value it does not have. The mark goes on after the insertion has answered, which is IBM's order.
+
+**The insertion by value turned out to be a mark as well.** Where the ordinary n is a string, IBM's `n` before a hard c, g or q builds a record at run time: it starts a phone variable as code 20, the velar nasal, sets its `diaph_ghost` field to `+n` so that it is written as n, and inserts the variable. Dumping the records `insert_2ptv` laid down showed exactly that and nothing else, so it is the same record as `n before c says G marked diaph_ghost +n`, which is what the file says now. The ear cannot tell which call built it and neither can the samples.
+
+**And no gate the tree had could see this.** Italian's `n` went in green on both, the matrix and the word list, with fifteen of nineteen test words sounding wrong. The phoneme report prints a phone's name and not the rest of its record, and the 98 sentences hold no n before a hard consonant. That is why `tools/rules/check-letters.sh` gained `--sound`, which speaks a whole word list through IBM's letter rules and through ours and names each word whose samples differ. Run over Spanish, it found three words out of 20,000 whose u was said as a vowel rather than a glide, in every one because an accented vowel followed that no arm named. `u before vowel` says what IBM's rule tests, the class rather than a list of letters, less `u before u`, which IBM excludes separately. English's six letters are clean.
+
+So a letter rule now has three gates and the sound is the one that decides. The matrix and the word list stay, being ten times cheaper, but a letter is not finished until the whole word list sounds the same.
+
+
+## c, and the rest of Italian is word lists
+
+`c` is in and all 20,000 words sound as IBM's rules make them. Its only surprises were two: the borrowed `ck` of stick and ticket is one k, and an i after c or cc is not swallowed when another i follows it. IBM's rule excludes the letter i from the vowels there, and its `s` rule does the same.
+
+**Italian's piece runs from 864 to 872, not from 712.** The header had said 712 since Italian's first letters went in, and nothing had ever tested it, because no Italian arm said `at start` until `s` needed one. IBM keeps an s unvoiced when it begins the root -- ri-salito, para-sole, pre-sentire -- by comparing the s's left end with variable 864, and 864 and 872 are the pair Italian's stress rules are handed. With 712, 112 of 7,522 s words sounded wrong; with 864, the prefix words all came right.
+
+**What stops `s`, and will stop most of what is left, is that Italian's letter rules consult word lists.** IBM's Italian carries lookup sets named for exactly what they decide -- `sci_pronounced_sci`, `VsV_pronounced_s`, `e_pronounced_E`, `o_pronounced_c`, `i_pronounced_y`, `gli_pronounced_Li`, `giV_pronounced_gV`, `z_pronounced_D`, `zz_pronounced_tT`, twenty-six of them with their `notpronounced` counterparts -- and `setd_lookup` hands a stretch of the word to one of them. The fifteen s words still wrong are the members of two: sciare and sciistico keep their i because they are in `sci_pronounced_sci`, and asepsi, dinosauro and rosicchiando keep an unvoiced s between vowels because they are in `VsV_pronounced_s`. The open and closed e and o, the vowel or glide i, z and gli will all turn on sets the same way. The notation has no way to say that yet.
+
+### s, and an arm may name a list
+
+`s` is in, and all 20,000 words sound as IBM's rules make them. An arm may now end by naming one of the language's lists:
+
+    s after vowel before vowel  says s     where the root begins VsV_pronounced_s
+    s after vowel before vowel  says z
+
+`where the root begins <list>` holds when the root starts with one of the list's entries, and `where the root is <list>` when it is one exactly. The names are IBM's own lookup sets, read out of `lang/<tag>/<tag>.sets` when the file is compiled, and each entry becomes a letter test from the root's first letter. That is what IBM's rule asks by handing a stretch of the word that grows from the root's start to `setd_lookup`, and writing it as one test per entry needs no loop. Both kinds are needed: `sci_pronounced_sci` holds beginnings -- sciat, sciav, scier -- while `sci_notpronounced_sc` holds whole roots, scia and sciare among them, which read as beginnings would wrongly catch sciabola.
+
+Each of the four list arms was shown to be live the usual way, by making it say something else: the words that moved were exactly the list's own, and casa and sciabola held.
+
+Because a list compiles to letter tests rather than to a lookup, a list the file declares itself would compile the same way. That is the second stage, and the one Polish wants, since Polish must not inherit Italian's lists of Italian words.
+
+`tools/rules/check-letters.sh` also says now when the calls agree and the samples do not. The trace masks every string by where it lies, so two insertions of different phones read the same; asepsi was reported as the same call for call while it sounded wrong.
+
+### g, and a third way to name a list
+
+`g` is in, and all 20,000 words sound as IBM's rules make them. It says J and keeps the i, where every other gi before a vowel swallows it, in three cases. The first is -logia, -logie, -urgia and -urgie, which IBM finds by reading two letters leftwards from the g and then an a or e past the i -- `gi after ol before a says J i`, a left context being written nearest letter first -- except for the roots `giV_pronounced_gV` names, elogi, orologi and murgi. The second is where the stretch from the root's start through this i is one of `i_pronounced_i`, and the third is the one root of `giV_pronounced_giV`, regia.
+
+The second is not what `where the root begins` says, and two words showed it: giurista and prigioniero have roots beginning with the entries giuri and prigioni, but their gi is not where those entries end. IBM's g hands `setd_lookup` the stretch up to the end of the gi and nothing longer. So `where the root so far is <list>` is the third kind: the entry has to end exactly where the arm's run does. It is tested after the run is matched, which is where that end is known. Making it say something else moves bugia, bugiardona and magio and leaves giurista and prigioniero alone.
+
+`gli` is L before a vowel, swallowing the i, and L with its i said by the i rule before a consonant or at the end, as in caturegli. At the start of a root and after n it is g, l and i -- gliadina, anglicano -- and so is the one root of `gli_pronounced_gli`, negligent.
+
+IBM's `s` asks a growing stretch and its `g` a fixed one, so which of the three a list wants is a property of the rule that asks it, not of the list.
+
+### h, y and z, and a silent letter at last
+
+**A letter can be silent now.** `says nothing` was refused for a month because every way of writing it hung the engine or slowed it to a crawl: emptying the range with `delete_2pt`, inserting nought phones, laying nothing down. IBM's Italian h shows what a silent letter actually is, and it is none of those: a default projection of the phone field at the right end of the range, then a deletion at one point on the left, `proj_def` and `delete_1pt`. That is what `says nothing` compiles to, and the 781 h words speak in a minute with none hanging.
+
+And an h that begins the root, as in hall and hitler, is not silenced at all. IBM's rule does nothing whatever there, leaving the letter to whatever the machine does with one nobody spelled, and that sounds different. So `is left alone` is its own arm: `h at start is left alone`, then `h says nothing`. Seventeen words showed the difference, and making the silencing arm say k instead moved the 39 words whose h is neither initial nor part of ch or gh.
+
+`y` is a glide before or after a vowel and i otherwise, 38 words.
+
+**z has the most structure of any Italian letter, and it reads as letters once it is read.** At the start of a root it is D, zimologo. zz is t T by default and d D after i before a vowel, the -izzare verbs, each also by list. The single z is D after t, s or g and before a consonant, T after l, and after n or r it depends on what stands further left: -manz- before o, -ronz- and -garz- are D, -tronz- is T. Between vowels it is D, except before two vowels in a row, which is T -- stazione, anterozoo -- unless those are the -iend of azienda, and except before an i that ends the root, carpazi. IBM's own strings say most of this read leftwards, nearest letter first: `nam`, `nor`, `rag`, and `iend` to the right.
+
+Three things the notation gained for it. **zz is written t T, not T T**: a later phonology rule rewrites every T phone as t and T with its `diaph_ghost` mark, so T T is rewritten twice, which 700 of 1,661 words sounded. The list names say so -- `zz_pronounced_tT`. **`before vowel+vowel`** tests two kinds in a row, stepping between, as IBM's rule does. **`where the word begins`**, with `a word runs from 704 to 712`, matches a list from the word's own start rather than the root's, because `z_pronounced_D` holds inzupp and inzacch with their prefix. 704 and 712 are the pair Italian hands `make_ital_phon_adjustments`. Making the word-list arm and the two-vowel arm say something else moved exactly the list's words and the two vowel-pair words, and azoto and pranzo held.
+
+A `point` that an arm could compare with, as IBM's z compares 712, was written and taken out again: 712 turned out to be the word's end, which the word range already names, and no arm used it.
+
+### u and i, and what IBM's lists are matched against
+
+`u` and `i` are in, the vowel or the glide each, and all 20,000 words sound as IBM's rules make them.
+
+**u** is w before a vowel and after one -- uomo, aurora, palauano -- and a vowel after i, before or after another u, at the end of a word after a consonant, and at the start of a root before a consonant: pre-unitario, mono-utente. A root-initial u before a vowel still glides, uopo. The roots of `u_pronounced_u` keep it a vowel, baule and fortuito, except the roots `u_notpronounced_u` names, duomo among them. The word list had none of those three; checking the list's own words showed the arm was needed.
+
+**i** is y before a vowel and after a, e or o, and a vowel otherwise, with the exceptions IBM's rule tests: the stressed suffixes -crazia, -fonia, -grafia, -logia, -metria, -onomia and -terapia before a final a or e, -eria and -erie at the end of the root, -iaco, -iaca and -iach-, -ismo and -ista, the end of a word, the start of a root, and three lists. After a u it is the vowel where the u glides -- acquisto, eseguito -- and the glide where the u is a vowel, which is where the root begins with `u_pronounced_u`: fortuito, fluido. IBM asks that of the u's own record, reading the phone it was given through a byte past the end of the letter; the letters say the same thing without reaching into the machine.
+
+**Which stretch a list is looked up over is the rule's, and one of them was surprising.** `i_notpronounced_y` holds dia, pia, sia and zio, and IBM looks it up over variables 107 to 108. Read as the word's ending it caught esercizio and crioscopia; it is the root, and entropia, trizio and ipopio are entro-pia, tri-zio and ipo-pio. So `where the root is`. `u_notpronounced_u` is looked up over the same pair and is the same.
+
+Three things changed underneath. `accented` tests the letter's own accent flag, as IBM's u and i do first. `at word start` and `at word end` go with `a word runs from`, and an `at end` arm of one letter with nothing after it now puts the scan on its letter before asking, where before it asked wherever the scan had been left. And a one-letter arm with a `before` no longer saves the scan into its right end: that looked like a no-op and was not, since the insertion over the stored position left the letter's `phon_form` unset, which nothing heard could show. Spanish's rules lost eighteen such saves and all 20,000 Spanish words still sound the same.
+
+The upper form also plants past the language's last wrapper now. Italian's i, as written here, needs choice-point tag 74, and IBM never compiled `ZZstarttest74`; a plant with no wrapper calls `starttest` itself, which is all a wrapper does.
+
+### e and o, and all twenty-six letters
+
+Italian is written whole: every letter is a block in `lang/itit/letters`, and all 20,000 words, every word built from the entries of the twenty-seven lists the file names, the matrix sentences and the 98 cases sound exactly as IBM's compiled rules made them.
+
+**Whether a stressed e or o is open is a tree, and only the stressed one matters.** Making every e open changed 1,551 words and every one was a word whose stressed e IBM closes; none was an unstressed e. So a later rule closes any open vowel that is not stressed, and the arms can decide open or closed by the letters alone. Learning that tree from IBM's answers was tried first and abandoned: it wanted over four hundred arms and still left cases to a default, which is memorising the list, not finding the rules.
+
+**`tools/rules/walk.py` is what decoded it.** IBM's e is a thousand lines of the lower form. Condensed a line a step, with the dispatch resolved, it reads as an ordered list: the homographs handed over, è and é, the two lists and their exclusions, -etto and -essa closed at the end of the word, -enne open, open before r and another consonant, before mb, mp and st, before a vowel or at the end of a word, before a consonant and two vowels unless gu, in -ema, -emi and -etico, before d, z or l and a vowel, after i, before c unless ce or ci; then the doubled consonants, the g cases, -end-, -ent-, -enz- open but -ment- closed, and closed otherwise. o is the same shape with its own endings, and a word of one syllable asked of `one_ital_syllable` first. Written as arms, e was right on all but eleven words the first time and o on all but five.
+
+**What made the semantics readable was reading `vback`.** The value a rule stores before backtracking is a depth: a boa mark lowers it, and at nought the next choice answers. So a boa choice is a `not` -- the test inside it succeeding cuts past its own branch -- and a choice that saves the scan is an alternation of letters at one place, and the choice `savescptr` pushes moves the scan on each time it is backtracked into, which is how a list is asked of a stretch growing from the root's start.
+
+The notation grew for it: `before` joining letters and kinds, `unless` in five forms, `hands over to`, `where the word passes`, and `accented`. Each was shown to be live by making its arm say something else.
+
+**Checking a list's own words found four faults the word list could not.** An i between a vowel and another i glides; `i_notpronounced_i` excludes from `i_pronounced_i` only where its entry ends at this letter, which is ferroviaria's second i and not its first; `z_pronounced_D` comes after the z that follows an l, and only before a vowel; and farmacia keeps its i because the c does not swallow one the root keeps. And the matrix found one more that no word list holds: tre, re and pre, whose e is open because nothing after it is a consonant.
+
+**IBM's c reads the morphology field, and the letters do not.** Its first alternative scans the pieces a word was cut into, which is how farmac-ia keeps its i. The letters say it by the list that decides that i, `c before i says C where the root begins i_pronounced_i`, and every word checked agrees; a word whose pieces and whose list disagree would not.
+
+## Polish, and three lines above the letters
+
+`lang/plpl/letters` is the fourth letters file and the first whose source is not IBM's: what it transcribes is the seventeen rules written for Polish by hand in the upper form, and it replaced them with every one of the 98 cases and 20,260 words unchanged and no word sounding different. `docs/notes/polish.md` says what is in it.
+
+The notation gained three lines for it, all above the first letter. A class, `voiceless means p t k f s c h ś ć and the end of the word`, which an arm asks for as it asks for a kind; the end of the word is part of the class rather than a condition beside it, because Polish devoices before a voiceless consonant and at the end of a word alike, and it compiles to a rule of its own asked of the range's right end, the scan that cannot be set or the character that is no letter. `ą ć ę ł ń ś ź ż come through q`, for letters the dispatcher has no link for: their blocks are compiled as the arms of one rule standing where q's stood, with a test for the dispatcher to ask where it asked whether the letter was q. And `phone sz is L`, a spelling of the file's own for a phone whose name in the statement would mislead. The letters themselves may be a language's own now, since the compiler reads `<tag>.codepoints` for what byte each is.
+
+Two more came with voicing across a word boundary. `unless voiced follows` may end a class that counts the end of the word, and says the end of the word does not count when the next word begins with one of another class; and `before voiced word` on an arm asks that of the letter itself, which is how a voiceless final takes its voice from the word after it. Both compile to a rule of their own that takes down the morph fence a letter rule stands behind, looks for a space and one of the class's letters, and puts the fence back. And a class that does not count the end of the word may carry an `unless' too, which is how a voiced letter counts only where it keeps its own voice: `voiced means b d g z ź ż unless voiceless follows' reads the letter and then asks the voiceless class's test of what comes after it, so liczba voices its cz and liczb, whose b ends the word, does not.
+
+It found two arms of Italian's i that are looser than IBM's rule. `i after e before st says i` holds on every Italian word and IBM's rule wants a vowel after the st as well; `i before ach says i` holds on celiachia and IBM's wants ache or achi. Polish's copies say what IBM's rule says, `before st+vowel` and the two spellings; `lang/itit/letters` keeps the looser arms, because no Italian word can tell them apart and a change nothing can hear is not one to make blind.

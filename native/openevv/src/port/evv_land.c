@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* One landing place per name, kept here rather than in the machine.
 
@@ -185,6 +186,29 @@ void evv_land_no_outermost(void)
     land_outer_set = 0;
 }
 
+/* The table is kept for the life of the thread, as the comment over it says,
+   and this is the end of that: called with the thread's frames given back,
+   so none of these names can be planted again. */
+void evv_land_done(void)
+{
+    int h;
+
+    for (h = 0; h < LAND_BUCKETS; h++) {
+        land_entry *e = land_tab[h];
+
+        while (e != 0) {
+            land_entry *next = e->next;
+
+            free(e);
+            e = next;
+        }
+        land_tab[h] = 0;
+    }
+    memset(land_live, 0, sizeof land_live);
+    land_depth = 0;
+    land_outer_set = 0;
+}
+
 void *evv_land_planted(uintptr_t name)
 {
     land_entry *e = found(name);
@@ -272,17 +296,57 @@ EVV_LAND_HIDE
 "    jmp *%r11\n"
 );
 
+#elif defined(__thumb2__)
+
+/* Thumb-2, for the Cortex-M. A function calling setjmp cannot stand in here
+   for the reason it never could anywhere: a landing is entered after the call that planted it
+   has returned, and longjmp into a frame setjmp has left is undefined -- the
+   return address it restores is whatever has since been written over it.
+   Saving the stack pointer and the return address as they will be after the
+   save returns, as the x86-64 pair does, is what makes that well defined.
+   The hard-float convention makes d8-d15 the callee's too, so they go in
+   with the rest when there is a floating point unit to hold them. */
+__asm__(
+".syntax unified\n"
+".text\n"
+".thumb\n"
+".globl evv_land_save\n"
+".globl evv_land_jump\n"
+".hidden evv_land_save\n"
+".hidden evv_land_jump\n"
+
+".thumb_func\n"
+".type evv_land_save, %function\n"
+"evv_land_save:\n"
+"    stmia r0!, {r4-r11}\n"
+"    mov   r12, sp\n"
+"    str   r12, [r0], #4\n"
+"    str   lr, [r0], #4\n"
+#if defined(__ARM_FP)
+"    vstmia r0, {d8-d15}\n"
+#endif
+"    movs  r0, #0\n"
+"    bx    lr\n"
+
+".thumb_func\n"
+".type evv_land_jump, %function\n"
+"evv_land_jump:\n"
+"    ldmia r0!, {r4-r11}\n"
+"    ldr   r12, [r0], #4\n"
+"    ldr   lr, [r0], #4\n"
+#if defined(__ARM_FP)
+"    vldmia r0, {d8-d15}\n"
+#endif
+"    mov   sp, r12\n"
+"    mov   r0, r1\n"
+"    bx    lr\n"
+);
+
 #else
 
-/* Where the registers are not x86-64, the C library will do: a thirty-two bit
-   build has a pointer that fits a value, so nothing here has ever been the
-   problem there. */
+/* Anywhere else the C library makes the jump. The save is setjmp in the rule
+   itself, for the reason evv_land.h gives. */
 #include <setjmp.h>
-
-int evv_land_save(void *place)
-{
-    return setjmp(*(jmp_buf *)place);
-}
 
 void evv_land_jump(void *place, int value)
 {

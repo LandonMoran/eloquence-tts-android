@@ -71,6 +71,15 @@ SUF   := $(if $(filter-out enus,$(TAGS)),-$(subst $(space),-,$(TAGS)))
 CC  ?= cc
 NM  ?= nm
 
+# Put in front of every compile to an object, and empty where there is none.
+# The rules as C are thirty-two files a language for each of four compilers,
+# and a change to one language, or to a tool every language is written with,
+# leaves most of them as they were: a cache gives those back rather than
+# compiling them again. `make CCACHE=' turns it off.
+ifeq ($(origin CCACHE),undefined)
+CCACHE := $(shell command -v ccache 2>/dev/null)
+endif
+
 # Which rules the interpreter finds already written as C.
 #
 # `c' links the thirteen megabytes tools/rules/decompile.py writes out of the
@@ -175,13 +184,11 @@ LANGLIST := $(BUILD)/delta_langs_$(subst $(space),_,$(TAGS)).c
 # one, and an English build carries none of it.
 ROMS := $(sort $(foreach l,$(LANGS),$(wildcard rom/$(notdir $(l))/*.c)))
 
-# A romanizer makes itself known by registering with evv_rom_provide from
-# its own module. rom/jajp does not exist in this tree, so nothing defines
-# jp_rom_new, and the legacy -DEVV_ROM_JAJP pin above must not be set:
-# setting it makes eci_romedll.c take the address of jp_rom_new, an
-# undefined symbol at dlopen time -- the library then cannot load (Android
-# dies with UnsatisfiedLinkError: cannot locate symbol "jp_rom_new").
-# If rom/jajp ever lands, its module registers itself and this stays gone.
+# And which of them is linked, said to the one file that has to know how a
+# romanizer is found. IBM answers that question with the presence of a
+# link-time symbol; a build of ours can hold several languages, so it is
+# answered by name.
+ROMDEFS := $(if $(filter jajp,$(TAGS)),-DEVV_ROM_JAJP)
 
 # The engine, plus every language beside it. port_win32.c is the Windows
 # porting layer and belongs to the reference build; the two rule tables are
@@ -193,7 +200,12 @@ ROMS := $(sort $(foreach l,$(LANGS),$(wildcard rom/$(notdir $(l))/*.c)))
 # files is there yet -- so a wildcard would leave them out of this build and
 # find them in the next one, which is a link that fails for no visible reason
 # the first time and succeeds the second.
-SOURCES := $(filter-out %/port_win32.c, \
+#
+# PORT=none leaves port_posix.c out as well, for a machine with no pthreads
+# that supplies what src/port/evv_port.h asks for itself.
+PORT ?= posix
+PORTOUT := %/port_win32.c $(if $(filter none,$(PORT)),%/port_posix.c)
+SOURCES := $(filter-out $(PORTOUT), \
              $(foreach d,$(SRCDIRS),$(wildcard $(d)/*.c))) \
            $(filter-out $(STALE) $(GENERATED) $(STUBS) $(RULECODE), \
              $(sort $(foreach l,$(LANGS),$(wildcard $(l)/*.c)))) \
@@ -253,9 +265,11 @@ $(LANGLIST): Makefile
 
 # A narrowed field assigned from a pointer, or the other way about, was the
 # whole of what went wrong in the sixty-four bit port, so it is an error here
-# rather than a warning nobody reads. The rest of the warnings stay off: this
-# is transcribed code and it is loud.
-WARN := -w -Wno-implicit-function-declaration \
+# rather than a warning nobody reads. So is a call to something undeclared,
+# which C takes as answering an int: the same narrowing, out of sight, and
+# what GCC 14 refuses on its own once nothing here turns it off. The rest of
+# the warnings stay off: this is transcribed code and it is loud.
+WARN := -w -Werror=implicit-function-declaration \
         -Werror=int-conversion -Werror=incompatible-pointer-types
 
 # The machine this code was written for keeps addresses in thirty-two bit
@@ -274,9 +288,17 @@ LOW := -DEVV_ARENA=1
 endif
 
 OPT        ?= -O2
+# The rules written as C reach a place in a frame or a variable through a
+# pointer cast to the width the operation has, and a rule may write a place
+# four bytes wide and then compare two bytes of it. Under C's aliasing rules
+# the compiler may take those for different objects and compare what was
+# there before the write, which is what the rules lifted from 6.1 do and IBM's
+# never did -- so it went wrong only in the C form of those, and silently. The
+# rest of the engine reads memory the same way, so this is everywhere.
+ALIAS      := -fno-strict-aliasing
 INCS       := -Iinclude $(addprefix -I,$(SRCDIRS)) $(addprefix -I,$(LANGS)) \
               $(foreach l,$(LANGS),-Irom/$(notdir $(l)))
-ALL_CFLAGS := $(OPT) -std=gnu99 $(INCS) $(WARN) $(LOW) $(TRIM) $(ROMDEFS) \
+ALL_CFLAGS := $(OPT) $(ALIAS) -std=gnu99 $(INCS) $(WARN) $(LOW) $(TRIM) $(ROMDEFS) \
               $(CFLAGS)
 
 # One directory per build, where a build is which form the rules are in and
@@ -287,7 +309,7 @@ ALL_CFLAGS := $(OPT) -std=gnu99 $(INCS) $(WARN) $(LOW) $(TRIM) $(ROMDEFS) \
 OBJDIR  := $(BUILD)/obj-$(RULES)/$(subst $(space),-,$(TAGS))
 OBJECTS := $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(SOURCES)))
 
-.PHONY: all probe so so32 sotest phonemes dict dictfile objects stubs rules missing install install-lib clean evv32 probe32 instances interrupt landing rate rates voices inikeys stopthread pieces prims ipa xmltok ssml romcan romprims speechd speechd-install speechd-enable-test speechd-test speechd-test-all say-test
+.PHONY: all probe so so32 sotest phonemes dict dictfile objects stubs rules missing install install-lib clean evv32 probe32 instances interrupt landing rate rates voices wide inikeys stopthread pieces prims ipa xmltok ssml romcan romprims speechd speechd-install speechd-enable-test speechd-test speechd-test-all say-test
 all: $(BUILD)/evv $(BUILD)/openevv-say
 
 $(BUILD)/evv: cli/evv.c $(BUILD)/libevv$(SUF).a $(RULESTAMP)
@@ -344,7 +366,7 @@ so: $(BUILD)/$(SONAME)
 
 $(OBJDIRPIC)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIRPIC)
-	@$(CC) $(CFLAGSPIC) -c $< -o $@
+	@$(CCACHE) $(CC) $(CFLAGSPIC) -c $< -o $@
 
 $(BUILD)/$(SONAME): lib/eci_api.c $(OBJECTSPIC) $(RULESTAMP)
 	@for o in $(OBJDIRPIC)/*.o; do \
@@ -362,7 +384,7 @@ $(BUILD)/$(SONAME): lib/eci_api.c $(OBJECTSPIC) $(RULESTAMP)
 .PHONY: sotest
 sotest: $(BUILD)/libecitest
 	@cd $(BUILD) && EVV_ECI_LIB=./libeci$(LIBSUF).so ./libecitest -o sotest.wav \
-	   "Hello. This is the Eloquence synthesizer speaking."
+	   "Hello. This is OpenEVV speaking."
 
 $(BUILD)/libecitest: test/lib/dll.c $(BUILD)/$(SONAME)
 	@$(CC) $(OPT) -std=gnu99 test/lib/dll.c -ldl -o $@
@@ -381,7 +403,7 @@ so32: $(BUILD)/$(SONAME32)
 
 $(OBJDIRPIC32)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIRPIC32)
-	@$(CC32) $(CFLAGSPIC32) -c $< -o $@
+	@$(CCACHE) $(CC32) $(CFLAGSPIC32) -c $< -o $@
 
 $(BUILD)/$(SONAME32): lib/eci_api.c $(OBJECTSPIC32) $(RULESTAMP)
 	@$(CC32) $(CFLAGSPIC32) -shared -Wl,-soname,$(SONAME32) \
@@ -468,6 +490,17 @@ pieces: $(BUILD)/pieces
 
 $(BUILD)/pieces: test/harness/pieces.c $(BUILD)/libevv.a
 	@$(CC) $(ALL_CFLAGS) test/harness/pieces.c $(BUILD)/libevv.a -lpthread -lm -o $@
+	@echo "built $@"
+
+# The wideband voice, which the suite does not ask for: that below the join
+# it is the default voice, at the rate it is made at and at the rates taken
+# from it, and that its two halves are still in step at the end of a long
+# text. See the head of test/harness/wide.c.
+wide: $(BUILD)/wide
+	@$(BUILD)/wide
+
+$(BUILD)/wide: test/harness/wide.c $(BUILD)/libevv.a
+	@$(CC) $(ALL_CFLAGS) test/harness/wide.c $(BUILD)/libevv.a -lpthread -lm -o $@
 	@echo "built $@"
 
 # The eight voices the caller may edit, which the suite is blind to: nothing it
@@ -616,7 +649,7 @@ $(BUILD)/ssml: test/harness/ssml.c $(BUILD)/libevv.a
 
 $(OBJDIR)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIR)
-	@$(CC) $(ALL_CFLAGS) -c $< -o $@
+	@$(CCACHE) $(CC) $(ALL_CFLAGS) -c $< -o $@
 
 # A source that gets renamed leaves its object behind, and a stale one is a
 # duplicate definition waiting to happen, so they go before the archive is
@@ -626,7 +659,7 @@ $(BUILD)/libevv$(SUF).a: $(OBJECTS) $(RULESTAMP)
 	   case " $(OBJECTS) " in *" $$o "*) ;; *) rm -f "$$o" ;; esac; \
 	 done
 	@rm -f $@
-	@ar rcs $@ $(OBJECTS)
+	@$(AR) rcs $@ $(OBJECTS)
 	@echo "built $@ from $(words $(OBJECTS)) objects"
 
 # The rules as text that can be read and edited, in lang/<tag>/rules, and the
@@ -663,9 +696,11 @@ notation-symbols:
 	@python3 tools/rules/notation.py symbols
 
 # The three files a build compiles, written out of the lifted text alone --
-# IBM's rules and nothing of ours. That is one of the two sides `upper-check'
-# holds against each other, and it is not what an ordinary build wants; `make
-# rulecode' is.
+# IBM's rules, with nothing of ours standing in for one of them. A rule of
+# ours that stands in for nothing still comes in, because the text may have
+# been edited to call it and would not link without it. That is one of the
+# two sides `upper-check' holds against each other, and it is not what an
+# ordinary build wants; `make rulecode' is.
 notation-rewrite:
 	@python3 tools/rules/notation.py rewrite
 
@@ -680,7 +715,7 @@ notation-rewrite:
 #
 # `upper-check' is the one that says whether an authored rule is the rule it
 # stands in for. There is no byte comparison to be had: our compiler would
-# have to make the same choices IBM's did. So it speaks the seven plain cases
+# have to make the same choices IBM's did. So it speaks the plain cases
 # through a build carrying the authored rules and through one carrying IBM's,
 # and holds every rule entered and every call made with its arguments against
 # each other, and the audio besides. It wants no objects and no Wine.
@@ -690,13 +725,21 @@ upper:
 upper-prove:
 	@python3 tools/rules/notation.py upper-prove
 
+# Letter-to-sound out of lang/<tag>/letters, which is the file a person edits.
+# It writes rules/et_phone.up and the strings the arms name, and `constants'
+# lays those down; EVVLANG says which language, as everywhere else.
+.PHONY: letters
+letters:
+	@python3 tools/rules/letters.py write $(notdir $(EVVLANG))
+	@$(MAKE) --no-print-directory constants EVVLANG=$(EVVLANG)
+
 upper-check:
 	@bash tools/rules/check-upper.sh
 
 # The other question about a rule, and the other gate. `upper-check' asks
 # whether an authored rule is the rule it stands in for; this asks whether a
 # rule written as C does what the same rule does as bytecode. It writes the
-# smallest few rules out as C, speaks the seven plain cases through a build
+# smallest few rules out as C, speaks the plain cases through a build
 # carrying those beside the interpreter and through one carrying the
 # interpreter alone, and holds every rule entered and every call made with its
 # arguments against each other, and the audio besides. It wants no objects and
@@ -799,14 +842,21 @@ $(1)/delta_rules_$(notdir $(1)).c \
 $(1)/delta_rules_$(notdir $(1)).h \
 $(1)/delta_rules_shim_$(notdir $(1)).c &: \
                     $(wildcard $(1)/rules/*.dr) $(wildcard $(1)/rules/*.up) \
+                    $(wildcard $(1)/letters) \
                     $(wildcard $(1)/rules/symbols) \
                     $(wildcard $(1)/rules/trials) \
                     tools/rules/notation.py tools/rules/lower.py \
                     tools/rules/upper.py tools/rules/emit.py \
-                    tools/rules/entrysig.py tools/evv.py
+                    tools/rules/letters.py \
+                    tools/rules/entrysig.py tools/evv.py \
+                    $(1)/rules/.declared
+	@test ! -f $(1)/letters || \
+	  python3 tools/rules/letters.py write $(notdir $(1)) > /dev/null
 	@EVV_NOTATION_LANG=$(notdir $(1)) \
 	  python3 tools/rules/notation.py build > /dev/null
 	@echo "wrote the rules of $(notdir $(1)) out of $(1)/rules"
+
+$(1)/rules/.declared: $(BUILD)/declared-$(notdir $(1)).stamp ;
 endef
 
 # And for a module that has no rules as text. lang/jajp is the one: it is not
@@ -819,13 +869,38 @@ endef
 define rulecode_lifted
 $(1)/delta_rules_$(notdir $(1)).c \
 $(1)/delta_rules_$(notdir $(1)).h \
-$(1)/delta_rules_shim_$(notdir $(1)).c &:
+$(1)/delta_rules_shim_$(notdir $(1)).c &: \
+                    | $(BUILD)/declared-$(notdir $(1)).stamp
 	@echo "$(1) holds no rules as text and none of the three files a" >&2
 	@echo "build compiles, so there is nothing here to write them from." >&2
 	@echo "A module lifted whole rather than kept as text is made by the" >&2
 	@echo "commands in docs/japanese.md." >&2
 	@false
 endef
+
+# A module's rules are written with a mask per entry they call, read from the
+# entry's declaration under src, so a declaration that changes whether an
+# argument is a pointer has to reach rules written before it. Depending on
+# every file under src would write every module again, and the rules as C after
+# them, on any edit to the machine. So this asks, whenever src changes -- a
+# fifth of a second -- whether the masks the written rule code holds are still
+# what the declarations say, and a module's record is made new only where one
+# is not. It asks the rule code as it stands rather than keeping an account of
+# how it was written, because upper-check writes IBM's rules alone and builds
+# them, and must not have the module's own written back over them. lang/jajp
+# is kept by hand, so it is checked instead, and the build stops if it holds a
+# mask its declaration has moved away from: nothing would ever write it again.
+ENTRYSRC := $(foreach d,$(SRCDIRS),$(wildcard $(d)/*.c $(d)/*.h))
+
+define entry_record
+$(BUILD)/declared-$(notdir $(1)).stamp: $(ENTRYSRC) tools/rules/entrysig.py
+	@mkdir -p $(BUILD)
+	@python3 tools/rules/entrysig.py \
+	  $(if $(wildcard $(1)/rules),record,check) $(1)
+	@touch $$@
+endef
+
+$(foreach l,$(LANGS),$(eval $(call entry_record,$(l))))
 
 $(foreach l,$(LANGS),$(eval $(call \
     $(if $(wildcard $(l)/rules),rulecode_from_text,rulecode_lifted),$(l))))
@@ -847,15 +922,34 @@ rules: $(GENERATED)
 # The bytecode is a prerequisite because the decompiler reads it: this writes
 # the rules as C out of the array in delta_rules_<tag>.c, which is itself
 # written out of the text. A rule changed in the text goes through both.
+#
+# The rule code is written again whenever anything it is made from is newer,
+# and nearly always comes out as it was -- a change to one language's rules or
+# to a tool every language is written with rewrites all nine. So what the
+# decompiler would read is summed first, along with the settings that change
+# what it writes, and where the sum is the one it last wrote from and every
+# part is there, the parts are left as they are. Make then finds them no newer
+# than before and compiles nothing, where writing them again cost two minutes
+# a language and every object after it.
 define rules_for
 $(foreach n,$(PARTNS),$(1)/delta_rules_c$(n)_$(notdir $(1)).c) &: \
                                      $(1)/delta_rules_$(notdir $(1)).c \
                                      tools/rules/decompile.py \
                                      tools/rules/patterns.py tools/evv.py
-	@rm -f $(1)/delta_rules_c[0-9][0-9]_$(notdir $(1)).c \
-	       $(1)/delta_rules_c_$(notdir $(1)).c
-	@EVV_LANG_DIR=$(1) EVV_RULE_PARTS=$(PARTS) \
-	  python3 tools/rules/decompile.py all
+	@sum=$$$$(cat $$^ $(1)/delta_globals_$(notdir $(1)).c \
+	              $(1)/delta_consts_$(notdir $(1)).c src/delta/delta.h \
+	              2>/dev/null | sha256sum | cut -c1-64)-$(PARTS)-$$$${EVV_STALE_ALL:-}-$$$${EVV_RULE_PROVENANCE:-}; \
+	 have=yes; \
+	 for f in $(foreach n,$(PARTNS),$(1)/delta_rules_c$(n)_$(notdir $(1)).c); do \
+	   [ -f "$$$$f" ] || have=; done; \
+	 [ -n "$$$$have" ] \
+	   && [ "$$$$sum" = "$$$$(cat $(BUILD)/decompiled-$(notdir $(1)).sum 2>/dev/null)" ] \
+	   && exit 0; \
+	 rm -f $(1)/delta_rules_c[0-9][0-9]_$(notdir $(1)).c \
+	       $(1)/delta_rules_c_$(notdir $(1)).c $(BUILD)/decompiled-$(notdir $(1)).sum; \
+	 EVV_LANG_DIR=$(1) EVV_RULE_PARTS=$(PARTS) \
+	   python3 tools/rules/decompile.py all || exit 1; \
+	 mkdir -p $(BUILD); echo "$$$$sum" > $(BUILD)/decompiled-$(notdir $(1)).sum
 endef
 $(foreach l,$(LANGS),$(eval $(call rules_for,$(l))))
 
@@ -911,6 +1005,18 @@ phonemes: $(BUILD)/phonemes$(SUF)
 	@$(MAKE) -C reference TAG=$(TAG) BUILD=../$(BUILD)/reference$(SUF) phontry
 	@EVV_LANG=$(TAG) bash test/harness/phonemes.sh $(PHONCASES)
 
+# The same question asked of ETI Eloquence 6.1, which the rules lifted from it
+# are held to: one driver loads either engine by name and asks each for its
+# phonemes. It wants 6.1 installed, so it runs here and on no runner;
+# docs/testing.md says where it looks.
+.PHONY: eti
+eti: so $(BUILD)/eti
+	@EVV_ECI_LIB=$(BUILD)/libeci$(LIBSUF).so bash test/harness/eti.sh
+
+$(BUILD)/eti: test/harness/eti.c
+	@$(CC) $(OPT) -std=gnu99 test/harness/eti.c -ldl -o $@
+	@echo "built $@"
+
 # lib/eci_api.c goes in because the harness calls the published names and the
 # archive holds only the engine's own short ones. It brings the constructor
 # with it, which is what starts the platform and runs the static
@@ -954,9 +1060,16 @@ $(BUILD)/dict$(SUF): test/harness/dict.c lib/eci_api.c $(BUILD)/libevv$(SUF).a
 # The words IBM's engine cannot say. It wants neither Wine nor the objects,
 # because there is nothing to hold ours against: the original takes a page
 # fault on every one of them. What this says is that ours still answers.
-.PHONY: crashers
+.PHONY: crashers crashers32
 crashers: $(BUILD)/evv
 	@test/crashers.sh $(BUILD)/evv
+
+# The same, thirty-two bit. There a landing is the C library's setjmp rather
+# than the pair written for x86-64, so the run above answers nothing for it,
+# and the matrix cannot see a landing at all. `test/crashers.sh
+# build/evv32.exe' is the thirty-two bit Windows build under Wine.
+crashers32: $(BUILD)/evv32
+	@test/crashers.sh $(BUILD)/evv32
 
 # The gate. Every case of every language spoken and held against what this
 # engine has said before -- the samples and the answers the interface gave,
@@ -972,15 +1085,17 @@ crashers: $(BUILD)/evv
 # since the thing it exists to catch is a change made for one language landing
 # in another. `test/matrix.sh check plpl' is there for iterating on one.
 # The gate a level below the one above: twenty thousand words rather than
-# 979 sentences, and what each is made of rather than what it sounds like.
+# a thousand sentences, and what each is made of rather than what it sounds
+# like.
 # It is what makes a change to a rule or a dictionary answerable, since the
 # sentence gate is far too small to notice one. Wants no Wine and no objects.
 .PHONY: words words-record
+# Every language with a list, which is all of them but Polish and Japanese.
 words:
-	@bash test/words.sh check
+	@bash test/words.sh check enus engb dede eses esus frfr frca itit
 
 words-record:
-	@bash test/words.sh record
+	@bash test/words.sh record enus engb dede eses esus frfr frca itit
 
 .PHONY: matrix matrix-record
 matrix:
@@ -993,7 +1108,7 @@ clean:
 	@rm -rf $(BUILD)/obj-* $(BUILD)/obj32-* $(BUILD)/objwin-* \
 	        $(BUILD)/objwin32-* $(BUILD)/objpic-* $(BUILD)/objpic32-* \
 	        $(BUILD)/libeci*.so $(BUILD)/libeci*.so.* \
-	        $(BUILD)/eci32.dll $(BUILD)/dlltest32.exe \
+	        $(BUILD)/eci32.dll $(BUILD)/dlltest32.exe $(BUILD)/evv32.exe \
 	        $(BUILD)/libevv-win32$(SUF).a $(BUILD)/evv \
 	        $(BUILD)/openevv-say $(BUILD)/probe$(SUF) \
 	        $(BUILD)/evv32 $(BUILD)/probe32$(SUF) \
@@ -1056,7 +1171,7 @@ install-lib: $(BUILD)/$(SONAME)
 # CC32 can be set to whole: `make evv32 CC32="gcc -m32"'.
 CC32      ?= i686-unknown-linux-gnu-gcc
 OBJDIR32  := $(BUILD)/obj32-$(RULES)/$(subst $(space),-,$(TAGS))
-CFLAGS32  := $(OPT) -std=gnu99 $(INCS) $(WARN) $(TRIM) $(ROMDEFS) \
+CFLAGS32  := $(OPT) $(ALIAS) -std=gnu99 $(INCS) $(WARN) $(TRIM) $(ROMDEFS) \
              $(CFLAGS)
 OBJECTS32 := $(patsubst %.c,$(OBJDIR32)/%.o,$(notdir $(SOURCES)))
 
@@ -1073,7 +1188,7 @@ $(BUILD)/probe32$(SUF): cli/probe.c $(BUILD)/libevv32$(SUF).a
 
 $(OBJDIR32)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIR32)
-	@$(CC32) $(CFLAGS32) -c $< -o $@
+	@$(CCACHE) $(CC32) $(CFLAGS32) -c $< -o $@
 
 $(BUILD)/libevv32$(SUF).a: $(OBJECTS32) $(RULESTAMP)
 	@for o in $(OBJDIR32)/*.o; do \
@@ -1096,7 +1211,7 @@ WINDRES    ?= x86_64-w64-mingw32-windres
 ARWIN      ?= x86_64-w64-mingw32-ar
 OBJDIRWIN  := $(BUILD)/objwin-$(RULES)/$(subst $(space),-,$(TAGS))
 
-CFLAGSWIN  := $(OPT) -std=gnu99 $(INCS) $(WARN) -DEVV_ARENA=1 \
+CFLAGSWIN  := $(OPT) $(ALIAS) -std=gnu99 $(INCS) $(WARN) -DEVV_ARENA=1 \
               $(TRIM) $(ROMDEFS) $(CFLAGS)
 # Static, so what ships is one file. MINGW64_LDFLAGS is where the cross gcc's
 # thread runtime is; the flake sets it, since nothing puts it on the link path
@@ -1184,7 +1299,7 @@ $(OBJDIRWIN)/speak.res: win/speak.rc win/speak.h
 
 $(OBJDIRWIN)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIRWIN)
-	@$(CCWIN) $(CFLAGSWIN) -c $< -o $@
+	@$(CCACHE) $(CCWIN) $(CFLAGSWIN) -c $< -o $@
 
 $(BUILD)/libevv-win$(SUF).a: $(OBJECTSWIN) $(RULESTAMP)
 	@for o in $(OBJDIRWIN)/*.o; do \
@@ -1206,7 +1321,7 @@ CCWIN32     ?= i686-w64-mingw32-gcc
 WINDRES32   ?= i686-w64-mingw32-windres
 ARWIN32     ?= i686-w64-mingw32-ar
 OBJDIRWIN32 := $(BUILD)/objwin32-$(RULES)/$(subst $(space),-,$(TAGS))
-CFLAGSWIN32 := $(OPT) -std=gnu99 $(INCS) $(WARN) $(TRIM) $(ROMDEFS) $(CFLAGS)
+CFLAGSWIN32 := $(OPT) $(ALIAS) -std=gnu99 $(INCS) $(WARN) $(TRIM) $(ROMDEFS) $(CFLAGS)
 LDFLAGSWIN32 := -static -Wl,--kill-at $(MINGW_LDFLAGS)
 OBJECTSWIN32 := $(patsubst %.c,$(OBJDIRWIN32)/%.o,$(notdir $(SOURCESWIN)))
 
@@ -1222,13 +1337,21 @@ $(BUILD)/dlltest32.exe: test/lib/dll.c $(BUILD)/eci32.dll $(RULESTAMP)
 	@$(CCWIN32) $(CFLAGSWIN32) test/lib/dll.c -static -lversion -o $@
 	@echo "built $@"
 
+# The command over the same archive, which is what test/crashers.sh drives:
+# the library is the one a reader hosts, and a landing there is the C
+# library's own, which no other build exercises.
+$(BUILD)/evv32.exe: cli/evv.c $(BUILD)/libevv-win32$(SUF).a $(RULESTAMP)
+	@$(CCWIN32) $(CFLAGSWIN32) cli/evv.c $(BUILD)/libevv-win32$(SUF).a \
+	   $(LDFLAGSWIN32) -o $@
+	@echo "built $@"
+
 $(OBJDIRWIN32)/eci.res: lib/eci.rc
 	@mkdir -p $(OBJDIRWIN32)
 	@$(WINDRES32) -I lib lib/eci.rc -O coff -o $@
 
 $(OBJDIRWIN32)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIRWIN32)
-	@$(CCWIN32) $(CFLAGSWIN32) -c $< -o $@
+	@$(CCACHE) $(CCWIN32) $(CFLAGSWIN32) -c $< -o $@
 
 $(BUILD)/libevv-win32$(SUF).a: $(OBJECTSWIN32) $(RULESTAMP)
 	@for o in $(OBJDIRWIN32)/*.o; do \

@@ -150,18 +150,36 @@ typedef enum {
     /* Ours. IBM's romanizer switch sits here and is only reachable in a
        language written in another script. */
     eciRomanizer          = 12,
-    /* The four an audio device's format is built from. Nothing in the tree
-       knows what any of them means -- they are carried into the format as
-       four numbers and no code here reads them again -- so they keep the
-       letters the format gives them. Setting one while the samples are going
-       to a buffer records the number and rebuilds nothing, which is the
-       second deliberate divergence: IBM's engine rebuilds regardless and
-       loses the buffer. */
+    /* The four an audio device's format is built from: how many blocks the
+       device keeps, how many bytes each holds, and how many blocks and bytes
+       it fills before it starts to play -- 10, 2,200, 0 and 2,200 unless
+       told. They keep the letters IBM gave them. Nothing here plays through a
+       device, so none of them changes what a buffer receives. Setting one
+       while the samples are going to a buffer records the number and
+       rebuilds nothing, which is the second deliberate divergence: IBM's
+       engine rebuilds regardless and loses the buffer. */
     eciAudioFormatA       = 13,
     eciAudioFormatB       = 14,
     eciAudioFormatC       = 15,
     eciAudioFormatD       = 16,
-    eciNumParams          = 18
+    eciNumParams          = 18,
+    /* Ours. One makes every rate above 11,025 the wideband voice: the
+       engine's own sound below about 5.4 kHz and, above it, what a second
+       synthesiser makes of the same frames at 22,050. Nought, the default,
+       is the 11,025 voice raised to the rate as before. Numbered well clear
+       of the settings IBM and ETI used, so no program written for either
+       reaches it; eciReset puts it back to nought. */
+    eciWideband           = 32,
+    /* Ours. The engine pauses for as long as at a full stop wherever it is
+       made to finish a stretch of text -- the end of an utterance, and every
+       change of voice, rate, pitch, volume or language -- whether or not the
+       text there ended in punctuation. One, the default, shortens that pause
+       where the text does not end in punctuation; two shortens the pause at
+       every mark as well; nought shortens none, which is what IBM's engine
+       did. A pause annotation at the very end is the caller's choice and is
+       left alone. eciSetDefaultParam takes it too, and eciReset puts back
+       the default. */
+    eciPauseMode          = 33
 } ECIParam;
 
 /* A voice's eight, which every one of the eight preset voices has.

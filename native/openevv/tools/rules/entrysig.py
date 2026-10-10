@@ -78,7 +78,7 @@ def _read():
         for fn in sorted(files):
             if not fn.endswith(('.c', '.h')):
                 continue
-            text = open(os.path.join(base, fn)).read()
+            text = open(os.path.join(base, fn), encoding="utf-8").read()
             text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
             for m in DECL.finditer(text):
                 name = m.group(2)
@@ -117,3 +117,86 @@ def mask(name):
                                  ' arguments needs a wider mask' % name)
             m |= 1 << i
     return m
+
+
+# A module's rules are written with the masks above built into them, so a
+# declaration that changes whether an argument is a pointer reaches a rule
+# only when the rule code is written again. Depending on every file under src
+# would rewrite every module, and the rules as C after them, on any edit to the
+# machine. So the build asks instead, whenever src changes -- a fifth of a
+# second -- whether the masks the written rule code holds are still what the
+# declarations say, and only a module where one is not is written again. What
+# is asked about is the rule code as it stands, not a record of how it was
+# written, because more than one thing writes it: the upper-form check writes
+# IBM's rules alone and builds them, and a record kept by the build would read
+# that as stale and write the module's own over what was to be checked.
+
+def _table(text, what):
+    m = re.search(r'\b[a-z]+_%s\[\] = \{\n(.*?)\n\};' % what, text, re.S)
+    return [] if m is None else [w.strip().rstrip(',')
+                                 for w in m.group(1).splitlines()]
+
+
+def _entries(rule_code):
+    """The names a module's written rules call, the masks they hold, and
+    which are the module's own rules: those are written with nought and
+    called by the module's own name for them, never the bare one."""
+    with open(rule_code, encoding='utf-8', errors='replace') as f:
+        text = f.read()
+    names = [n.strip('"') for n in _table(text, 'delta_rule_entry_name')]
+    masks = [m.split('/*')[0].strip() for m in _table(text, 'delta_rule_argmask')]
+    fns = [f.split('/*')[0].strip() for f in _table(text, 'delta_rule_entry')]
+    own = [not f.endswith(')' + n) for f, n in zip(fns, names)]
+    return names, masks, own
+
+
+def disagreements(rule_code):
+    """Every entry whose mask in the written rule code is not what its
+    declaration says now."""
+    names, masks, own = _entries(rule_code)
+    wrong = []
+    for n, held, mine in zip(names, masks, own):
+        m = None if mine else mask(n)
+        if m is not None and int(held.rstrip('u'), 0) != m:
+            wrong.append('%s holds %s and its declaration says 0x%08x'
+                         % (n, held, m))
+    return wrong
+
+
+def record(rule_code, path):
+    """The timestamp the rule-code step depends on, and sets to the rule
+    code's own once it has written it: made new only when a mask the rule
+    code holds has moved, which is what sends the module round again."""
+    if not os.path.exists(rule_code):
+        return
+    wrong = disagreements(rule_code)
+    if wrong:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(''.join(w + '\n' for w in wrong))
+    elif not os.path.exists(path):
+        open(path, 'w', encoding='utf-8').close()
+        st = os.stat(rule_code)
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
+def check(rule_code):
+    """For a module whose rule code is kept by hand rather than written: the
+    same question, and a failure rather than a rewrite, since nothing will
+    write it again when a declaration changes."""
+    wrong = disagreements(rule_code)
+    for w in wrong:
+        print('%s: %s' % (rule_code, w))
+    return not wrong
+
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) != 3 or sys.argv[1] not in ('record', 'check'):
+        sys.exit('usage: entrysig.py record|check lang/<tag>')
+    module = sys.argv[2].rstrip('/')
+    rule_code = os.path.join(module,
+                             'delta_rules_%s.c' % os.path.basename(module))
+    if sys.argv[1] == 'record':
+        record(rule_code, os.path.join(module, 'rules', '.declared'))
+    else:
+        sys.exit(0 if check(rule_code) else 1)

@@ -821,6 +821,11 @@ int  setscan_r(delta_state *d, uint8_t f);
 int  setscan_nof_l(delta_state *d, uint8_t f);
 int  setscan_nof_r(delta_state *d, uint8_t f);
 int32_t vgetsc(delta_state *d, int32_t back, int32_t ctx, int32_t t, uint8_t f);
+void vsetsc(delta_state *d, int32_t fromStart, int32_t unused,
+            int32_t *table, uint8_t idx, int32_t bits);
+int32_t vmerge(delta_state *d, int32_t left, int32_t right);
+void vcmdend(delta_state *d, int32_t code);
+int32_t cleanLiteral(char *s, char open, char close);
 int  vtimept_tv(delta_state *d, delta_tpos *p, uint8_t back);
 int  for_loop_preamble(delta_state *d, int32_t tag, int32_t loop, int32_t f,
                        const delta_token *tok);
@@ -987,11 +992,11 @@ int  if_testge(delta_state *d);
 void npop(delta_state *d, delta_loc *loc);
 void ncompare_s(delta_state *d, uint8_t c);
 int  forall_to_test(delta_state *d, delta_loc *a, delta_loc *b);
-int  mark_i(delta_state *d, uint8_t st, uint8_t fld, const void *v,
+int  mark_i(delta_state *d, uint8_t st, uint8_t fld, int32_t v,
             uint8_t mode);
-int  mark_l(delta_state *d, uint8_t st, uint8_t fld, const void *v,
+int  mark_l(delta_state *d, uint8_t st, uint8_t fld, int32_t v,
             uint8_t mode);
-int  mark_lng(delta_state *d, uint8_t st, uint8_t fld, const void *v,
+int  mark_lng(delta_state *d, uint8_t st, uint8_t fld, int32_t v,
               uint8_t mode);
 void SETCTXL(delta_state *d, int32_t *table, uint8_t idx, int32_t bits);
 void SETCTXR(delta_state *d, int32_t *table, uint8_t idx, int32_t bits);
@@ -1111,11 +1116,11 @@ int  open_input(delta_state *d, int32_t which);
 int  open_output(delta_state *d, int32_t which);
 int  read_tvar(delta_state *d, int8_t f, delta_loc *field);
 int  vrd_tvar(delta_state *d, int32_t f, const delta_operand *v);
-int  checkInterrupt(delta_state *d);
-int  vf_getc(delta_state *d, int32_t f);
+int32_t checkInterrupt(delta_state *d);
+int32_t vf_getc(delta_state *d, int32_t f);
 int32_t vf_ungetc(delta_state *d, int32_t f);
 void *logicalFileName(delta_state *d, int32_t which);
-int  logicalFileOpen(delta_state *d, void *name, int32_t mode);
+int32_t logicalFileOpen(delta_state *d, void *name, int32_t mode);
 void vfclose_lf(delta_state *d, int32_t lf);
 int8_t vffind_lf(delta_state *d, const char *name);
 int32_t vf_gets(delta_state *d, int32_t lf, const char *prompt);
