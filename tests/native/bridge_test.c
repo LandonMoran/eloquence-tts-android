@@ -117,9 +117,9 @@ static void await_cleanup(void) {
     assert(pending_cleanup() == 0);
 }
 
-/** Compare the production resampler against its previous zero-padded implementation. */
+/** Compare the production resampler against its zero-padded reference. */
 static void test_resampler_equivalence(void) {
-    pthread_once(&vv_rsp_once, vv_rsp_build);
+    const float (*coeff)[VV_RSP_TAPS] = vv_resample_table();
     unsigned state = 0x6d2b79f5u;
     const size_t lengths[] = {1, 2, 3, 31, 32, 63, 64, 65, 257, 4096};
     for (size_t c = 0; c < sizeof(lengths) / sizeof(lengths[0]); ++c) {
@@ -140,7 +140,7 @@ static void test_resampler_equivalence(void) {
             float acc = 0.0f;
             const short *src = padded + VV_RSP_HALF + i;
             for (int k = 0; k < VV_RSP_TAPS; ++k)
-                acc += vv_rsp_coeff[phase][k] * (float)src[k - VV_RSP_HALF];
+                acc += coeff[phase][k] * (float)src[k - VV_RSP_HALF];
             if (acc > 32767.0f) acc = 32767.0f;
             else if (acc < -32768.0f) acc = -32768.0f;
             expected[out] = (short)(acc >= 0.0f ? acc + 0.5f : acc - 0.5f);
@@ -163,7 +163,7 @@ static void test_trim_silence_overlapping_edges(void) {
     short *pcm = calloc(n, sizeof(*pcm));
     assert(pcm);
     size_t samples = n;
-    vv_trim_silence(pcm, &samples);
+    vv_trim_silence(pcm, &samples, 11025);
     assert(samples == n);
     free(pcm);
 }
@@ -217,7 +217,7 @@ int main(void) {
     s->synthBusy=1; assert(SYNTH(h)==NULL); s->synthBusy=0;
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,8,0)>=0);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,7,2)==-1);
-    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,2)==-1);
+    assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,2)>=0);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,11,0)==-1);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,18,0)==-1);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetVoiceParam(&env,NULL,h,0,2,101)==-1);
@@ -278,7 +278,7 @@ int main(void) {
     SHUT(h); assert(pending_cleanup()==1);
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)==-1);
     refuse_delete=0; await_cleanup(); assert(reclaimed==freed+1);
-    short tiny[]={1000,-1000}; vv_fade_edges(tiny,2); assert(tiny[0]==0 && tiny[1]==0);
+    short tiny[]={1000,-1000}; vv_fade_edges(tiny,2,44100); assert(tiny[0]==0 && tiny[1]==0);
     assert(vv_dialect_shipped(0x70000) && vv_dialect_shipped(0x90000));
     puts("PASS native: setup failures, stop generations, settlement ownership, repeat synthesis, control guards, ranges, PCM edges");
 }
