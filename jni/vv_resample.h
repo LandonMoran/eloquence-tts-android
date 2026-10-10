@@ -34,21 +34,23 @@ extern "C" {
 #define VV_OUTPUT_HZ 44100  /* kotlin always advertises 44,100 Hz */
 #define VV_ENGINE_RATE 5     /* eciSampleRate code 5 == 44,100 Hz (0-6 codes) */
 
-/* Upsample a signed 16-bit mono buffer 4x (11,025 -> 44,100).
+/** Upsample a signed 16-bit mono buffer 4x (11,025 -> 44,100).
  * Returns 0 and sets *out (caller frees) / *outn = 4*in_n, or -1 on an
- * oversized input or allocation failure.  Mirrors the oracle input bound. */
+ * oversized input or allocation failure. Empty input sets *outn to zero
+ * without changing *out; failure leaves both outputs unchanged. */
 int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn);
 
-/* Taper both PCM endpoints to ~2 ms of zeros (scaled to rate_hz). */
+/** Taper both PCM edges in place toward zero over at most 2 ms at rate_hz. */
 void vv_fade_edges(short *pcm, size_t n, int rate_hz);
 
-/* Trim bounded edge silence in place (~2 s scan, ~2 ms padding) at rate_hz. */
+/** Trim edge silence in place and update *pn (~2 s scan, ~2 ms padding at rate_hz). */
 void vv_trim_silence(short *pcm, size_t *pn, int rate_hz);
 
-/* Force the one-time coefficient build (idempotent) and return the built
- * 4-x-polyphase table.  Exposed read-only so regression tests can compute an
- * independent reference for the same coefficients the resampler uses. */
+/** Initialize the shared coefficient table once, safely across threads. */
 void vv_resample_build(void);
+
+/** Return the initialized, read-only polyphase table for regression references.
+ * The table has static lifetime and must not be freed by the caller. */
 const float (*vv_resample_table(void))[VV_RSP_TAPS];
 
 #ifdef __cplusplus

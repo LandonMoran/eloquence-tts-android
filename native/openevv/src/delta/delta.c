@@ -3750,12 +3750,14 @@ int setscan_nof_r(delta_state *d, uint8_t f) { return setscan(d, f, 1, 0); }
    a void helper would leave the post-call `cmp testl r0,r0` reading
    garbage. Without these (and followed_by_er) declared in src, emit.py aborts
    the chs argmask generation. */
+/** Load p into lpta and set a held left scan on field 1; return the scan status. */
 int lpta_loadp_setscan_l(delta_state *d, const delta_token *p)
 {
     lpta_loadp(d, p);
     return setscan_l(d, 1);
 }
 
+/** Load p into lpta and set a held right scan on field 1; return the scan status. */
 int lpta_loadp_setscan_r(delta_state *d, const delta_token *p)
 {
     lpta_loadp(d, p);
@@ -3769,6 +3771,7 @@ int lpta_loadp_setscan_r(delta_state *d, const delta_token *p)
    the rule-text generator writes an argmask row for every entry in the
    language's entry pool and refuses to compile when a callable has no
    declaration in src. */
+/** Return the placeholder er-hua lookahead result: always 0, without inspecting d. */
 int followed_by_er(delta_state *d)
 {
     (void)d;

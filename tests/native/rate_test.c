@@ -39,6 +39,7 @@ extern int et_synthesize(void *h);
 typedef struct { short *p; size_t n, cap; } Pcm;
 static short _frame[FRAME];
 
+/** Append waveform callbacks to the Pcm in ud; abort on allocation failure. */
 static int on_pcm(ECIHand h, ECIMessage m, int count, void *ud) {
     Pcm *o = (Pcm *)ud;
     (void)h;
@@ -55,7 +56,8 @@ static int on_pcm(ECIHand h, ECIMessage m, int count, void *ud) {
     return eciDataProcessed;
 }
 
-/* Synthesise `text` at rate (code or raw Hz) with the real engine. */
+/** Synthesise text at rate (code or raw Hz), exiting on engine setup/input
+ * failure. The caller frees the returned PCM buffer. */
 static Pcm synth(const char *text, int rate) {
     Pcm out = {0, 0, 0};
     ECIHand h = eciNewEx(ENUS);
@@ -76,8 +78,9 @@ static Pcm synth(const char *text, int rate) {
     return out;
 }
 
-/* Normalised correlation of engine-a (44,100) vs our-b at offset `lag`:
-   compares a[i + lag] against b[i] over the overlap.  lag == converter delay. */
+/** Compute normalized correlation of a[i + lag] and b[i] over their overlap.
+ * Clamp negative lag to zero; return -2 for insufficient overlap or -1 for
+ * zero variance. Lag is measured in output samples. */
 static double corr_at(const short *a, size_t na, const short *b, size_t nb, long lag) {
     if (lag < 0) lag = 0;
     if ((size_t)lag >= na || (size_t)lag >= nb) return -2.0;
@@ -95,6 +98,8 @@ static double corr_at(const short *a, size_t na, const short *b, size_t nb, long
     return dot / sqrt(sA * sB);
 }
 
+/** Compute agreement SNR in dB over a[i + lag] and b[i], using a as reference.
+ * Negative lag is clamped to zero; callers must supply lag < na and nb > 0. */
 static double snr_at(const short *a, size_t na, const short *b, size_t nb, long lag) {
     if (lag < 0) lag = 0;
     size_t use = (na - (size_t)lag < nb) ? (na - (size_t)lag) : nb;
@@ -111,6 +116,8 @@ static int fails = 0;
     if (!(cond)) { fprintf(stderr, "RATE TEST FAIL: %s\n", msg); fails++; } \
 } while (0)
 
+/** Verify rate ratio, determinism, sinc agreement, and short-utterance edges;
+ * return 0 on success or 1 if any regression assertion fails. */
 int main(void) {
     static const char *sentence = "Hello, this is a regression test of the audio pipeline.";
     static const char *shorty   = "Hello.";

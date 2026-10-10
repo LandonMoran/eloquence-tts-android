@@ -12,7 +12,7 @@
 #include <math.h>
 #include <pthread.h>
 
-/* Modified Bessel I0 (series; 15 terms suffice for x <= 16). */
+/** Approximate the modified Bessel I0 function with at most 15 series terms. */
 static float vv_rsp_bessel_i0(float x) {
     float sum = 1.0f, term = 1.0f;
     for (int k = 1; k <= 15; k++) {
@@ -28,6 +28,7 @@ static float vv_rsp_bessel_i0(float x) {
 static float vv_rsp_coeff[VV_RSP_PHASES][VV_RSP_TAPS];
 static pthread_once_t vv_rsp_once = PTHREAD_ONCE_INIT;
 
+/** Build the Kaiser-windowed sinc table with unity DC gain per phase. */
 static void vv_rsp_build(void) {
     const float L2 = (float)VV_RSP_HALF;
     const float fc = VV_RSP_CUTOFF;
@@ -54,6 +55,12 @@ static void vv_rsp_build(void) {
     }
 }
 
+/**
+ * Upsample in_n signed 16-bit mono samples to an allocated buffer of 4*in_n
+ * samples; the caller frees *out. Return 0 on success or -1 on an oversized
+ * input or allocation failure. Empty input sets *outn to zero, leaving *out
+ * unchanged; failures leave both outputs unchanged.
+ */
 int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn) {
     if (in_n == 0) { *outn = 0; return 0; }
     /* Overflow-proof sizing before ANY allocation: the 4x output must fit a
@@ -92,8 +99,10 @@ int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn) {
     return 0;
 }
 
-/* Taper both PCM endpoints to zero over ~2 ms (~8 ms to match old 88 at
- * 44.1k is NOT wanted: keep today's 2 ms edge at every rate). */
+/**
+ * Taper both PCM edges in place over at most 2 ms at rate_hz, limited to n/2
+ * samples per edge. Leave PCM unchanged when the fade length is zero.
+ */
 void vv_fade_edges(short *pcm, size_t n, int rate_hz) {
     unsigned fade_u = rate_hz > 0 ? (unsigned)((rate_hz * 2u) / 1000u) : 0u;
     size_t fade = n / 2 < (size_t)fade_u ? n / 2 : (size_t)fade_u;
@@ -104,9 +113,11 @@ void vv_fade_edges(short *pcm, size_t n, int rate_hz) {
     }
 }
 
-/* Trim bounded edge silence in place (~2 s scan, ~2 ms retain+taper), scaled
- * to rate_hz so real-time behavior is identical at any rate.  A >-33 dBFS
- * sample stops the scan so real speech is never eaten; near-empty blips stay. */
+/**
+ * Trim edge samples below magnitude 700 in place and update *pn. Scan at most
+ * 2 s per edge, retaining and tapering 2 ms of padding at rate_hz (11,025 Hz
+ * when nonpositive). Leave short buffers and near-empty results unchanged.
+ */
 void vv_trim_silence(short *pcm, size_t *pn, int rate_hz) {
     size_t n = *pn;
     if (n < 32) return;
@@ -134,8 +145,10 @@ void vv_trim_silence(short *pcm, size_t *pn, int rate_hz) {
     *pn = keep;
 }
 
+/** Initialize the shared coefficient table once, safely across threads. */
 void vv_resample_build(void) { pthread_once(&vv_rsp_once, vv_rsp_build); }
 
+/** Return the initialized, read-only coefficient table with static lifetime. */
 const float (*vv_resample_table(void))[VV_RSP_TAPS] {
     vv_resample_build();
     return vv_rsp_coeff;
