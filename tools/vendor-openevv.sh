@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# tools/vendor-openevv.sh — re-vendor native/openevv to a given openevv checkout's `vendored` branch.
+# tools/vendor-openevv.sh — re-vendor native/openevv from a given openevv checkout's `main` branch.
 # Usage:  bash tools/vendor-openevv.sh <openevv-checkout-path> [upstream-sha]
-# Copies the shared engine tree from the openevv checkout( says the app-local additions
+# The openevv checkout must be a checkout of LandonMoran/openevv main (fork = upstream + our engine
+# mods). Copies the shared engine tree, keeps the app-local additions
 # ( cli probes, zh oracle bank(, and writes a pin file describing the sync source.
+# NOTE: sources the branch that CONTAINS our src engine mods (followed_by_er, chs fusions,
+# es_delete_checked); never `vendored`, which lacked them and dropped them in past syncs.
 set -euo pipefail
 
 SRC=${1:?openevv checkout path required}
@@ -13,11 +16,11 @@ DST="$ROOT/native/openevv"
 
 cd "$SRC"
 git fetch -q origin 2>/dev/null || true
-FORK_REMOTE=$(git remote -v | awk '{print $1}' | grep -E 'pr|fork' | head -1)
-if [ -n "$FORK_REMOTE" ]; then git fetch -q "$FORK_REMOTE" vendored 2>/dev/null || true; fi
-git checkout -q vendored 2>/dev/null || git checkout -q -b vendored --track origin/vendored 2>/dev/null || \
-  git checkout -q -b vendored origin/main 2>/dev/null || exit 1
-git reset --hard -q vendored
+FORK_REMOTE=$(git remote -v | awk '{print $1}' | grep -E 'pr|fork' | head -1 || true)
+if [ -n "$FORK_REMOTE" ]; then git fetch -q "$FORK_REMOTE" main 2>/dev/null || true; fi
+git checkout -q main 2>/dev/null || git checkout -q -b main --track origin/main 2>/dev/null || \
+  git checkout -q -b main origin/main 2>/dev/null || exit 1
+git reset --hard -q main
 
 # preserve app-local additions
 SNAP=$(mktemp -d)
@@ -37,13 +40,14 @@ cp -a "$SNAP"/. "$DST"/
 rm -rf "$SNAP"
 
 # pin file describing the sync source
-SHORT=$(git -C "$SRC" rev-parse --short vendored)
+SHORT=$(git -C "$SRC" rev-parse --short main)
 {
-  echo "openevv_vendored=$(git -C "$SRC" rev-parse vendored)"
+  echo "openevv_vendored=$(git -C "$SRC" rev-parse main)"
   echo "openevv_rebased_from=$SHORT"
+  echo "openevv_source=fork main (LandonMoran/openevv; carries our engine mods)"
   echo "openevv_behind_upstream=0"
   if [ "$UPSTREAM" != unknown ]; then echo "openevv_upstream=$UPSTREAM"; fi
   date -u +'synced_at=%Y-%m-%dT%H:%M:%SZ'
 } > "$DST/.openevv-pin"
 
-echo "vendored@$SHORT"
+echo "main@$SHORT"

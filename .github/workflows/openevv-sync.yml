@@ -1,4 +1,10 @@
 name: openevv upstream sync
+# Refreshes the vendored engine (native/openevv) from LandonMoran/openevv `main`
+# and opens/updates a PR into this repo. fork main = upstream + our engine mods;
+# the FORK keeps itself current with upstream on its own schedule
+# (.github/workflows/sync-upstream.yml), so this job only has to mirror fork main
+# into the app tree. Sources branch `main` so followed_by_er / chs fusions /
+# es_delete_checked are preserved. No PAT required (github.token owns the app push).
 on:
   schedule:
     - cron: "0 3 * * 1"
@@ -12,74 +18,44 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare openevv checkout ( onto + fork vendored(
-        env:
-          OPENE_VV_PAT: ${{ secrets.OPENE_VV_PAT }}
+      - name: Checkout eloquence-android
+        uses: actions/checkout@v4
+
+      - name: Clone fork main (source of truth for our engine)
         run: |
           set -euo pipefail
-          git clone --quiet https://github.com/Mudb0y/openevv.git /tmp/oe
+          git clone --quiet https://github.com/LandonMoran/openevv.git /tmp/oe
           cd /tmp/oe
-          git remote add fork https://github.com/LandonMoran/openevv.git
-          git fetch --quiet origin
-          git fetch --quiet fork vendored || true
-          EB=$(git rev-list --count fork/vendored..origin/main 2>/dev/null || echo 9999)
-          echo "behind=$EB"
-          echo "behind=$EB" >> "$GITHUB_ENV"
+          git checkout -q main
+          echo "fork_main=$(git rev-parse --short main)"
+          git config user.name "openevv-sync[bot]"
+          git config user.email "actions@github.com"
 
-      - name: Up to date?
-        if: env.behind == '0' || env.behind == ''
-        run: echo "vendored is up to date with upstream; nothing to do."; exit 0
-
-      - name: Rebase vendored onto upstream
-        if: env.behind != '0'
-        env:
-          OPENE_VV_PAT: ${{ secrets.OPENE_VV_PAT }}
-        run: |
-          set -euo pipefail
-          cd /tmp/oe
-          git checkout -q -b vendored fork/vendored
-          git remote set-url fork "https://x-access-token:${OPENE_VV_PAT}@github.com/LandonMoran/openevv.git"
-          if ! git rebase --quiet origin/main; then
-            echo "::error::openevv rebase conflicted — manual intervention required";
-            git status --short; exit 1
-          fi
-          echo "rebased-vendored=$(git rev-parse --short vendored)"
-          if [ -z "$OPENE_VV_PAT" ]; then
-            echo "::warning::secret OPENE_VV_PAT unset — cannot push openevv fork vendored branch; setting it enables fork continuity. This run syncs the app vendored tree anyway."
-          else
-            git push --quiet fork vendored
-          fi
-
-      - name: Re-vendor into eloquence-android
-        if: env.behind != '0'
+      - name: Re-vendor native/openevv from fork main
         run: |
           set -euo pipefail
           bash tools/vendor-openevv.sh /tmp/oe
           git add -A native/openevv
           git status --short -- native/openevv | head -30
 
-      - name: Open (or update( automated PR
-        if: env.behind != '0'
+      - name: Open (or update) automated PR
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if git diff --cached --quiet -- native/openevv;then
-            echo "rebase produced no vendored change; no PR."; exit 0
+          if git diff --cached --quiet -- native/openevv; then
+            echo "fork main matches the committed engine snapshot; no PR."
+            exit 0
           fi
           BR=openevv/auto-sync
           git config user.email "actions@github.com"
           git config user.name "openevv-sync[bot]"
-          if git rev-parse --verify "origin/$BR" >/dev/null 2>&1;then
-            git checkout -q -B "$BR" "origin/$BR"
-          else
-            git checkout -q -b "$BR"
-          fi
-          git commit -q --amend --no-edit -m "chore(openevv): auto-sync vendored engine to upstream\n\nAutomated rebase of our vendored openevv onto upstream; refreshes native/openevv from the rebased openevv vendored branch. See tools/vendor-openevv.sh and .openevv-pin." || true
+          git checkout -q -B "$BR" origin/main
+          git commit -q -m "chore(openevv): sync vendored engine from fork main\n\nRefresh native/openevv from LandonMoran/openevv main (upstream + our engine mods: followed_by_er, chs fusions, es_delete_checked). Sources branch main; see tools/vendor-openevv.sh and .openevv-pin." || true
           git push -f --quiet origin "$BR"
           EXISTING=$(gh pr list --head "$BR" --json number --jq '.[0].number' 2>/dev/null)
           if [ -z "$EXISTING" ]; then
-            gh pr create --base main --head "$BR" --title "chore(openevv): auto-sync vendored engine to upstream" --body "Automated sync of the vendored openevv engine to upstream head. Local engine mods audited each run; non-redundant ones re-applied. Tracked via tools/vendor-openevv.sh."
+            gh pr create --base main --head "$BR" --title "chore(openevv): sync vendored engine from fork main" --body "Automated refresh of the vendored openevv engine from LandonMoran/openevv main. Sources branch \`main\` (upstream + our engine mods); see tools/vendor-openevv.sh."
           else
             echo "PR #$EXISTING updated in place."
           fi
