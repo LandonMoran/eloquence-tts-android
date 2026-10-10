@@ -242,6 +242,13 @@ class EloquenceEngine(context: Context) {
             // 1-4 = fixed group sizes 1..4.
             t = numberGroups(t,  numberMode)
 
+            // Comma-grouped magnitude expansion ( #313 followup:. The native reader
+            // corrupts "1,000,000"/"$1,000,000" into "...hundred" when the trailing
+            // comma-group(s( are all zeros (heading off the number-reading modes(.
+            if (dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB) {
+                t = spellGroupedMagnitude(t, userDict)
+            }
+
             // User dictionary: wire the existing applyDict() helper ( committed but
             // never called(; user-added word|spoken entries now reach synthesis. Mirrors
             // the factory native loadUserDictionary hook; applied after the builtin tables so
@@ -366,6 +373,71 @@ class EloquenceEngine(context: Context) {
                 }
             }
             return sb.toString()
+        }
+
+        // --- Comma-grouped magnitude expansion ( #313 followup) ---------------
+        // Eloquence's native reader corrupts "1,000,000"/"$1,000,000" into trailing
+        // "...hundred" when the magnitude's comma-group(s) are all zeros ("000"). Only
+        // shapes with >=3 comma-triads AND a trailing all-zero group run trigger it
+        // ( e.g. 1,000,000; "1,150" / "205,558,107" read fine and stay untouched).
+        // English-dialect only (the word tables are English); non-English dialects
+        // keep their original grouped number. Magnitudes beyond 12 digits
+        // (>999,999,999,999) are left to the native reader.
+        private val magOnes = arrayOf("", "one", "two", "three", "four", "five",
+            "six", "seven", "eight", "nine")
+        private val magTeens = arrayOf("ten", "eleven", "twelve", "thirteen", "fourteen",
+            "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
+        private val magTens = arrayOf("", "", "twenty", "thirty", "forty", "fifty",
+            "sixty", "seventy", "eighty", "ninety")
+        private val magScale = arrayOf("", "thousand", "million", "billion", "trillion")
+        private val groupedRun = Regex("(?<![0-9,])[0-9]{1,3}(,[0-9]{3})+(?![0-9])")
+
+        private fun magHundreds(g: Int): String {
+            val out = StringBuilder()
+            val h = g / 100
+            val r = g % 100
+            if (h > 0) out.append(magOnes[h]).append(" hundred")
+            if (r >= 20) {
+                if (out.isNotEmpty()) out.append(" ")
+                out.append(magTens[r / 10])
+                if (r % 10 > 0) out.append(" ").append(magOnes[r % 10])
+            } else if (r >= 10) {
+                if (out.isNotEmpty()) out.append(" ")
+                out.append(magTeens[r - 10])
+            } else if (r > 0) {
+                if (out.isNotEmpty()) out.append(" ")
+                out.append(magOnes[r])
+            }
+            return out.toString()
+        }
+
+        private fun spellGroupedMagnitude(text: String, userDict: List<Pair<Regex, String>> = emptyList()): String {
+            return groupedRun.replace(text) { m ->
+                val run = m.value
+                // Leave runs that a user-dictionary rule fully matches unchanged, so
+                // applyDict( applied later in preprocess( can apply the user's override.
+                for ((ruleRe, _) in userDict) {
+                    if (ruleRe.matches(run)) return@replace run
+                }
+                val grps = run.split(",")
+                val n = grps.size
+                if (n < 3) return@replace run
+                var z = 0
+                while (z < n && grps[n - 1 - z] == "000") z++
+                if (z == 0) return@replace run
+                if (n > 5) return@replace run
+                val out = StringBuilder()
+                for (i in 0 until (n - z)) {
+                    val w = magHundreds(grps[i].toInt())
+                    if (w.isEmpty()) continue
+                    if (out.isNotEmpty()) out.append(" ")
+                    out.append(w)
+                    val sc = n - 1 - i
+                    if (sc > 0) out.append(" ").append(magScale[sc])
+                }
+                if (out.isEmpty()) return@replace "zero"
+                out.toString()
+            }
         }
     }
     /** Invalidate pending synthesis and signal native handles without waiting for the synthesis lock. */
