@@ -224,6 +224,9 @@ class Rule:
         t = {1: 'int8_t', 2: 'int16_t', 4: 'int32_t'}[width]
         if kind == 'slot':
             return 'AT(%s, %d)' % (t, val), width
+        if kind == 'slotaddr':
+            # The slot's address, so a store through it is a slot write.
+            return '*(%s *)SLOT(%d)' % (t, val), width
         if kind == 'statefld':
             got = variable_at(val)
             if got is not None:
