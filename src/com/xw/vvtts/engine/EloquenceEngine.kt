@@ -634,7 +634,12 @@ class EloquenceEngine(context: Context) {
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
             params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
-            if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
+            // zh (0x60000) synthesizes from the oracle voice bank, which makes
+            // no engine calls: the engine's chs module owns no Western voices,
+            // so the copy/param-stage below would fail and retire the session
+            // before the oracle path ever runs (on-device zero-audio).  Skip it.
+            if (dialect != DIALECT_ZH_CN &&
+                !worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
                 val configured = copied >= 0 && params.indices.all { p ->
