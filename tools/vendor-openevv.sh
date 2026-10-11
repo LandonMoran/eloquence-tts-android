@@ -3,7 +3,8 @@
 # Usage:  bash tools/vendor-openevv.sh <openevv-checkout-path> [upstream-sha]
 # The openevv checkout must be a checkout of LandonMoran/openevv main (fork = upstream + our engine
 # mods). Copies the shared engine tree, keeps the app-local additions
-# ( cli probes, zh oracle bank(, and writes a pin file describing the sync source.
+# ( cli probes, zh oracle bank, chs Mandarin ROM rom/chs + its port_ctors.c
+# chs_register wiring ( and writes a pin file describing the sync source.
 # NOTE: sources the branch that CONTAINS our src engine mods (followed_by_er, chs fusions,
 # es_delete_checked); never `vendored`, which lacked them and dropped them in past syncs.
 set -euo pipefail
@@ -22,13 +23,21 @@ git checkout -q main 2>/dev/null || git checkout -q -b main --track origin/main 
   git checkout -q -b main origin/main 2>/dev/null || exit 1
 git reset --hard -q main
 
-# preserve app-local additions
+# preserve app-local additions in the vendored tree.
+# NOTE: anything here is the ONLY thing that survives a re-vendor — the tar
+# blow-away below throws everything else away. The chs Mandarin ROM module
+# (rom/chs: chsrom.c + rom_tables_chs.*) and its engine registration
+# (src/port/port_ctors.c: chs_register) are app-local and NOT in the fork's
+# main; without them eciNewEx(0x60000) returns NULL and chs-smoke fails.
+# Keep every app-local file in this list or the next sync silently drops it.
 SNAP=$(mktemp -d)
-mkdir -p "$SNAP/cli" "$SNAP/lang"
+mkdir -p "$SNAP/cli" "$SNAP/lang" "$SNAP/rom/chs" "$SNAP/src/port"
 cp -a "$DST/cli"/bench_synth.c "$DST/cli"/langdump.c "$DST/cli"/oracleprobe.c \
       "$DST/cli"/phprobe.c "$DST/cli"/romprobe.c "$DST/cli"/uncosp_test.c \
       "$DST/cli"/probe.c "$SNAP/cli"/ 2>/dev/null || true
 cp -a "$DST/lang/chs" "$SNAP/lang/" 2>/dev/null || true
+cp -a "$DST/rom/chs"/. "$SNAP/rom/chs/" 2>/dev/null || true
+cp -a "$DST/src/port/port_ctors.c" "$SNAP/src/port/" 2>/dev/null || true
 
 rm -rf "$DST"; mkdir -p "$DST"
 ( cd "$SRC" && tar -c --exclude='./.git' --exclude='./build' --exclude='./test' --exclude='./win' \
