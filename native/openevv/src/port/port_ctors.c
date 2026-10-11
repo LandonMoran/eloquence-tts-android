@@ -39,6 +39,14 @@ extern char initializeStandardVoices[];
 /* A mutex that may not be taken twice by the same thread. */
 #define MUTEX_PLAIN 0
 
+/* The Mandarin ROM module registers on a constructor attribute the GNU
+   linker does not run until the module is in the link, and archive
+   selection will not pull the module in by itself (nothing outside it
+   names anything in it except the constructor).  Call its register
+   function here, the way the original's runtime ran these on the way
+   in.  It is safe to call once: the registration only fills a slot. */
+extern void chs_register(void);
+
 void evvRunStaticInitialisers(void)
 {
     initializeSoundFormats();
@@ -47,4 +55,5 @@ void evvRunStaticInitialisers(void)
     sy_mutexCtor(st_protectInitialization, MUTEX_PLAIN);
     sy_mutexCtor(protectFirstTime, MUTEX_PLAIN);
     isv_ctor(initializeStandardVoices);
+    chs_register();
 }
