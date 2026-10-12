@@ -194,3 +194,18 @@ jobs:
             native/openevv/rom/chs/chsrom.c native/openevv/rom/chs/rom_tables_chs.c \
             -lm -lpthread
           /tmp/chs_rom_test
+
+      - name: Compile and run chs phrase-table bounds test (ASan/UBSan)
+        run: |
+          # chs_tbl_test.c #includes chsrom.c to reach the file-static
+          # chs_lookup() with a deliberately truncated table, so chsrom.c is
+          # compiled only once in that TU (rom_tables + eci_romedll still link).
+          cc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -I tests/native/stubs -I native/openevv/include -I native/openevv/src \
+            -I native/openevv/src/eci/lang -I native/openevv/rom/chs \
+            -o /tmp/chs_tbl_test \
+            tests/native/chs_tbl_test.c \
+            native/openevv/rom/chs/rom_tables_chs.c \
+            native/openevv/src/eci/lang/eci_romedll.c \
+            -lm -lpthread
+          /tmp/chs_tbl_test

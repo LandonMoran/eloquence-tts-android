@@ -95,12 +95,20 @@ static int32_t chs_addText(EvvRom *r, const char *text, int32_t len,
     (void)flag;
     if (len <= 0)
         return 0;
-    if ((unsigned)len > sizeof(rom->in_buf) - (unsigned)rom->in_buf_len) {
+    /* Reserve one byte for a NUL terminator so the accumulated text is
+     * always terminated: chs_mbcs2Rom walks in_buf as a C string, so an
+     * unterminated append would let a later conversion read past this
+     * sentence into stale bytes from a previous one (or beyond the buffer
+     * when the append fills in_buf exactly). At the limit we therefore
+     * reject a stretch that would leave no room for the terminator, instead
+     * of accepting input that cannot be converted safely. */
+    if ((unsigned)len > sizeof(rom->in_buf) - 1 - (unsigned)rom->in_buf_len) {
         rom->overflow = 1;
         return 0;
     }
     memcpy(rom->in_buf + rom->in_buf_len, text, (size_t)len);
     rom->in_buf_len += (unsigned)len;
+    rom->in_buf[rom->in_buf_len] = '\0';
     return len;
 }
 
@@ -226,9 +234,12 @@ static int chs_lookup(struct ChsRom *rom, uint8_t b0, uint8_t b1,
             chs_emit_syllable(&d, c0, c1);
             p += 2;
         }
-        /* If the table ran out before a full 4-byte terminator was seen,
-         * the phrase is malformed: treat it as a failed lookup. */
-        if (lexend - p < 4 && (p[0] || p[1] || p[2] || p[3]))
+        /* If the table ran out before a full 4-byte terminator (or the
+         * 0xff escape) was seen, the phrase is malformed: treat it as a
+         * failed lookup. This bounds check must NOT itself read p[0..3]
+         * past the end of a short table, so only inspect the bytes when a
+         * whole 4-byte window is known to remain in bounds. */
+        if (lexend - p < 4)
             return -1;
     } else {
         c0 = ent[0]; c1 = ent[1];
@@ -398,9 +409,14 @@ static int32_t chs_mbcs2Rom(EvvRom *r, const char *in, char **out)
     }
     *dst = 0;
     *out = rom->out_buf;
+    /* Input remaining past the loop means the output buffer ran out of
+     * room even without a single chunk overflowing: set truncation in that
+     * loop-exit case too, not just in the chunk branch above. */
+    if (*p)
+        truncated = 1;
     if (truncated) {
         rom->truncated = 1;
-        return 1;   /* explicit partial-result status */
+        return 0;   /* failure: caller treats zero as incomplete */
     }
-    return 0;
+    return 1;       /* success on a complete conversion */
 }

@@ -61,7 +61,9 @@ int main(void)
     /* #329 one-letter initial: 'd' in "die7" must be followed by "ie7",
        never an embedded NUL, and the initial must be complete. */
     {
-        if (ops->mbcs2Rom(rom, (const char *)die7, &out) == 0) {
+        /* mbcs2Rom returns nonzero on a complete conversion (the caller in
+           eci_synthdict.c rejects a zero result as an error). */
+        if (ops->mbcs2Rom(rom, (const char *)die7, &out) != 0) {
             /* a single-letter consonant must not hide a NUL: the visible
                string must equal the full pinyin with the tone digit, and
                there must be no interior NUL before it */
@@ -74,7 +76,7 @@ int main(void)
         }
     }
     {
-        if (ops->mbcs2Rom(rom, (const char *)zha5, &out) == 0)
+        if (ops->mbcs2Rom(rom, (const char *)zha5, &out) != 0)
             expect(out, "zha5");
         else
             check(0, "zha5 responds to mbcs2Rom");
@@ -84,20 +86,22 @@ int main(void)
        must not swallow the ASCII nor emit raw high bytes; a lone lead at
        the end must not read past the NUL. */
     {
-        static const unsigned char lead_ascii[] = { 0xB0, 'x', 'y', 0 };  /* volt + x y */
-        ops->mbcs2Rom(rom, (const char *)lead_ascii, &out);
-        /* the '?' replacement for the bad lead, then x and y survive */
-        check(strchr(out, 'x') != NULL && strchr(out, 'z') == NULL,
-              "#335 ASCII after bad lead survives");
-        check(strchr(out, '?') != NULL, "#335 malformed lead becomes '?'");
+        /* 0xB0 is a lone GB lead and 'x','y' are ASCII. The complete
+           expected output preserves the bad lead as '?' followed by both
+           ASCII bytes in order: "?xy". */
+        static const unsigned char lead_ascii[] = { 0xB0, 'x', 'y', 0 };
+        if (ops->mbcs2Rom(rom, (const char *)lead_ascii, &out) != 0)
+            expect(out, "?xy");
+        else
+            check(0, "#335 malformed lead+ASCII is a complete conversion");
     }
     {
         /* lone final lead byte (truncated pair) - must not OOB/scan past */
         static const unsigned char lone[] = { 0xB0, 0 };
-        if (ops->mbcs2Rom(rom, (const char *)lone, &out) == 0)
+        if (ops->mbcs2Rom(rom, (const char *)lone, &out) != 0)
             check(strchr(out, '?') != NULL, "#335 lone lead becomes '?'");
         else
-            check(1, "#335 lone lead handled safely");
+            check(0, "#335 lone lead is a complete conversion");
     }
 
     /* #330 oversized addText must be rejected (return not equal to the
@@ -116,7 +120,8 @@ int main(void)
     }
 
     /* #334 output-truncation: a very long run of pinyin-producing chars
-       fills out_buf; mbcs2Rom must signal truncation, not silently drop. */
+       fills out_buf; mbcs2Rom must signal truncation (return zero per the
+       caller contract in eci_synthdict.c) rather than report success. */
     {
         /* rebuild a long GB input (thousands of 0xB0 0xA5 'die7' chars) */
         static const unsigned char unit[] = { 0xB0, 0xA5 };
@@ -126,7 +131,7 @@ int main(void)
             for (size_t i = 0; i < reps; i++) { big[2*i] = unit[0]; big[2*i+1] = unit[1]; }
             big[reps*2] = 0;
             int32_t r = ops->mbcs2Rom(rom, big, &out);
-            check(r != 0, "#334 mbcs2Rom reports output truncation (non-zero)");
+            check(r == 0, "#334 mbcs2Rom reports output truncation (zero = incomplete)");
             check(out != NULL && out[0] != 0, "#334 truncated output still NUL-terminated");
             free(big);
         } else {
@@ -138,14 +143,22 @@ int main(void)
        the real tables by the full scan below + the malformed-input cases
        above never reading past their buffers (ASan would trip if so).
        We also assert the whole valid zone scans without a crash and that
-       unknown/edge codes yield '?' rather than OOB reads. */
+       unknown/edge codes yield '?' rather than OOB reads. Under the fixed
+       return contract, mbcs2Rom returns nonzero on a complete conversion
+       and zero on truncation/failure, so every single-char conversion here
+       must succeed; zero-returns are counted as failures and asserted to
+       be zero (do not silently skip failed conversions). */
     {
         char *o = NULL;
+        int failed = 0;
         for (int b0 = 0xB0; b0 <= 0xF7; b0++) {
             for (int b1 = 0xA1; b1 <= 0xFE; b1++) {
                 unsigned char in[3] = { (unsigned char)b0, (unsigned char)b1, 0 };
-                if (ops->mbcs2Rom(rom, (const char *)in, &o) != 0)
-                    continue;   /* reported truncation on modest input? not fatal */
+                int32_t r = ops->mbcs2Rom(rom, (const char *)in, &o);
+                if (r == 0) {   /* a single char cannot fill 16KB: this is a failure */
+                    failed++;
+                    continue;
+                }
                 if (o) {
                     /* every output must be a clean printable string */
                     for (char *p = o; *p; p++)
@@ -153,6 +166,7 @@ int main(void)
                 }
             }
         }
+        check(failed == 0, "#336 zero failed conversions in zone sweep");
         check(1, "#336 full GB zone sweeps without OOB/failure");
     }
 

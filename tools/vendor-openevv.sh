@@ -30,10 +30,14 @@ DST="$ROOT/native/openevv"
 #    $DST, so a missing file aborts the sync before any destructive step and
 #    leaves the existing vendored tree untouched. (#331)
 # ---------------------------------------------------------------------------
-# Required runtime files: the Chinese implementation + its registration.
+# Required runtime files: the Chinese implementation + its committed lookup
+# tables + its registration wiring. All of these must be present (and the
+# wiring must actually reference chs_register) BEFORE the destructive rm.
 REQUIRED_SRC=(
   "lang/chs"
   "rom/chs/chsrom.c"
+  "rom/chs/rom_tables_chs.c"
+  "rom/chs/rom_tables_chs.h"
   "src/port/port_ctors.c"
 )
 # Optional instrumentation (cli probes). Absence is OK but must be reported.
@@ -54,6 +58,15 @@ for f in "${REQUIRED_SRC[@]}"; do
   fi
 done
 
+# The registration wiring must actually reference chs_register, not merely
+# exist as a file: a stub or once-removed port_ctors.c would silently drop
+# the Chinese ROM from eciNewEx(0x60000). Verified here, before the rm.
+if [ ! -s "$DST/src/port/port_ctors.c" ] \
+   || ! grep -q 'chs_register' "$DST/src/port/port_ctors.c"; then
+  echo "error: chs_register registration missing from native/openevv before re-vendor; aborting before any change (nothing was deleted)" >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Fetch the intended remote branch and FAIL if the fetch fails, so we never
 #    continue with a stale local main and never write a pin for it. (#openevv1)
@@ -61,10 +74,16 @@ done
 cd "$SRC"
 
 # The intended source is the checkout's main, which carries our engine mods.
-# Prefer a fork/pr remote if one is named; else origin. Fetching 'main' must
-# succeed or we stop immediately.
-FORK_REMOTE=$(git remote | grep -E '^(pr|fork)' | head -1 || true)
-REMOTE=${FORK_REMOTE:-origin}
+# We never guess the source from a remote NAME: a remote named "pr-*" or a
+# random "fork-*" is not proof it is the intended fork (unrelated remotes
+# could be mistaken for the source). Default to the checkout's primary
+# remote `origin`; an explicit override may be supplied via OPENE_VV_REMOTE.
+# Fetching 'main' must succeed or we stop immediately.
+REMOTE="${OPENE_VV_REMOTE:-origin}"
+if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
+    echo "error: source remote '$REMOTE' is not configured in $SRC; refusing to guess" >&2
+    exit 1
+fi
 if ! git fetch -q "$REMOTE" main; then
   echo "error: 'git fetch $REMOTE main' in $SRC failed; not re-vendoring from a stale or unreachable branch" >&2
   exit 1

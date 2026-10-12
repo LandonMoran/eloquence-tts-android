@@ -16,7 +16,17 @@ gcc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
   native/openevv/src/eci/lang/eci_romedll.c \
   native/openevv/rom/chs/chsrom.c native/openevv/rom/chs/rom_tables_chs.c \
   -lm -lpthread -o "$test_out/chs_rom"
+# chs phrase-table bounds: chs_tbl_test.c #includes chsrom.c to reach the
+# file-static chs_lookup() with a crafted truncated table, so chsrom.c is
+# NOT compiled separately for this binary (rom_tables + eci_romedll still are).
+gcc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -Itests/native/stubs -Inative/openevv/include -Inative/openevv/src -Inative/openevv/src/eci/lang \
+  -Inative/openevv/rom/chs \
+  tests/native/chs_tbl_test.c native/openevv/rom/chs/rom_tables_chs.c \
+  native/openevv/src/eci/lang/eci_romedll.c \
+  -lm -lpthread -o "$test_out/chs_tbl"
 "$test_out/bridge"
 "$test_out/oracle"
 "$test_out/compat"
 "$test_out/chs_rom"
+"$test_out/chs_tbl"
