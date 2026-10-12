@@ -67,7 +67,16 @@ static int32_t chs_insertIndex(EvvRom *r)          { (void)r; return 0; }
 static int32_t chs_setParam(EvvRom *r, int32_t a, int32_t b)
 { (void)r; (void)a; (void)b; return 0; }
 static int32_t chs_getParam(EvvRom *r, int32_t a)  { (void)r; (void)a; return 0; }
-static void chs_clearErrors(EvvRom *r)         { (void)r; }
+static void chs_clearErrors(EvvRom *r)
+{
+    struct ChsRom *rom = (struct ChsRom *)r;
+    /* Forget the previous sentence's status before new input is accepted.
+     * Clearing here (the engine's error-clear path) keeps the completed
+     * sentence's error readable via errorMessage until the next sentence,
+     * and prevents a stale overflow/truncated flag from leaking into it. */
+    rom->overflow = 0;
+    rom->truncated = 0;
+}
 static uint32_t chs_progStatus(EvvRom *r)      { (void)r; return 0; }
 static void     chs_errorMessage(EvvRom *r, char *o)
 {

@@ -139,6 +139,27 @@ int main(void)
         }
     }
 
+    /* #330/#334 stale-flag regression: after an oversized addText sets the
+       overflow flag, the engine's error-clear path (clearErrors) must drop it
+       so a later, healthy sentence does not re-report the stale overflow and
+       thereby hide a fresh truncation. */
+    if (ops->clearErrors) {
+        char em[192] = "x";
+        ops->clearErrors(rom);
+        ops->errorMessage(rom, em);
+        check(em[0] == 0, "#330 clearErrors clears stale error state");
+
+        /* overflow-free truncation must now surface, not be masked. */
+        static const unsigned char z5[] = { 0xB0, 0xB6, 0 };  /* zha5 */
+        if (ops->mbcs2Rom(rom, (const char *)z5, &out) != 0) {
+            expect(out, "zha5");
+            ops->errorMessage(rom, em);
+            check(em[0] == 0, "#330 valid sentence after clearErrors has no error");
+        } else {
+            check(0, "#330 valid sentence after clearErrors converts");
+        }
+    }
+
     /* #336 bounds: offsets are validated before dereference. Exercised on
        the real tables by the full scan below + the malformed-input cases
        above never reading past their buffers (ASan would trip if so).
