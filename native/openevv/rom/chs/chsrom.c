@@ -230,17 +230,21 @@ static int chs_lookup(struct ChsRom *rom, uint8_t b0, uint8_t b1,
         while (lexend - p >= 4 && (p[0] || p[1] || p[2] || p[3])) {
             c0 = p[0]; c1 = p[1];
             if (c0 == 0xff) break;
-            if (d - out >= 56) break;   /* keep within caller's tmp[] */
+            if (d - out >= 56) return -1;   /* output budget: partial phrase is not a valid lookup */
             chs_emit_syllable(&d, c0, c1);
             p += 2;
         }
-        /* If the table ran out before a full 4-byte terminator (or the
-         * 0xff escape) was seen, the phrase is malformed: treat it as a
-         * failed lookup. This bounds check must NOT itself read p[0..3]
-         * past the end of a short table, so only inspect the bytes when a
-         * whole 4-byte window is known to remain in bounds. */
-        if (lexend - p < 4)
-            return -1;
+        /* Decide why the walk stopped. A phrase is valid only when it ends
+         * on an in-bounds terminator: either a full 4-byte zero block, or a
+         * single trailing 0xff escape byte. Inspect only bytes we know are
+         * in bounds, so a short table can never cause an OOB read here. */
+        if (lexend - p >= 4 && !(p[0] || p[1] || p[2] || p[3])) {
+            /* 4-byte zero terminator seen */
+        } else if (lexend - p >= 1 && p[0] == 0xff) {
+            /* single-byte escape terminator (no c1 to read for it) */
+        } else {
+            return -1;   /* ran out of room before a complete terminator */
+        }
     } else {
         c0 = ent[0]; c1 = ent[1];
         chs_emit_syllable(&d, c0, c1);
