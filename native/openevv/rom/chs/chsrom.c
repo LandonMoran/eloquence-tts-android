@@ -56,7 +56,11 @@ struct ChsRom {
 };
 
 static int32_t chs_mbcs2Rom(EvvRom *r, const char *in, char **out);
-static void chs_release(EvvRom *r) { (void)r; }
+static void chs_release(EvvRom *r)
+{
+    /* ChsRom starts with EvvRom base, so freeing the base pointer is valid. */
+    free(r);
+}
 static int32_t chs_stop(EvvRom *r)     { (void)r; return 0; }
 static int32_t chs_resume(EvvRom *r)   { (void)r; return 0; }
 static int32_t chs_insertIndex(EvvRom *r)          { (void)r; return 0; }
