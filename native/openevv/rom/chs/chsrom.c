@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "eci_rom.h"
@@ -49,6 +50,9 @@ struct ChsRom {
     unsigned        in_buf_len;
     char           *out_ptr;
     char            out_buf[16384];
+    int32_t         overflow;      /* addText rejected an oversized stretch */
+    int32_t         truncated;     /* mbcs2Rom ran out of output space */
+    char            errmsg[192];
 };
 
 static int32_t chs_mbcs2Rom(EvvRom *r, const char *in, char **out);
@@ -59,16 +63,27 @@ static int32_t chs_insertIndex(EvvRom *r)          { (void)r; return 0; }
 static int32_t chs_setParam(EvvRom *r, int32_t a, int32_t b)
 { (void)r; (void)a; (void)b; return 0; }
 static int32_t chs_getParam(EvvRom *r, int32_t a)  { (void)r; (void)a; return 0; }
-static void     chs_clearErrors(EvvRom *r)         { (void)r; }
-static uint32_t chs_progStatus(EvvRom *r)          { (void)r; return 0; }
+static void chs_clearErrors(EvvRom *r)         { (void)r; }
+static uint32_t chs_progStatus(EvvRom *r)      { (void)r; return 0; }
 static void     chs_errorMessage(EvvRom *r, char *o)
-{ (void)r; if (o) o[0] = 0; }
+{
+    struct ChsRom *rom = (struct ChsRom *)r;
+    if (o) {
+        if (rom->overflow)
+            snprintf(o, 192, "Chinese input exceeds the 4096-byte ROM buffer; not accepted");
+        else if (rom->truncated)
+            snprintf(o, 192, "Chinese romanization output truncated (buffer full)");
+        else
+            o[0] = 0;
+    }
+}
 static int32_t chs_addParam(EvvRom *r, const char *t, int32_t n)
 { (void)r; (void)t; (void)n; return 0; }
 
 /* A pass-through romanizer: text in, text out, since the stub language
-   has no rules yet to turn it into phonemes.  Buffer the latest stretch
-   and hand it back unchanged on processSentence. */
+   has no rules yet to turn it into phonemes.  Append across addText
+   calls (the engine may split a sentence), and reject an oversized
+   stretch explicitly instead of silently truncating to 4096 bytes. */
 static int32_t chs_addText(EvvRom *r, const char *text, int32_t len,
                            int32_t flag)
 {
@@ -76,10 +91,12 @@ static int32_t chs_addText(EvvRom *r, const char *text, int32_t len,
     (void)flag;
     if (len <= 0)
         return 0;
-    if ((unsigned)len > sizeof rom->in_buf)
-        len = (int32_t)sizeof rom->in_buf;
-    memcpy(rom->in_buf, text, (size_t)len);
-    rom->in_buf_len = (unsigned)len;
+    if ((unsigned)len > sizeof(rom->in_buf) - (unsigned)rom->in_buf_len) {
+        rom->overflow = 1;
+        return 0;
+    }
+    memcpy(rom->in_buf + rom->in_buf_len, text, (size_t)len);
+    rom->in_buf_len += (unsigned)len;
     return len;
 }
 
@@ -152,7 +169,7 @@ static void chs_emit_syllable(char **dst, int c0, int c1)
 
     if (c0 != 0xff) {
         s = chs_consonants[c0 % 26];
-        if (s[0]) { *(*dst)++ = s[0]; *(*dst)++ = s[1]; }
+        while (*s) *(*dst)++ = *s++;
     }
     tone = (c1 >> 5) & 7;
     final = c1 & 0x1f;
@@ -167,28 +184,48 @@ static int chs_lookup(struct ChsRom *rom, uint8_t b0, uint8_t b1,
 {
     int idx = gb_index(b0, b1);
     int wh, off;
-    const uint8_t *ent, *p;
+    const uint8_t *ent, *p, *lexend;
     int c0, c1;
     char *d = out;
+    const uint8_t *lex; int32_t lex_n;
 
     if (idx < 0) return -1;
     wh = which_tb(&rom->dict, idx);
-    if (wh < 0) return -1;
+    if (wh < 0 || wh >= 20) return -1;
+
+    /* Validate the index-entry offset before dereferencing: the whole
+     * six-byte entry must lie within ind_n[wh] (robustness against a
+     * truncated or re-generated table). */
     off = idx - rom->dict.range[wh];
+    if (off < 0 || 6 * (off + 1) > rom->dict.ind_n[wh])
+        return -1;
     ent = rom->dict.ind[wh] + 6 * off;
+
+    lex = rom->dict.lex[wh];
+    lex_n = rom->dict.lex_n[wh];
 
     /* A nonzero lex offset means a phrase entry; else the syllable
      * codes are embedded in the index entry itself. */
     if (ent[4] || ent[5]) {
         int lexoff = ent[4] | (ent[5] << 8);
-        p = rom->dict.lex[wh] + lexoff;
-        while (p[0] || p[1] || p[2] || p[3]) {
+        /* Validate the phrase offset and bound the walk by the remaining
+         * table length; require a complete terminator (or the 0xff
+         * escape) before giving up, never reading past the table. */
+        if (lexoff < 0 || lexoff >= lex_n)
+            return -1;   /* phrase offset outside the lex table */
+        p = lex + lexoff;
+        lexend = lex + lex_n;
+        while (lexend - p >= 4 && (p[0] || p[1] || p[2] || p[3])) {
             c0 = p[0]; c1 = p[1];
             if (c0 == 0xff) break;
             if (d - out >= 56) break;   /* keep within caller's tmp[] */
             chs_emit_syllable(&d, c0, c1);
             p += 2;
         }
+        /* If the table ran out before a full 4-byte terminator was seen,
+         * the phrase is malformed: treat it as a failed lookup. */
+        if (lexend - p < 4 && (p[0] || p[1] || p[2] || p[3]))
+            return -1;
     } else {
         c0 = ent[0]; c1 = ent[1];
         chs_emit_syllable(&d, c0, c1);
@@ -317,27 +354,49 @@ static int32_t chs_mbcs2Rom(EvvRom *r, const char *in, char **out)
     const uint8_t *p = (const uint8_t *)in;
     char tmp[64];
     int n = 0;
+    int32_t truncated = 0;
 
+    rom->truncated = 0;
     while (*p && dst < dend) {
         if (*p >= 0x20 && *p < 0x80) {
             *dst++ = (char)*p++;
             continue;
         }
-        if (*p >= 0x80 && p[1] >= 0x80) {
-            if (chs_lookup(rom, p[0], p[1], tmp, &n) == 0) {
-                if (dst + n < dend) {
+        if (*p >= 0x80) {
+            /* A multi-byte character is valid only when the pair lies in
+             * the supported GB zone (lead B0-F7, trail A1-FE). A lone or
+             * truncated lead, or a lead followed by ASCII, must not access
+             * p[1] once p[1] is the NUL terminator nor consume that byte. */
+            if (p[1] >= 0x80 && gb_index(p[0], p[1]) >= 0) {
+                if (chs_lookup(rom, p[0], p[1], tmp, &n) == 0) {
+                    if (dst + n >= dend) {
+                        /* Output buffer full: report truncation explicitly
+                         * instead of silently dropping the chunk. */
+                        truncated = 1;
+                        break;
+                    }
                     memcpy(dst, tmp, (size_t)n);
                     dst += n;
+                } else {
+                    *dst++ = '?';
                 }
+                p += 2;
             } else {
+                /* Invalid or truncated lead byte: emit a replacement and
+                 * advance by one so the next byte (ASCII or a fresh lead)
+                 * is processed on its own. */
                 *dst++ = '?';
+                p += 1;
             }
-            p += 2;
             continue;
         }
         *dst++ = (char)*p++;
     }
     *dst = 0;
     *out = rom->out_buf;
+    if (truncated) {
+        rom->truncated = 1;
+        return 1;   /* explicit partial-result status */
+    }
     return 0;
 }
