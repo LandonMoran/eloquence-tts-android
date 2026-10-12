@@ -46,7 +46,7 @@ int main(void)
     EvvRom *rom = make(0);
     if (!rom) { printf("FAIL: chs rom make returned NULL\n"); return 1; }
     const EvvRomOps *ops = rom->ops;
-    if (!ops || !ops->mbcs2Rom || !ops->addText) {
+    if (!ops || !ops->mbcs2Rom || !ops->addText || !ops->clearErrors) {
         printf("FAIL: chs rom ops incomplete\n"); return 1;
     }
 
@@ -141,22 +141,29 @@ int main(void)
 
     /* #330/#334 stale-flag regression: after an oversized addText sets the
        overflow flag, the engine's error-clear path (clearErrors) must drop it
-       so a later, healthy sentence does not re-report the stale overflow and
-       thereby hide a fresh truncation. */
-    if (ops->clearErrors) {
+       so a later sentence does not re-report stale overflow and thereby mask a
+       fresh truncation. Run a genuinely truncating input after clearing and
+       assert the truncation-specific message, not merely a non-empty one. */
+    {
         char em[192] = "x";
         ops->clearErrors(rom);
         ops->errorMessage(rom, em);
         check(em[0] == 0, "#330 clearErrors clears stale error state");
 
-        /* overflow-free truncation must now surface, not be masked. */
-        static const unsigned char z5[] = { 0xB0, 0xB6, 0 };  /* zha5 */
-        if (ops->mbcs2Rom(rom, (const char *)z5, &out) != 0) {
-            expect(out, "zha5");
+        static const unsigned char unit[] = { 0xB0, 0xA5 };
+        size_t reps = 6000;
+        char *big = malloc(reps * 2 + 1);
+        if (big) {
+            for (size_t i = 0; i < reps; i++) { big[2*i] = unit[0]; big[2*i+1] = unit[1]; }
+            big[reps * 2] = 0;
+            check(ops->mbcs2Rom(rom, (const char *)big, &out) == 0,
+                  "#334 truncation after clearErrors is reported");
             ops->errorMessage(rom, em);
-            check(em[0] == 0, "#330 valid sentence after clearErrors has no error");
+            check(strstr(em, "truncated") != NULL,
+                  "#334 fresh truncation is not masked by stale overflow");
+            free(big);
         } else {
-            check(0, "#330 valid sentence after clearErrors converts");
+            check(0, "#334 alloc");
         }
     }
 
