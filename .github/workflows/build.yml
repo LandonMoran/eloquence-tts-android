@@ -187,6 +187,7 @@ jobs:
         run: |
           cc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
             -I tests/native/stubs -I native/openevv/include -I native/openevv/src \
+            -I native/openevv/src/eci/lang \
             -o /tmp/chs_rom_test \
             tests/native/chs_rom_test.c \
             native/openevv/src/eci/lang/eci_romedll.c \

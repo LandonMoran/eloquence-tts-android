@@ -11,7 +11,7 @@ gcc "${flags[@]}" -ffunction-sections -fdata-sections tests/native/compat_test.c
 # chs ROM robustness tests: compile the ROM sources directly under
 # ASan/UBSan so the fix code itself is instrumented (as CI does).
 gcc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -Itests/native/stubs -Inative/openevv/include -Inative/openevv/src \
+  -Itests/native/stubs -Inative/openevv/include -Inative/openevv/src -Inative/openevv/src/eci/lang \
   tests/native/chs_rom_test.c \
   native/openevv/src/eci/lang/eci_romedll.c \
   native/openevv/rom/chs/chsrom.c native/openevv/rom/chs/rom_tables_chs.c \
