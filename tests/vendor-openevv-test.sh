@@ -31,6 +31,11 @@ git init -q --bare "$FORK_REMOTE_DIR"
 
 FORK="$WORK/fork"
 git clone -q "$FORK_REMOTE_DIR" "$FORK"
+# The CI runner has no git identity by default; without it the fixture's
+# own `git commit` below fails and `main` never exists, which would make the
+# harness report a (bogus) failure for an environment reason, not a code bug.
+git -C "$FORK" config user.name  "openevv vendor test"
+git -C "$FORK" config user.email "vendor-test@example.com"
 ( cd "$FORK"
   git checkout -q -b main
   echo "engine-content" > EVV_ENGINE_MARKER
