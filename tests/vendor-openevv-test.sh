@@ -80,7 +80,7 @@ run_success() {
 # the shared `failures` counter that the final check reads. A subshell would
 # hide these increments and let failures slip through. (#10)
 test1() {
-  cd "$APP"
+  cd "$APP" || { fail "test1: cannot cd $APP"; return; }
   # Finding #8: a remote whose NAME looks like a fork/pr must not be picked
   # as the source. Add an unrelated "pr-9-fork" remote with a bogus URL; if
   # the script guessed from the name it would try to fetch from it and fail
@@ -106,7 +106,7 @@ test1
 # ---- Test 2: missing required file aborts before deleting anything
 cp -r "$DST" "$WORK/dst_backup"
 test2() {
-  cd "$APP"
+  cd "$APP" || { fail "test2: cannot cd $APP"; return; }
   # drop a required file. If the script wrongly continued past the check it
   # would rm -rf the whole DST and re-vendor; we assert it stops first.
   rm -f native/openevv/rom/chs/chsrom.c
@@ -125,7 +125,7 @@ test2
 
 # ---- Test 2b: a required Chinese ROM table missing aborts before deleting
 test2b() {
-  cd "$APP"
+  cd "$APP" || { fail "test2b: cannot cd $APP"; return; }
   # restore DST from backup (Test 2 corrupted only chsrom.c; rm it again)
   rm -rf native/openevv
   cp -r "$WORK/dst_backup" native/openevv
@@ -144,7 +144,7 @@ test2b
 
 # ---- Test 2c: missing chs_register wiring aborts before deleting
 test2c() {
-  cd "$APP"
+  cd "$APP" || { fail "test2c: cannot cd $APP"; return; }
   rm -rf native/openevv
   cp -r "$WORK/dst_backup" native/openevv
   # strip the chs_register symbol from port_ctors.c; the preflight wiring
@@ -164,7 +164,7 @@ test2c
 
 # ---- Test 3: failed fetch aborts (stale local main never used)
 test3() {
-  cd "$APP"
+  cd "$APP" || { fail "test3: cannot cd $APP"; return; }
   # restore the DST that Test 2 corrupted
   rm -rf native/openevv
   cp -r "$WORK/dst_backup" native/openevv
