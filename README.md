@@ -31,9 +31,10 @@ Other capabilities include:
 - Direct Boot support: the TTS service is marked `directBootAware` and uses
   device-protected storage so it can initialize before the first unlock.
 - A GitHub Releases update checker. Its asset and version requirements are
-  documented in [RELEASES.md](RELEASES.md); the workflow's first production
-  tag still needs end-to-end validation. As checked on 2026-10-07, no GitHub
-  Release has been published; repository tags do not by themselves include APKs.
+  documented in [RELEASES.md](RELEASES.md); the workflow has been validated by
+  production tags through `v1.0.8`. As checked on 2026-10-11, GitHub Releases
+  carry `v1.0` and `v1.0.1`–`v1.0.8`; tags themselves do not include APKs — the
+  signed installable APKs are published as release assets.
 
 ## Architecture
 

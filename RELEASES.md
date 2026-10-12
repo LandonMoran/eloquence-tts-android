@@ -2,11 +2,11 @@
 
 ## Version and publication
 
-- **Publication status checked 2026-10-09:** GitHub Releases carry `v1.0`,
-  `v1.0.1`–`v1.0.4`. Tags use `vMAJOR.MINOR[.PATCH]`; the APK
-  `versionName` must match the tag,validated by `tools/publish_release.py`.
-  `AndroidManifest.xml` currently identifies the checkout as version name `1.0.6`
-  and version code `7`; these are source-tree values -- evidence of a published
+- **Publication status checked 2026-10-11:** GitHub Releases carry `v1.0`,
+  `v1.0.1`–`v1.0.8`; the latest is `v1.0.8`. Tags use `vMAJOR.MINOR[.PATCH]`;
+  the APK `versionName` must match the tag, validated by `tools/publish_release.py`.
+  `AndroidManifest.xml` currently identifies the checkout as version name `1.0.8`
+  and version code `9`; these are source-tree values -- evidence of a published
   release comes from GitHub Releases plus the tag-triggered release workflow.
 - Release tags use `vMAJOR.MINOR[.PATCH]`; each numeric component is limited
   to three digits. The APK `versionName` must match the tag.
@@ -24,8 +24,9 @@
   production key. A change in production signing identity also prevents
   in-place upgrades.
 - Publication is implemented in `.github/workflows/release.yml` and
-  `tools/publish_release.py`, but has not yet been validated end to end by a
-  production tag. Verify a real tag-triggered release before relying on it.
+  `tools/publish_release.py`; it has been validated end to end by the released
+  `v1.0.5`–`v1.0.8` tags (each published three signed APKs and green CI). Treat
+  a real tag-triggered release as the source of truth for the latest status.
 
 ## Assets
 

@@ -72,6 +72,7 @@ jobs:
           echo 'f264dd9f79a1fde10ce5ecc53221eff24be4c9331c830b7d52f2f08a7b633de2  /tmp/kxml2-2.3.0.jar' | sha256sum -c -
           bash tests/host/run.sh
           bash tests/native/run.sh
+          bash tests/vendor-openevv-test.sh
           python3 tests/contracts.py
           python3 tools/prepare_assets.py --verify
 
@@ -181,3 +182,30 @@ jobs:
             oracle/chs_smoke.c jni/chs_oracle_synth.c jni/eci_compat.c \
             native/openevv/build/libevv-enus-chs.a -lm -lpthread
           /tmp/chs_smoke
+
+      - name: Compile and run chs ROM robustness test (ASan/UBSan)
+        run: |
+          cc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -I tests/native/stubs -I native/openevv/include -I native/openevv/src \
+            -I native/openevv/src/eci/lang \
+            -o /tmp/chs_rom_test \
+            tests/native/chs_rom_test.c \
+            native/openevv/src/eci/lang/eci_romedll.c \
+            native/openevv/rom/chs/chsrom.c native/openevv/rom/chs/rom_tables_chs.c \
+            -lm -lpthread
+          /tmp/chs_rom_test
+
+      - name: Compile and run chs phrase-table bounds test (ASan/UBSan)
+        run: |
+          # chs_tbl_test.c #includes chsrom.c to reach the file-static
+          # chs_lookup() with a deliberately truncated table, so chsrom.c is
+          # compiled only once in that TU (rom_tables + eci_romedll still link).
+          cc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -I tests/native/stubs -I native/openevv/include -I native/openevv/src \
+            -I native/openevv/src/eci/lang -I native/openevv/rom/chs \
+            -o /tmp/chs_tbl_test \
+            tests/native/chs_tbl_test.c \
+            native/openevv/rom/chs/rom_tables_chs.c \
+            native/openevv/src/eci/lang/eci_romedll.c \
+            -lm -lpthread
+          /tmp/chs_tbl_test
