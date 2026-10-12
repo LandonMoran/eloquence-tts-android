@@ -29,12 +29,14 @@ class VoiceConfig(private val context: Context) {
     private val store = MirroredPreferences(context, PREFS)
     /** Read the latest settings as strings from mirrored storage. */
     private fun readMap() = store.strings()
-    /** Persist editor changes through the shared mirrored-preferences transaction. */
-    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit) { store.edit(block) }
+    /** Persist editor changes through the shared mirrored-preferences transaction.
+     *  Returns the persistence result so callers can distinguish a successful
+     *  save from a failed one (mirrored file not updated). */
+    private fun writeBoth(block: (SharedPreferences.Editor) -> Unit): Boolean = store.edit(block)
 
     val extraLogging: Boolean get() = store.getBoolean("extra_logging", false)
-    /** Persist whether extra engine logging is enabled. */
-    fun setExtraLogging(enabled: Boolean) { writeBoth { it.putBoolean("extra_logging", enabled) } }
+    /** Persist whether extra engine logging is enabled; true on success. */
+    fun setExtraLogging(enabled: Boolean): Boolean = writeBoth { it.putBoolean("extra_logging", enabled) }
 
     val voice: String
         get() = readMap()[KEY_VOICE] ?: "en-US"
@@ -42,18 +44,18 @@ class VoiceConfig(private val context: Context) {
         get() = readMap()[KEY_PITCH]?.toIntOrNull() ?: 50
     val volume: Int
         get() = readMap()[KEY_VOLUME]?.toIntOrNull() ?: 100
-    fun setVoice(v: String) { writeBoth { it.putString(KEY_VOICE, v) } }
-    fun setPitch(p: Int) { writeBoth { it.putInt(KEY_PITCH, p) } }
-    /** Persist the requested output volume in mirrored settings. */
-    fun setVolume(v: Int) { writeBoth { it.putInt(KEY_VOLUME, v) } }
-    fun setPunctEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_PUNCT,  b) } }
+    fun setVoice(v: String): Boolean = writeBoth { it.putString(KEY_VOICE, v) }
+    fun setPitch(p: Int): Boolean = writeBoth { it.putInt(KEY_PITCH, p) }
+    /** Persist the requested output volume in mirrored settings; true on success. */
+    fun setVolume(v: Int): Boolean = writeBoth { it.putInt(KEY_VOLUME, v) }
+    fun setPunctEnabled(b: Boolean): Boolean = writeBoth { it.putBoolean(KEY_PUNCT, b) }
         val punctEnabled: Boolean
             get() = readMap()[KEY_PUNCT]?.toBoolean() ?: false
 
-        fun setNumberEnabled(b: Boolean) { writeBoth { it.putBoolean(KEY_NUMBER_ENABLED,  b) } }
+        fun setNumberEnabled(b: Boolean): Boolean = writeBoth { it.putBoolean(KEY_NUMBER_ENABLED, b) }
         val numberEnabled: Boolean
             get() = readMap()[KEY_NUMBER_ENABLED]?.toBoolean() ?: false
-        fun setNumberModePref(v: Int) { writeBoth { it.putInt(KEY_NUMBER_MODE,  v) } }
+        fun setNumberModePref(v: Int): Boolean = writeBoth { it.putInt(KEY_NUMBER_MODE, v) }
         val numberModePref: Int
             get() = (readMap()[KEY_NUMBER_MODE]?.toIntOrNull() ?: 0).coerceIn(0, 4)
 
@@ -139,7 +141,7 @@ class VoiceConfig(private val context: Context) {
         }
     }
 
-    fun clearDict() { writeBoth { it.remove(KEY_DICT) } }
+    fun clearDict(): Boolean = writeBoth { it.remove(KEY_DICT) }
     companion object {
         const val MAX_DICT_BYTES = 256 * 1024
         const val MAX_DICT_ENTRIES = 1000

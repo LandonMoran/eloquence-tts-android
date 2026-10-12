@@ -34,10 +34,11 @@ class TextNormalizer {
 
         /** Strict date grammar: ISO-style 4-digit year, 1-2 digit month, and 1-2 digit day(
                  * separators homogeneous('- or '/'. Ranges/phone numbers don't match(require they don't(. */
-        private val DATE_RE = Regex("^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}$")
+        internal val DATE_RE = Regex("^\\d{4}([-/])\\d{1,2}\\1\\d{1,2}$")
 
-        /** Strict clock grammar:H,MM(,SS(: 2-3 colon-separated fields(. */
-        private val TIME_RE = Regex("^\\d{1,2}:\\d{1,2}(:\\d{1,2})?$")
+        /** Strict clock grammar:H:MM(,SS(: 2-3 colon-separated fields, minutes and
+         * seconds being two digits( works with hours 1-2 digits(9:05:07(. */
+        private val TIME_RE = Regex("^\\d{1,2}:\\d{2}(:\\d{2})?$")
 
         /** Symbol -> Chinese-reading mapping table(Guangrong's DefaultPunctuationNormalizer;139 entries) */
         private val SYMBOL_NAMES: Map<Char, String> = buildSymbolTable()
@@ -211,27 +212,38 @@ class TextNormalizer {
             val n = input.length
             while (i < n) {
                 val c = input[i]
-                if (isAsciiDigit(c)) {
+                                if (isAsciiDigit(c)) {
                     // collect consecutive digits
                     val start = i
                     while (i < n && isAsciiDigit(input[i])) i++
                     val digits = input.substring(start, i)
-                    // check whether part of a date/time(avoid mangling 2024-03-15 / 14:30)
-                    val isDateTime = hasDateTimeBoundaries(input, start, i)
-                    if (isDateTime) {
-                        if (i < input.length && (input[i] == ':' || input[i] == '：')) {
-                            // Convert a clock separator to the localized hour/minute marker;
-                            // consume the colon because the oracle accepts Chinese text only.
-                            sb.append(convertNumber(digits))
-                            sb.append('点')
-                            i++  // skip the separator (it became 点"
-                        } else if (start > 0 && (input[start -  1] == ':' || input[start -  1] == '\uFF1A')) {
-                            sb.append(convertNumber(digits))
+                    // A whole matching clock segment (H:MM or H:MM:SS) is
+                    // converted as one unit the first time we touch it: every
+                    // colon becomes its field marker (点 / 分 / 秒) so no colon
+                    // is left behind for the symbol pass to speak as punctuation.
+                    val segBound = dateTimeSegment(input, start, i, n)
+                    val entire = input.substring(segBound.first, segBound.second)
+                    if (entire.matches(TIME_RE) && start == segBound.first) {
+                        sb.append(convertClock(entire))
+                        i = segBound.second
+                    } else {
+                        // check whether part of a date/time (avoid mangling 2024-03-15 / 14:30)
+                        val isDateTime = hasDateTimeBoundaries(input, start, i)
+                        if (isDateTime) {
+                            if (i < input.length && (input[i] == ':' || input[i] == '：')) {
+                                // Convert a clock separator to the localized hour/minute marker;
+                                // consume the colon because the oracle accepts Chinese text only.
+                                sb.append(convertNumber(digits))
+                                sb.append('点')
+                                i++  // skip the separator
+                            } else if (start > 0 && (input[start - 1] == ':' || input[start - 1] == '\uFF1A')) {
+                                sb.append(convertNumber(digits))
+                            } else {
+                                sb.append(convertNumber(digits))
+                            }
                         } else {
                             sb.append(convertNumber(digits))
                         }
-                    } else {
-                        sb.append(convertNumber(digits))
                     }
                 } else {
                     sb.append(c)
@@ -239,6 +251,20 @@ class TextNormalizer {
                 }
             }
             return sb.toString()
+        }
+
+        /** Whole clock reading for a matched H:MM or H:MM:SS segment: each
+         * field is converted to Chinese and joined with 点 / 分 / 秒 so no
+         * colon survives to the symbol pass. */
+        fun convertClock(clock: String): String {
+            val parts = clock.split(':')
+            val h = parts[0]
+            val m = parts[1]
+            return if (parts.size >= 3) {
+                convertNumber(h) + "点" + convertNumber(m) + "分" + convertNumber(parts[2]) + "秒"
+            } else {
+                convertNumber(h) + "点" + convertNumber(m) + "分"
+            }
         }
 
         /** Convert by digit-count rules:≤4 digits read as a whole;≥5 digit-by-digit */
