@@ -18,7 +18,8 @@ parameters; users can adjust the available voice parameters. The actual
 language, locale, and capability mapping is maintained in
 [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt) and summarized
 in [Languages, voices, and capabilities](docs/languages-voices-capabilities.md).
-Korean is not a shipped Android voice.
+Korean is fully removed from this build (engine data, detection, and build
+references), so it is neither shipped nor advertised.
 
 Other capabilities include:
 

@@ -8,7 +8,7 @@ import com.github.pemistahl.lingua.api.LanguageDetectorBuilder
  * Multi-language detection + text segmenter.
  *
  * Layer 1:Unicode rules(O(n)single-pass scan,zero latency,100% precise)
- *   kana -> Japanese,Hangul -> Korean,Han -> unshipped (falls back),Latin -> Latin runs
+ *   kana -> Japanese,Han + Hangul -> unshipped (fall back),Latin -> Latin provider
  *   spaces/punct/separators -> always follow the previous segment's language(regardless of the default language)
  *
  * Layer 2:Lingua statistics(Latin 10-language disambiguation;short text falls back to the default language)
@@ -34,7 +34,6 @@ class LanguageDetector {
         const val DIALECT_DE_DE  =  0x40000
         const val DIALECT_IT_IT  =  0x50000
         const val DIALECT_JA_JP  =  0x80000
-        const val DIALECT_KO_KR  =  0xA0000
         const val DIALECT_PT_BR  =  0x70000
         const val DIALECT_FI_FI  =  0x90000
         const val DIALECT_PL_PL  =  0x110000
@@ -327,7 +326,7 @@ class LanguageDetector {
 
             // pass 1:Unicode run-splitting
             var current = StringBuilder()
-            var currentType = -1  // 0=Han(unshipped), 1=kana, 2=Hangul, 3=Latin,  4=separator,   5=digit
+            var currentType = -1  // 0=Han/Hangul(unshipped), 1=kana, 3=Latin, 4=separator, 5=digit
             // Leading digit/date runs flush with the RUN's dialect; start from the
             // user's default language when set (e.g. zh) instead of hard English so a
             // leading timestamp doesn't get voiced in the wrong language.
@@ -388,13 +387,13 @@ class LanguageDetector {
 
         /**
          * Character classification.
-         * 0=Han(unshipped),1=Japanese kana, 2=Korean Hangul, 3=Latin, 4=separator
+         * 0=Han/Hangul(unshipped),1=Japanese kana, 3=Latin, 4=separator,
          */
         private fun classifyCodePoint(cp: Int): Int {
             // kana
             if (cp in 0x3040..0x309F || cp in 0x30A0..0x30FF) return 1
-            // Hangul
-            if (cp in 0xAC00..0xD7AF) return 2
+            // Hangul(no Korean module shipped;unshipped like Han,falls to the default language)
+            if (cp in 0xAC00..0xD7AF) return 0
             // CJK Han(no Simplified-vs-Traditional split;unshipped,falls to the default language)
             if (cp in 0x4E00..0x9FFF) return 0
             if (cp in 0x3400..0x4DBF) return 0
@@ -442,13 +441,12 @@ class LanguageDetector {
         private fun typeToCode(type: Int): String? {
             return when (type) {
                 1 -> "ja"
-                2 -> "ko"
                 3 -> "en" // Latin placeholder;Lingua actually decides
                 else -> null
             }
         }
 
-        /** Numeric runs must not feed the engine an unshipped dialect (Hangul/Kana\n raw seeds crash the native voice-table walk). */
+        /** Numeric runs must not feed the engine an unshipped dialect (kana raw seeds crash the native voice-table walk). */
         private fun isShippedDialect(d: Int): Boolean {
             return when (d) {
                 DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_US, DIALECT_ES_MX,
@@ -461,11 +459,10 @@ class LanguageDetector {
         /** Character type -> ECI dialect(no whitelist check here;flushSegment handles the whitelist uniformly) */
         private fun typeToDialect(type: Int, fallbackDialect: Int): Int {
             return when (type) {
-                // Han (code point type 0) has no shipped Chinese voice; it falls
+                // Han / Hangul (code point type 0) has no shipped voice; it falls
                 // to the same path as the other unshipped scripts.
                 0 -> fallbackDialect
                 1 -> DIALECT_JA_JP
-                2 -> DIALECT_KO_KR
                 3 -> fallbackDialect
                 else -> fallbackDialect
             }
@@ -570,7 +567,7 @@ class LanguageDetector {
                 dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fb
 
             } else {
-                // Japanese/Korean: check the whitelist; if absent, fall back to the default language
+                // Japanese (kana): check the whitelist; if absent, fall back to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
             }
             // HARD INVARIANT: a run whose letters are ALL Latin must never be spoken with a

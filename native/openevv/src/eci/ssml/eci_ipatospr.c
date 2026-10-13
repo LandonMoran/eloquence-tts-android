@@ -12,7 +12,8 @@
  * which is the arrangement kept here: US and British English have their
  * own, German has one that French Canada also uses, France has one, and
  * the Japanese one serves Italian, Portuguese and Japanese while the
- * Korean one serves Korean, Finnish and one Japanese code set.
+ * converter here serves Finnish and one Japanese code set -- it is carried
+ * under the name the original gave it, which this tree keeps.
  *
  * Two of those are the original's own doing rather than anything sensible,
  * and both are kept. French Canada is sent to the German converter, which
@@ -1060,7 +1061,6 @@ static int32_t ipa_forLanguage(int32_t lang, int32_t cur, int32_t next,
         return JpJpIPAToSPRConverter(cur, next, out, used);
     case 0x80800:
     case 0x90000:
-    case 0xa0000:
         return KoKoIPAToSPRConverter(cur, next, out, used);
     default:
         return 0;

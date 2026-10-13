@@ -116,7 +116,7 @@ int8_t langSupportEmphasis(LanguageId id)
 static int8_t langSupportSayAs(LanguageId id)
 {
     static const int32_t LANGS[] = {
-        0x10000, 0x10001, 0x30000, 0x40000, 0xa0000, 0x80000
+        0x10000, 0x10001, 0x30000, 0x40000, 0x80000
     };
 
     return inLanguages(&id, LANGS, sizeof LANGS / sizeof LANGS[0]);
@@ -126,7 +126,7 @@ static int8_t langSupportSayAs(LanguageId id)
 static int8_t langSupportIPA(LanguageId id)
 {
     static const int32_t LANGS[] = {
-        0x10000, 0x10001, 0x30000, 0x40000, 0x80000, 0xa0000
+        0x10000, 0x10001, 0x30000, 0x40000, 0x80000
     };
 
     return inLanguages(&id, LANGS, sizeof LANGS / sizeof LANGS[0]);

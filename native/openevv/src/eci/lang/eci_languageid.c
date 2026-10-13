@@ -163,10 +163,6 @@ THIS void li_setString(LanguageId *l)
         strcpy(l->major, "Fn");
         strcpy(l->minor, "FN");
         break;
-    case 10:
-        strcpy(l->major, "Ko");
-        strcpy(l->minor, "KR");
-        break;
     case 12:
         strcpy(l->major, "Nl");
         strcpy(l->minor, "BE");
@@ -319,8 +315,6 @@ THIS void li_initNames(LanguageId *l, const char *major, const char *minor)
         packed = 0x80000;
     else if (strcmp(major, "Fi") == 0)
         packed = 0x90000;
-    else if (strcmp(major, "Ko") == 0)
-        packed = 0xa0000;
     else if (strcmp(major, "Nl") == 0)
         packed = 0xc0000;
     else if (strcmp(major, "No") == 0)

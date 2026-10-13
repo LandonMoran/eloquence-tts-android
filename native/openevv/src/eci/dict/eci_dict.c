@@ -360,10 +360,10 @@ int STDCALL ed_saveDict(OldInst *h, void *dict, int32_t kind,
  * It is one function here.
  *
  * What it comes to is that the extended calls, the ones carrying a part of
- * speech, are for the languages written in another script: Korean in two
- * code sets and Japanese in two. Every other language takes the
- * plain road, and asking it for the extended volume answers that the volume
- * is wrong.
+ * speech, are for the languages written in another script. Japanese is one,
+ * in two code sets, and takes the wide road below; no other language here
+ * asks for the extended volume, and asking it for the extended volume
+ * answers that the volume is wrong.
  */
 #define DICT_ROAD_PLAIN  0     /* the plain calls only */
 #define DICT_ROAD_EXT    1     /* both, whichever the volume asks for */
@@ -372,9 +372,6 @@ int STDCALL ed_saveDict(OldInst *h, void *dict, int32_t kind,
 static int ed_road(int32_t lang)
 {
     switch (lang) {
-    case 0xa0000: case 0xa0800:          /* Korean, narrow and wide */
-        return DICT_ROAD_EXT;
-
     case 0x80000: case 0x80800:          /* Japanese */
         return DICT_ROAD_WIDE;
 
@@ -384,15 +381,18 @@ static int ed_road(int32_t lang)
 }
 
 /* The part of speech the plain calls hand down, which is not the caller's
-   business: the language decides it and only Korean asks for one. The
-   dictionary's own language is asked rather than the instance's, since a set
-   may hold a dictionary for a language the instance is not speaking. */
+   business: the language decides it, and no language shipped here asks for
+   one. It is kept as the one caller that would reach the extended volume,
+   which only the extended calls do; nothing returns the EXT road above, so
+   this is always plain. The dictionary's own language is asked rather than
+   the instance's, since a set may hold a dictionary for a language the
+   instance is not speaking. */
 static int32_t ed_plainPos(OldInst *h, void *dict)
 {
     int32_t lang = 0;
 
     api_get_dict_language(OI_NEW(h), dict, &lang);
-    return (((lang & 0xff0000) >> 16) == 0x0a) ? 0x0a : 0;
+    return 0;
 }
 
 /* Copy the narrow string the layer left into memory the instance owns, and

@@ -387,7 +387,6 @@ class SettingsActivity : Activity() {
         if (code.startsWith("pt")) return "Olá, este é um teste de síntese de voz."
         if (code.startsWith("fi")) return "Hei, tämä on puhesynteesitesti."
         if (code.startsWith("ja")) return "これは音声合成のテストです"
-        if (code.startsWith("ko")) return "이것은 음성 합성 테스트입니다."
         return "Hello, this is a speech synthesis test."
     }
 

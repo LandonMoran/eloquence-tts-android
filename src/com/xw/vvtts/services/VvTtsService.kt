@@ -30,7 +30,7 @@ import java.util.Locale
  * Eloquence TTS service (openevv port, single engine).
  * 13 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
  * de-DE/fr-FR/fr-CA/es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL/pt-BR/fi-FI,
- * matching the voices advertised in onGetVoices().ko is not linked here.
+ * matching the voices advertised in onGetVoices().
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
@@ -595,7 +595,7 @@ synchronized(synthesisLock) {
             Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
         }
                 // CJK normalization (width + number + symbol readings) happens once,
-                // inside EloquenceEngine.preprocess for Japanese/Korean segments. Do not repeat it
+                // inside EloquenceEngine.preprocess for Japanese segments. Do not repeat it
                 // here: a second pass after symbols were expanded defeats the
                 // date/time boundary detection (2024-03-15 -> mangled readings).
                 // Synthesize long segments into small, sentence-aware pieces: each

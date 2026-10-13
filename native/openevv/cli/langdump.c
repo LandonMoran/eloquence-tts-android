@@ -6,7 +6,7 @@
 int main(void) {
     int i;
     void *h0 = eciNewEx(0x10000);
-    void *h1 = eciNewEx(0xa0000);
+    void *h1 = eciNewEx(0x80000);
     printf("handles: %p %p\n", h0, h1);
     for (i =  0; delta_languages[i] != 0; i++) {
         const delta_language *l = delta_languages[i];

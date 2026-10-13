@@ -177,10 +177,7 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_PT_BR = 0x70000    // [7.0] ptb
         const val DIALECT_JA_JP = 0x80000    // [8.0] jpn
         const val DIALECT_FI_FI = 0x90000    // [9.0] fin
-        const val DIALECT_KO_KR = 0xA0000    // [10.0] kor
         // Language modules actually linked in this build (matches build_native.sh LANGS)
-        // ko (kor) has no linked module; the native side would reject it; we intercept
-        // first so nothing depends on that rejection.
         val SHIPPED_DIALECTS: Set<Long> = VoiceRegistry.voices.map { it.dialect.toLong() }.toSet()
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
         // Engine's real output rate:  the enu library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
@@ -197,7 +194,6 @@ class EloquenceEngine(context: Context) {
             return when (dialect) {
                 DIALECT_JA_JP -> Charset.forName("Shift_JIS")
                 DIALECT_PL_PL -> Charsets.UTF_8 // openevv custom-character module decodes UTF-8
-                DIALECT_KO_KR -> Charset.forName("EUC-KR")
                 else -> Charset.forName("windows-1252")
             }
         }
@@ -599,7 +595,7 @@ class EloquenceEngine(context: Context) {
     /** Configure and synthesize on the serial worker; return null on failure or cancellation. */
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? = synchronized(nativeLock) {
         return synthWithTimeout { worker ->
-        // Languages not shipped in this build (e.g. ko — engine data, no voice) are rejected
+        // Languages not shipped in this build (engine data, no linked voice) are rejected
             // outright; the native side would reject them; we intercept so the TTS service gets a clean null
             // (Android auto-fallbacks to other engines), keeping every path away from the crashy eciNewEx.
             if (!isShippedDialect(dialect)) {

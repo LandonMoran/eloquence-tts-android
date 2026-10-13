@@ -224,7 +224,7 @@ typedef enum {
 /* The volumes a dictionary set holds. Three of them are the set's own; the
    fourth is the extended main dictionary, which carries a part of speech
    beside each entry and which only a language written in another script has
-   -- Korean and Japanese. Asking any other language for it answers
+   -- Japanese here. Asking any other language for it answers
    eciDictInvalidVolume. */
 typedef enum {
     eciMainDict    = 0,
@@ -250,8 +250,9 @@ typedef enum {
 } ECIDictError;
 
 /* A part of speech, which the extended volume keeps beside an entry. The
-   engine treats it as a number and only Korean asks for one, so what the
-   values mean is the language's business rather than the interface's. */
+   engine treats it as a number and no language shipped here asks for one,
+   so what the values mean is the language's business rather than the
+   interface's. */
 typedef int ECIPartOfSpeech;
 
 /* ---- languages -------------------------------------------------------- */
@@ -279,7 +280,6 @@ typedef enum {
     eciBrazilianPortuguese    = 0x00070000,
     eciStandardJapanese       = 0x00080000,
     eciStandardFinnish        = 0x00090000,
-    eciStandardKorean         = 0x000a0000,
     eciStandardDutch          = 0x000c0000,
     eciStandardNorwegian      = 0x000d0000,
     eciStandardSwedish        = 0x000e0000,
