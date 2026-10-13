@@ -63,10 +63,6 @@ static const int32_t VOICE_RATES[] = { 8000, 11025, 22050 };
 #define VOICE_FIRST 1
 #define VOICE_LAST  8
 
-/* Chinese is the one language whose first dataset is listed under a
-   different key, and 7938 is the corpus number that key carries. */
-#define LANGUAGE_CHINESE 6
-
 /* What a question answers. */
 #define VOICE_NO_CRITERIA (-12)
 #define VOICE_NOT_ONE     (-17)
@@ -188,13 +184,6 @@ THIS void cvi_initVoicesInfo(CVoicesInfo *self)
                 sprintf(key, "Voice%dDataset%s.%d", voice, section,
                         VOICE_RATES[rate]);
                 value = ini_getString(&ini, section, key);
-
-                /* Chinese lists its first one under a corpus number
-                   instead. */
-                if (value == 0 && language == LANGUAGE_CHINESE && rate == 0) {
-                    sprintf(key, "Voice%dCorpus%s.7938", voice, section);
-                    value = ini_getString(&ini, section, key);
-                }
 
                 if (value == 0)
                     continue;

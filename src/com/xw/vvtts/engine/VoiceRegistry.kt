@@ -18,8 +18,7 @@ object VoiceRegistry {
         CapableVoice("ja-JP", Locale.JAPAN, EloquenceEngine.DIALECT_JA_JP),
         CapableVoice("pl-PL", Locale("pl", "PL"), EloquenceEngine.DIALECT_PL_PL),   // [11.0] plpl
         CapableVoice("pt-BR", Locale("pt", "BR"), EloquenceEngine.DIALECT_PT_BR),
-        CapableVoice("fi-FI", Locale("fi", "FI"), EloquenceEngine.DIALECT_FI_FI),
-        CapableVoice("zh-CN", Locale("zh", "CN"), EloquenceEngine.DIALECT_ZH_CN)
+        CapableVoice("fi-FI", Locale("fi", "FI"), EloquenceEngine.DIALECT_FI_FI)
     )
 
 
@@ -49,7 +48,6 @@ object VoiceRegistry {
         "fi" -> "Hei, tämä on Eloquence puhesynteesin testi."
         "pl" -> "Witaj, to jest test syntezy mowy Eloquence."
         "ja" -> "こんにちは、これは音声合成のテストです。"
-        "zh" -> "你好，这是语音合成测试。"
         else -> "Hello, this is an Eloquence speech synthesis test."
     }
 }

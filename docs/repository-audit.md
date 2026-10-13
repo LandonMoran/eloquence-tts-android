@@ -90,7 +90,7 @@ These three PR heads and PR #287 are merged into the consolidation branch. Their
 
 - `bash tests/native/run.sh`: JDK headers, GCC, ASan and UBSan required.
 - `bash tests/host/run.sh`: set `ANDROID_JAR`, `KOTLINC_CP` (Kotlin 1.9.25) and `KXML_JAR` (kxml2 2.3.0). Compiles all application Kotlin and runs preferences, dictionary, voice/version, service lifecycle and updater ownership regressions. CI supplies these dependencies.
-- `python3 tests/contracts.py`: native/registry parity, permission/signing contracts, malformed oracle pieces and exact APK ABI fixtures.
+- `python3 tests/contracts.py`: native/registry parity, permission/signing contracts and exact APK ABI fixtures.
 - `python3 tools/prepare_assets.py --verify`: regenerate models and the Lingua bridge and compare content.
 - `python3 tools/audit_apk_abis.py`: inspect the four built APKs; CI runs this before upload. The universal artifact includes arm64-v8a, armeabi-v7a and x86_64.
 

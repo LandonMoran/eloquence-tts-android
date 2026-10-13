@@ -7,7 +7,6 @@ import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.KonaVoice
 import com.xw.vvtts.utils.VoiceConfig
-import com.xw.vvtts.utils.TextNormalizer
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
 import java.nio.ByteBuffer
@@ -142,7 +141,7 @@ class EloquenceEngine(context: Context) {
          *  their own engineCallLock just nest safely. */
         private val nativeLock = Any()
 
-        /** CI autotest (zh oracle) skips the en warmup: its forced-synthesis init
+        /** CI autotest skips the en warmup: its forced-synthesis init
          *  phase never returns on x86_64 CI emulators only. Prod behavior is untouched. */
         @Volatile var skipWarmupForAutotest = false
 
@@ -175,15 +174,13 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
         const val DIALECT_IT_IT = 0x50000    // [5.0] ita
-        const val DIALECT_ZH_CN = 0x60000    // [6.0] chs — linked against lang/chs; synthesis via the oracle voice bank (see SHIPPED_DIALECTS)
-        const val DIALECT_ZH_TW = 0x60001    // [6.1] cht
         const val DIALECT_PT_BR = 0x70000    // [7.0] ptb
         const val DIALECT_JA_JP = 0x80000    // [8.0] jpn
         const val DIALECT_FI_FI = 0x90000    // [9.0] fin
         const val DIALECT_KO_KR = 0xA0000    // [10.0] kor
         // Language modules actually linked in this build (matches build_native.sh LANGS)
-        // chs is linked (synthesis = oracle voice bank); zh-TW (cht)/ko (kor) have no module,
-        // the native side would reject them; we intercept first so nothing depends on that rejection.
+        // ko (kor) has no linked module; the native side would reject it; we intercept
+        // first so nothing depends on that rejection.
         val SHIPPED_DIALECTS: Set<Long> = VoiceRegistry.voices.map { it.dialect.toLong() }.toSet()
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
         // Engine's real output rate:  the enu library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
@@ -198,8 +195,6 @@ class EloquenceEngine(context: Context) {
         /** Dialect -> text encoding (CJK uses its own encodings; Western uses windows-1252) */
         private fun charsetForDialect(dialect: Int): Charset {
             return when (dialect) {
-                DIALECT_ZH_CN -> Charset.forName("GB18030")
-                DIALECT_ZH_TW -> Charset.forName("Big5")
                 DIALECT_JA_JP -> Charset.forName("Shift_JIS")
                 DIALECT_PL_PL -> Charsets.UTF_8 // openevv custom-character module decodes UTF-8
                 DIALECT_KO_KR -> Charset.forName("EUC-KR")
@@ -207,18 +202,16 @@ class EloquenceEngine(context: Context) {
             }
         }
 
-        /** Normalize numerals/symbols for CJK (Chinese readings); other dialects pass
-         *  through unchanged —the Lingua/segment layer already handled their quirks. */
+        /** Per-dialect preprocessing; the Lingua/segment layer already handled
+         *  its quote/whitespace quirks before this point. */
         private fun preprocess(
             text: String, dialect: Int,
             userDict: List<Pair<Regex, String>> = emptyList(),
             readPunct: Boolean = false,
             numberMode: Int = 0,
         ): String {
-            val base = if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW)
-                TextNormalizer.normalizeForChinese(text) else text
+            val base = text
             if (base.isEmpty()) return base
-            if (dialect == DIALECT_ZH_CN || dialect == DIALECT_ZH_TW) return applyDict(base, userDict)
             // Factory (decompiled Eloquence apk) Western text cleanups + per-dialect
             // spoken-exception tables ( ia.b a() + language packs(, ported verbatim..
             // Case-insensitive substring semantics match the factory (no word boundaries(. The
@@ -606,9 +599,9 @@ class EloquenceEngine(context: Context) {
     /** Configure and synthesize on the serial worker; return null on failure or cancellation. */
     fun synthesizeCore(text: String, dialect: Int, volume: Int, presetId: Int, uiPitch: Int, uiRate: Int): ShortArray? = synchronized(nativeLock) {
         return synthWithTimeout { worker ->
-        // Languages not linked in this build (zh/pt/fi/ko/zh-TW( are rejected outright.
-            //the native side would reject them; we intercept so the TTS service gets a clean null
-            //(Android auto-fallbacks to other engines(, keeping every path away from the crashy eciNewEx.
+        // Languages not shipped in this build (e.g. ko — engine data, no voice) are rejected
+            // outright; the native side would reject them; we intercept so the TTS service gets a clean null
+            // (Android auto-fallbacks to other engines), keeping every path away from the crashy eciNewEx.
             if (!isShippedDialect(dialect)) {
                 Log.e(TAG, "dialect not in this build: 0x" + Integer.toHexString(dialect))
                 return@synthWithTimeout null
@@ -634,12 +627,7 @@ class EloquenceEngine(context: Context) {
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
             params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
-            // zh (0x60000) synthesizes from the oracle voice bank, which makes
-            // no engine calls: the engine's chs module owns no Western voices,
-            // so the copy/param-stage below would fail and retire the session
-            // before the oracle path ever runs (on-device zero-audio).  Skip it.
-            if (dialect != DIALECT_ZH_CN &&
-                !worker.appliedVoiceParams.matches(dialect, presetId, params)) {
+            if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
                 val configured = copied >= 0 && params.indices.all { p ->
@@ -667,7 +655,7 @@ class EloquenceEngine(context: Context) {
                 Log.e(TAG, "encode failed for " + Integer.toHexString(dialect), e)
                 return@synthWithTimeout null
             }
-            val charset = if (dialect == DIALECT_ZH_CN) VvttsCore.CHARSET_GBK else VvttsCore.CHARSET_1252
+            val charset = VvttsCore.CHARSET_1252
             var pcm = VvttsCore.synth(handle, dialect, encoded, charset, null)
             if (pcm != null && pcm.isEmpty()) {
                 // Native retirement is permanent. The next utterance opens a

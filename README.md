@@ -7,11 +7,10 @@ Synthesis runs locally; speech text is not sent to a speech service.
 
 ## Supported languages and voices
 
-The app advertises these 14 locales: English (United States and United
+The app advertises these 13 locales: English (United States and United
 Kingdom), German (Germany), French (France and Canada), Spanish (Spain,
 United States, and Mexico), Italian (Italy), Japanese (Japan), Polish
-(Poland), Portuguese (Brazil), Finnish (Finland), and Chinese (Simplified,
-China).
+(Poland), Portuguese (Brazil), and Finnish (Finland).
 
 Eight named voice presets are available: Reed, Shelley, Sandy, Rocko, Flo,
 Grandma, Grandpa, and Eddy. A preset selects an ECI voice row and its default
@@ -19,7 +18,7 @@ parameters; users can adjust the available voice parameters. The actual
 language, locale, and capability mapping is maintained in
 [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt) and summarized
 in [Languages, voices, and capabilities](docs/languages-voices-capabilities.md).
-Traditional Chinese and Korean are not shipped Android voices.
+Korean is not a shipped Android voice.
 
 Other capabilities include:
 
@@ -45,11 +44,9 @@ links the C `openevv` engine and exposes a single `libvvtts_core.so` per ABI.
 The bridge returns signed 16-bit mono PCM. Native engine audio is 11,025 Hz;
 the bridge resamples it to 44,100 Hz for Android playback.
 
-Chinese Simplified (`zh-CN`) uses the in-tree oracle audio bank, generated as C
-from consolidated tables. The other 13 shipped locales use `openevv` language
-modules. Runtime synthesis is performed by the in-tree engine.
-The bridge's lifecycle, cancellation, size, and encoding constraints are
-described in [`jni/README.md`](jni/README.md).
+All shipped locales synthesize from the in-tree `openevv` engine; Chinese
+Simplified is removed. The bridge's lifecycle, cancellation, size, and
+encoding constraints are described in [`jni/README.md`](jni/README.md).
 
 ## Repository layout
 
@@ -58,7 +55,6 @@ described in [`jni/README.md`](jni/README.md).
 | `src/` | Kotlin Android service, engine, settings, detection, and utilities |
 | `jni/` | Native ECI compatibility layer and JNI bridge |
 | `native/openevv/` | C speech engine, language modules, and engine documentation |
-| `oracle/` | Chinese audio tables, generation tools, and research notes |
 | `language-models/`, `libs/` | Packaged language-detection data and JVM libraries |
 | `res/`, `AndroidManifest.xml` | Android resources and application/service configuration |
 | `tests/` | Host regressions, native boundary tests, lifecycle tests, and contracts |
@@ -83,8 +79,8 @@ upgrade-compatible production installs.
 
 Run the checks that do not require an Android SDK/NDK:
 
-- `bash tests/native/run.sh` runs the native bridge, compatibility, and oracle
-  tests with GCC address and undefined-behavior sanitizers.
+- `bash tests/native/run.sh` runs the native bridge and compatibility tests
+  with GCC address and undefined-behavior sanitizers.
 - `python3 tests/contracts.py` checks repository contracts, including voice
   registry/native parity and release/ABI rules.
 - `python3 tools/prepare_assets.py --verify` checks generated language-model
@@ -93,8 +89,7 @@ Run the checks that do not require an Android SDK/NDK:
   regressions. It requires the Android API jar, Kotlin 1.9.25 compiler
   classpath, and kxml2 2.3.0 jar (`ANDROID_JAR`, `KOTLINC_CP`, and `KXML_JAR`).
 
-The `chs-smoke` CI lane builds the host engine with Chinese voice data and
-checks its oracle synthesis. Emulator and Android APK tests run in GitHub
+Emulator and Android APK tests run in GitHub
 Actions. Device listening, TalkBack cancellation, and pre-unlock Direct Boot
 checks remain important release validation; see
 [`RELEASES.md`](RELEASES.md).
@@ -104,10 +99,10 @@ checks remain important release validation; see
 - If the engine cannot start, verify that the installed APK is a signed
   release build for the device ABI and that its installation has not been
   replaced by an ordinary CI-signed artifact.
-- If a locale is unavailable, compare it with the 14 entries in
+- If a locale is unavailable, compare it with the 13 entries in
   [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt). Defined
   dialect constants do not necessarily mean that a locale is shipped.
-- If generated Chinese engine data or language assets differ from their
+- If generated engine data or language assets differ from their
   sources, follow [the generated-artifact contract](docs/artifacts-contract.md)
   and the [repository audit](docs/repository-audit.md); do not edit generated
   C or packed assets by hand.
@@ -120,11 +115,9 @@ checks remain important release validation; see
 The root [MIT license](LICENSE) applies to the project material it covers; it
 does not grant rights to third-party speech data or vendor-derived material.
 The `openevv` distribution includes its own provenance and licensing notice in
-[`native/openevv/NOTICE`](native/openevv/NOTICE). The Chinese oracle tables and
-other referenced speech data have separate provenance and may have separate
-rights. Review the applicable notices before redistribution. The repository's
-oracle notes describe development provenance and do not replace legal advice
-or grant a license.
+[`native/openevv/NOTICE`](native/openevv/NOTICE). Other referenced speech data
+has separate provenance and may have separate rights. Review the applicable
+notices before redistribution.
 
 ## Contributing and releases
 

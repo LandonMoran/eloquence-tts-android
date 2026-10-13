@@ -30,7 +30,7 @@
 #include <pthread.h>
 #include <time.h>
 #include "eci.h"
-#include "chs_oracle_synth.h"
+
 
 /* The engine's own text layer (upstream cli/probe.c path): the eci*
  * shims for add/synthesize are inert, so call the et_* entry points
@@ -320,9 +320,8 @@ static void vv_unlock(pthread_mutex_t **lock) {
  * (build_native.sh LANGS) may be instantiated.  eo_newEx builds its voice
  * table by indexing a static structure from the FAMILY number of the
  * requested dialect; for a family that has no module in this build the
- * structure shape is different, so the engine walks garbage and SIGSEGVs
- * (observed with 0x60000/zh-CN on a build without lang/chs).  Reject
- * unknown dialects up front so the caller gets a clean NULL handle instead
+ * structure shape is different, so the engine walks garbage and SIGSEGVs.
+ * Reject unknown dialects up front so the caller gets a clean NULL handle instead
  * of a killed process -- this is what keeps an accidental wrong-language
  * request from ever crashing the app (or TalkBack's TTS session). */
 /** Accept only dialect IDs whose voice modules are linked into this build. */
@@ -336,7 +335,6 @@ static int vv_dialect_shipped(int32_t dialect) {
     case 0x70000: case 0x90000: /* ptb, fin */
     case 0x80000:                /* jajp */
     case 0x110000:               /* plpl */
-    case 0x60000:                /* chs -- linked; synthesis is oracle-fed */
         return 1;
     default:
         return 0;
@@ -449,11 +447,11 @@ static jshortArray vv_synthesize(
     ((char *)buf)[len] = '\0';
 
     /* charsetId describes how the byte array was encoded by the Kotlin
-     * side (1252 for Western, GB18030 for zh).  openevv reads the caller's
-     * bytes as the language module's own byte set, which is the Windows
-     * Western set for the shipped languages -- matching the 1252 path the
-     * app already uses.  The engine copies what it needs of the text, but
-     * we keep it alive for the length of the call to be safe. */
+     * side (Windows-1252 for Western, Shift_JIS for Japanese).  openevv
+     * reads the caller's bytes as the language module's own byte set, which
+     * is the Windows Western set for the shipped languages -- matching the
+     * 1252 path the app already uses.  The engine copies what it needs of
+     * the text, but we keep it alive for the length of the call to be safe. */
     operation = "vv_settle";
     if (!vv_settle(s) || !vv_usable(s)) {
         free(buf);
@@ -464,56 +462,6 @@ static jshortArray vv_synthesize(
     s->text = buf;
     s->pcmLen = 0;
     atomic_store(&s->fatal, 0);
-
-    if (dialect == 0x60000) {
-        /* Chinese: the engine's chs rules are unbuilt stubs, so synthesize
-         * from the oracle bank instead -- raw PCM keyed by the GB18030 bytes
-         * the app already sends (charsetId == CHARSET_GBK).  No engine call,
-         * no synthesis thread; the session still owns the buffer. */
-        __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "synth len=%d charset=%d first=%02x%02x%02x%02x",
-                            (int)len, charsetId,
-                            len > 0 ? (unsigned char)((char *)buf)[0] : 0,
-                            len > 1 ? (unsigned char)((char *)buf)[1] : 0,
-                            len > 2 ? (unsigned char)((char *)buf)[2] : 0,
-                            len > 3 ? (unsigned char)((char *)buf)[3] : 0);
-        short *pcm = NULL;
-        size_t samples = chs_build_pcm((const unsigned char *)buf, (size_t)len, &pcm);
-        __android_log_print(ANDROID_LOG_INFO, "CHS_ORACLE", "build_pcm samples=%zu pcm=%p", samples, (void *)pcm);
-        if (samples == 0) { free(pcm); return NULL; }
-    /* (#40( refuse to hand a jsize array longer than the resampler can
-    * 4x back into jsize bounds. */
-    if (samples > VV_MAX_PCM_SAMPLES) { free(pcm); return NULL; }
-        /* Oracle clips are captured at the engine's native 11.025 kHz (the
-         * same rate eci.ini fixed the en-us path at(.  Playback always runs
-         * at 44.1 kHz (SAMPLE_RATE(, so zh must take the same 4x
-         * upsampling as the engine branch below -- else Chinese plays 4x
-         * too fast (chipmunk/high-pitched( and comes out as garbled noise. */
-        short *rs = NULL;
-        size_t outLen = 0;
-        vv_trim_silence(pcm, &samples, 11025); /* oracle clips are engine-native rate */
-        operation = "vv_resample_4x (oracle)";
-    if (vv_resample_4x(pcm, samples, &rs, &outLen) != 0 || !rs || outLen == 0) {
-    /* #137: never fall back to the engine's native 11,025 Hz -- Kotlin
-    * always advertises 44,100; wrong-rate output is a format violation. */
-    free(pcm);
-    return NULL;
-    }
-    free(pcm);
-    vv_fade_edges(rs, outLen, 44100);
-    pcm = rs;
-    samples = outLen;
-        free(s->pcm);
-        s->pcm = pcm;
-        s->pcmLen = samples;
-        s->pcmCap = samples;
-        operation = "NewShortArray (oracle)";
-        jshortArray out = (*env)->NewShortArray(env, (jsize)samples);
-        if (!out || (*env)->ExceptionCheck(env)) goto failed;
-        operation = "SetShortArrayRegion (oracle)";
-        (*env)->SetShortArrayRegion(env, out, 0, (jsize)samples, pcm);
-        if ((*env)->ExceptionCheck(env)) goto failed;
-        return vv_cancelled(s) ? NULL : out;
-}
 
     operation = "eciClearInput";
     if (!eciClearInput(s->hECI)) {

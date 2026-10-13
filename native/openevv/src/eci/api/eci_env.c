@@ -136,18 +136,13 @@ const int32_t ev_realWorldVoiceParamRange[8][2] = {
    comparison is settled when the object is compiled -- 0x10000 in the
    English module, 0x40000 in the German one -- because a library was one
    language. Here it is every language linked in, asked in turn; the arms
-   for the four that group dialects together are kept because the original
+   for the two that group dialects together are kept because the original
    keeps them. */
 #include "delta_lang.h"
 
 static int checkone(int32_t have, int32_t want)
 {
     switch (have) {
-    case 0x60000:
-        return want == 0x60000 || want == 0x60100 || want == 0x60800;
-    case 0x60001:
-        return want == 0x60001 || want == 0x60101 || want == 0x60201
-            || want == 0x60801;
     case 0x80000:
         return want == 0x80000 || want == 0x80100 || want == 0x80200
             || want == 0x80300 || want == 0x80400 || want == 0x80800;

@@ -8,18 +8,17 @@
  *
  * The mapping is per language, because the same IPA symbol is a different
  * sound in each and because each language's own phoneme set is different.
- * IBM wrote six converters and shares them out among fifteen languages,
+ * IBM wrote six converters and shares them out among the languages,
  * which is the arrangement kept here: US and British English have their
  * own, German has one that French Canada also uses, France has one, and
- * the Japanese one serves Italian, Chinese, Cantonese, Portuguese and
- * Japanese while the Korean one serves Korean, Finnish and one Japanese
- * code set.
+ * the Japanese one serves Italian, Portuguese and Japanese while the
+ * Korean one serves Korean, Finnish and one Japanese code set.
  *
  * Two of those are the original's own doing rather than anything sensible,
  * and both are kept. French Canada is sent to the German converter, which
  * is almost certainly a slip for the French one -- the two constants sit
  * next to each other in its switch. And the Japanese converter is what
- * Italian, Chinese and Portuguese get, so a document that gives an Italian
+ * Italian and Portuguese get, so a document that gives an Italian
  * word an IPA pronunciation is answered in Japanese phonemes.
  *
  * Each converter takes one code point and the one after it, because IPA
@@ -1056,13 +1055,6 @@ static int32_t ipa_forLanguage(int32_t lang, int32_t cur, int32_t next,
     case 0x40000:
         return GrGrIPAToSPRConverter(cur, next, out, used);
     case 0x50000:
-    case 0x60000:
-    case 0x60001:
-    case 0x60100:
-    case 0x60101:
-    case 0x60201:
-    case 0x60800:
-    case 0x60801:
     case 0x70000:
     case 0x80000:
         return JpJpIPAToSPRConverter(cur, next, out, used);

@@ -51,7 +51,6 @@ class SettingsActivity : Activity() {
     private var refreshingCharSliders = false
     private var presetRow: LinearLayout? = null
     private var charSection: LinearLayout? = null
-    private var chineseGuard: LinearLayout? = null
     private var punctBtn: Button? = null
     private var numberBtn: Button? = null
     private val REQ_PROFILE = 701
@@ -62,11 +61,9 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
-        // Parse autotest hook before engine init: zh oracle must skip the en warmup, whose
-        // forced-synthesis init phase recurses forever on x86_64 CI emulators only.
+        // Parse autotest hook before engine init (hook is only honored in debug builds).
         val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val autotest = if (debuggable) intent?.getStringExtra("autotest") else null  // #198: never honor external autotest hooks in non-debuggable (release( builds
-        EloquenceEngine.skipWarmupForAutotest = ("chinese" == autotest)
         var e = processEngine
         if (e == null || !e.isInitialized()) {
             val fresh = EloquenceEngine(applicationContext)
@@ -95,10 +92,8 @@ class SettingsActivity : Activity() {
         LanguageDetector.preloadLingua()
         // Restore language-detection settings from SharedPreferences
         restoreLanguageSettings()
-        // Auto-test hook: am start --es autotest chinese
-        if ("chinese" == autotest) {
-            Handler(Looper.getMainLooper()).postDelayed({ testZhOracle() }, 3000)
-        } else if ("german" == autotest) {
+        // Auto-test hook: am start --es autotest german
+        if ("german" == autotest) {
             // Legacy hook: compare three English voices (validates voice params)
             Handler(Looper.getMainLooper()).postDelayed({ testGerman() }, 3000)
         } else if ("crash" == autotest) {
@@ -154,11 +149,9 @@ class SettingsActivity : Activity() {
         refreshVoiceButton(voiceBtnLocal)
         val langSwitchLocal = addSwitchRow(mainContainer, getString(R.string.lang_auto_switch), LanguageDetector.isDetectionEnabled()) { on ->
             LanguageDetector.setDetectionEnabled(on)
-            if (on && voiceConfig!!.voice.lowercase().startsWith("zh")) voiceConfig!!.setVoice("en-US")
             saveLanguageSettings()
             refreshLanguageUi()
             voiceBtn?.let { refreshVoiceButton(it) }
-            updateChineseGuard()
         }
         langSwitch = langSwitchLocal
         refreshLanguageUi()
@@ -182,8 +175,6 @@ class SettingsActivity : Activity() {
         }
         mainContainer.addView(charSectionLocal)
         charSection = charSectionLocal
-        addChineseVoiceGuard(mainContainer)
-        updateChineseGuard()
         
         // ===== READING SECTION =====
         addSectionHeader(mainContainer, R.string.sec_reading)
@@ -331,7 +322,7 @@ class SettingsActivity : Activity() {
             dialect = bcpToDialect(lang.code)
         }
         
-        // If this build lacks the language module (e.g. zh-TW), synthesis is
+        // If this build lacks the language module, synthesis is
                 // impossible: fall back to English and say so. Hard rule: never feed
                 // the engine an unlinked dialect (eciNewEx walks an invalid voice table
                 // without the module — the test button once crashed).
@@ -359,39 +350,7 @@ class SettingsActivity : Activity() {
                 }
             }
 
-                    /** Zh-oracle hook: force a Chinese sample through the GB18030 oracle path
-                     *  so CI can verify samples>0 via the CHS_ORACLE log. */
-                    private fun testZhOracle() {
-                        Thread {
-                            val eng = engine
-                            val cfg = voiceConfig
-                            if (eng == null || cfg == null || !eng.isInitialized()) {
-                                toastOnUi(R.string.engine_not_ready)
-                                return@Thread
-                            }
-                            val text = "\u4f60\u597d\u3002"
-                            val dialect = EloquenceEngine.DIALECT_ZH_CN
-                            val preset = voiceProfile?.preset ?: 1
-                            val pcm = try {
-                                eng.synthesizeCore(text, dialect, cfg.volume, preset,
-                                    cfg.pitch, 100)
-                            } catch (t: Throwable) {
-                                Log.e("CRASHHOOK", "testZhOracle exception", t)
-                                null
-                            }
-                            Log.i("CRASHHOOK", "testZhOracle done samples=" + (pcm?.size ?: 0))
-                            if (pcm != null && pcm.size > 0) {
-                                playPcm(pcm, eng.getCoreSampleRate())
-                                toastOnUi(R.string.synth_ok)
-                            } else {
-                                toastOnUi(R.string.synth_failed)
-                            }
-                        }.start()
-                    }
-
-                    /** Crash-repro hook: synthesize one exact string through the real path.
-             *  Dialect follows the text: any Chinese segment routes through the
-             *  real CHS oracle path (GB18030), everything else stays English. */
+                    /** Crash-repro hook: synthesize one exact string through the real path. */
             private fun testCrash(text: String) {
         Thread { testCrashImpl(text) }.start()
     }
@@ -400,19 +359,13 @@ class SettingsActivity : Activity() {
         runOnUiThread { Toast.makeText(this, getString(resId), Toast.LENGTH_SHORT).show() }
     }
 
-    /** Synthesizes [text] for crash diagnostics using English or shipped Simplified Chinese, and logs the outcome. */
+    /** Synthesizes [text] for crash diagnostics using English, and logs the outcome. */
     private fun testCrashImpl(text: String) {
                 val eng = engine
                 val cfg = voiceConfig
                 if (eng == null || cfg == null || !eng.isInitialized()) return
                 Log.i("CRASHHOOK", "start:" + text)
-                var dialect = EloquenceEngine.DIALECT_EN_US
-                try {
-                    val zh = LanguageDetector.segment(text).firstOrNull { it.dialect == EloquenceEngine.DIALECT_ZH_CN }
-                    if (zh != null && EloquenceEngine.isShippedDialect(zh.dialect)) dialect = zh.dialect
-                } catch (t: Throwable) {
-                    Log.e("CRASHHOOK", "segment failed", t)
-                }
+                val dialect = EloquenceEngine.DIALECT_EN_US
                 Log.i("CRASHHOOK", "dialect=" + Integer.toHexString(dialect))
                 val pcm2 = try {
                     eng.synthesizeCore(text, dialect,
@@ -426,7 +379,6 @@ class SettingsActivity : Activity() {
 
             /** Per-language sample texts */
     private fun sampleTextFor(code: String): String {
-        if (code.startsWith("zh")) return "\u4f60\u597d\u3002"
         if (code.startsWith("en")) return "Hello, this is a speech synthesis test."
         if (code.startsWith("de")) return "Hallo, das ist ein Sprachsynthesetest."
         if (code.startsWith("fr")) return "Bonjour, ceci est un test de synthèse vocale."
@@ -599,7 +551,6 @@ class SettingsActivity : Activity() {
         saveLanguageSettings()
         refreshLanguageUi()
         voiceBtn?.let(::refreshVoiceButton)
-        updateChineseGuard()
     }
 
     private fun refreshVoiceButton(btn: Button) {
@@ -612,43 +563,6 @@ class SettingsActivity : Activity() {
         val p = voiceProfile?.preset ?: 1
         val name = VoiceProfile.PRESET_NAMES.getOrNull(p - 1) ?: "Reed"
         btn.text = getString(R.string.preset_voice_fmt, name)
-    }
-
-    private fun addChineseVoiceGuard(root: LinearLayout) {
-        val card = LinearLayout(this)
-        card.orientation = LinearLayout.VERTICAL
-        card.setPadding(dp(20), dp(14), dp(20), dp(10))
-        card.background = getDrawable(R.drawable.bg_slider)
-
-        val tv = TextView(this)
-        tv.textSize =14f
-        tv.setText(getString(R.string.chinese_voice_guard))
-        card.addView(tv)
-
-
-        val open = Button(this)
-        open.text = getString(R.string.chinese_voice_guard_open)
-        open.setOnClickListener {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.chinese_voice_guard_url))))
-            } catch (e: Exception) {
-                Toast.makeText(this, R.string.chinese_voice_guard_open, Toast.LENGTH_SHORT).show()
-            }
-        }
-        card.addView(open)
-
-
-        root.addView(card)
-        chineseGuard = card
-    }
-
-    private fun updateChineseGuard() {
-        val chineseActive = voiceConfig?.voice?.lowercase()?.startsWith("zh") == true ||
-            LanguageDetector.getFixedDialect() == LanguageDetector.DIALECT_ZH_CN
-        presetRow?.visibility = if (chineseActive) View.GONE else View.VISIBLE
-
-        charSection?.visibility = if (chineseActive) View.GONE else View.VISIBLE
-        chineseGuard?.visibility = if (chineseActive) View.VISIBLE else View.GONE
     }
 
     private fun showPunctuationDialog() {
@@ -908,7 +822,6 @@ class SettingsActivity : Activity() {
         pitchBar?.progress = voiceConfig!!.pitch
         volumeBar?.progress = voiceConfig!!.volume
         refreshVoiceCharSliders()
-        updateChineseGuard()
         Toast.makeText(this, getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
     }
 
@@ -968,7 +881,6 @@ class SettingsActivity : Activity() {
             getString(R.string.lang_polish),
             getString(R.string.lang_portuguese),
             getString(R.string.lang_finnish),
-            getString(R.string.lang_chinese),
         )
         // values[i] is the dialect for items[i] (English/French/Spanish use the current accent)
         val values = intArrayOf(
@@ -982,7 +894,6 @@ class SettingsActivity : Activity() {
             LanguageDetector.DIALECT_PL_PL,
             LanguageDetector.DIALECT_PT_BR,
             LanguageDetector.DIALECT_FI_FI,
-            LanguageDetector.DIALECT_ZH_CN,
         )
 
         val cur = LanguageDetector.getDefaultLanguage()
@@ -1102,7 +1013,6 @@ class SettingsActivity : Activity() {
         com.xw.vvtts.utils.MirroredPreferences(this, PREFS_NAME).edit { e ->
         e.putBoolean("detection_enabled", LanguageDetector.isDetectionEnabled())
         e.putInt("fixed_dialect", LanguageDetector.getFixedDialect())
-        e.putInt("chinese_dialect", LanguageDetector.getChineseDialect())
         e.putInt("english_dialect", LanguageDetector.getEnglishDialect())
         e.putInt("spanish_dialect", LanguageDetector.getSpanishDialect())
         e.putInt("french_dialect", LanguageDetector.getFrenchDialect())
@@ -1115,7 +1025,6 @@ class SettingsActivity : Activity() {
         val prefs = com.xw.vvtts.utils.MirroredPreferences(this, PREFS_NAME)
         LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
         LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-        LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
         LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
         LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
         LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))

@@ -4,8 +4,6 @@ on:
   workflow_call:
   push:
     branches: ['**']
-    paths-ignore:
-      - '.github/workflows/oracle-dump.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -145,67 +143,3 @@ jobs:
           name: vvtts-test-x86_64-apk
           path: vvtts-test-x86_64.apk
           if-no-files-found: error
-
-  chs-smoke:
-
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Regenerate chs oracle table C
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          python3 oracle/merge_build.py oracle/table native/openevv/lang/chs/oracle_chs.c /tmp/oracle_chs_merged.c
-          python3 oracle/check_gbk_gate.py /tmp/oracle_chs_merged.c
-          if cmp -s /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c; then
-            echo "oracle_chs.c: regenerated content matches committed source (no tracked rewrite)"
-          else
-            echo "oracle_chs.c: regenerated content differs -- updating tracked source (review diff before committing)" >&2
-            cp /tmp/oracle_chs_merged.c native/openevv/lang/chs/oracle_chs.c
-          fi
-
-      - name: Build host openevv (enus + chs)
-        run: make -j"$(getconf _NPROCESSORS_ONLN)" -C native/openevv CC=cc LANGS="lang/enus lang/chs" RULES=c CFLAGS=-fPIC build/libevv-enus-chs.a
-
-      - name: Compile and run engine-native rate regression
-        run: |
-          cc -O2 -Itests/native/stubs -I native/openevv/include -I native/openevv/src -I jni \
-            -o /tmp/rate_test \
-            tests/native/rate_test.c jni/vv_resample.c jni/eci_compat.c \
-            native/openevv/build/libevv-enus-chs.a -lm -lpthread
-          /tmp/rate_test
-
-      - name: Compile and run oracle smoke
-        run: |
-          cc -O2 -I native/openevv/include -I native/openevv/src -I jni \
-            -o /tmp/chs_smoke \
-            oracle/chs_smoke.c jni/chs_oracle_synth.c jni/eci_compat.c \
-            native/openevv/build/libevv-enus-chs.a -lm -lpthread
-          /tmp/chs_smoke
-
-      - name: Compile and run chs ROM robustness test (ASan/UBSan)
-        run: |
-          cc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
-            -I tests/native/stubs -I native/openevv/include -I native/openevv/src \
-            -I native/openevv/src/eci/lang \
-            -o /tmp/chs_rom_test \
-            tests/native/chs_rom_test.c \
-            native/openevv/src/eci/lang/eci_romedll.c \
-            native/openevv/rom/chs/chsrom.c native/openevv/rom/chs/rom_tables_chs.c \
-            -lm -lpthread
-          /tmp/chs_rom_test
-
-      - name: Compile and run chs phrase-table bounds test (ASan/UBSan)
-        run: |
-          # chs_tbl_test.c #includes chsrom.c to reach the file-static
-          # chs_lookup() with a deliberately truncated table, so chsrom.c is
-          # compiled only once in that TU (rom_tables + eci_romedll still link).
-          cc -std=gnu11 -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
-            -I tests/native/stubs -I native/openevv/include -I native/openevv/src \
-            -I native/openevv/src/eci/lang -I native/openevv/rom/chs \
-            -o /tmp/chs_tbl_test \
-            tests/native/chs_tbl_test.c \
-            native/openevv/rom/chs/rom_tables_chs.c \
-            native/openevv/src/eci/lang/eci_romedll.c \
-            -lm -lpthread
-          /tmp/chs_tbl_test

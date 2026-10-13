@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-boundary contracts plus failing-input tests for release/oracle tooling."""
+"""Cross-boundary contracts plus failing-input tests for release tooling."""
 import importlib.util
 import json
 import re
@@ -38,7 +38,7 @@ class Contracts(unittest.TestCase):
         kotlin = {int(constants[key],16) for key in re.findall(r'EloquenceEngine\.(DIALECT_\w+)',registry)}
         native = (ROOT/'jni/vvtts_core.c').read_text().split('static int vv_dialect_shipped')[1].split('JNIEXPORT jlong')[0]
         self.assertEqual(kotlin, {int(v,16) for v in re.findall(r'case (0x[0-9a-fA-F]+):', native)})
-        self.assertEqual(len(kotlin),14)
+        self.assertEqual(len(kotlin),13)
         self.assertNotIn('buildEloquenceConfig',engine)
 
     def test_release_signing_isolated(self):
@@ -159,33 +159,6 @@ class Contracts(unittest.TestCase):
                     warnings.simplefilter('ignore',UserWarning)
                     apk.writestr('lib/arm64-v8a/libvvtts_core.so',b'second')
             with self.assertRaisesRegex(ValueError,'duplicate'): audit.audit(path)
-
-    def test_oracle_all_pieces_and_missing_duplicate_empty(self):
-        """Require exactly the requested nonempty oracle pieces and reject invalid selections."""
-        assemble=module('assemble_oracle').assemble
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)
-            for piece in range(1,9):
-                path=root/f'{piece}/oracle-piece-zh-cn-p{piece}/output.tsv'
-                path.parent.mkdir(parents=True)
-                path.write_text(f'pcm\t{piece}\tfixture{piece}\n')
-            result=assemble(root,'zh-cn',list(range(1,9)),root/'assembled.tsv')
-            self.assertEqual(len(result['pieces']),8)
-            self.assertEqual(len((root/'assembled.tsv').read_text().splitlines()),8)
-            with self.assertRaises(ValueError):assemble(root,'ja',[1,2],root/'bad.tsv')
-            with self.assertRaises(ValueError):assemble(root,'zh-cn',[1,1],root/'bad.tsv')
-            (root/'8/oracle-piece-zh-cn-p8/output.tsv').unlink()
-            with self.assertRaises(ValueError):assemble(root,'zh-cn',list(range(1,9)),root/'bad.tsv')
-            (root/'1/oracle-piece-zh-cn-p1/output.tsv').write_text('pcm\t0\n')
-            with self.assertRaises(ValueError):assemble(root,'zh-cn',[1],root/'bad.tsv')
-
-    def test_oracle_checksums_before_extract(self):
-        """Require pinned archive checksums to be verified before extraction."""
-        workflow=(ROOT/'.github/workflows/oracle-decompile.yml').read_text()
-        self.assertIn('b13a7c4871bb689c5c04fee88ca8905895a7b4b3da53f59d521d691cdb137f72',workflow)
-        self.assertIn('12fd966431903b8e15c36e5007f19343475be7d8f2a55f082e7a929eeabc937e',workflow)
-        self.assertLess(workflow.index('"$FACTORY_SHA256" | sha256sum -c -'),workflow.index('unzip -oq factory.zip'))
-        self.assertLess(workflow.index('"$JADX_SHA256" | sha256sum -c -'),workflow.index('unzip -q /tmp/jadx.zip'))
 
     def test_signature_permission_matches(self):
         """Match the install-status permission and reject the nonexistent TTS binding permission."""

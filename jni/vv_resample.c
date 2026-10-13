@@ -5,7 +5,7 @@
  * host for regression tests as well as on Android.
  */
 #include "vv_resample.h"
-#include "pcm_limits.h" /* VV_MAX_PCM_SAMPLES: oracle native-rate input bound */
+#include "pcm_limits.h" /* VV_MAX_PCM_SAMPLES: native-rate input bound */
 
 #include <stdlib.h>
 #include <string.h>

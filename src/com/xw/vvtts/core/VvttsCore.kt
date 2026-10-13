@@ -16,7 +16,6 @@ class VvttsCore {
         // ECIParam in native/openevv/include/eci.h; distinct from ECIVoiceParam.
         const val ECI_SAMPLE_RATE = 5
         const val CHARSET_1252 = 0   // Windows-1252 (Western
-        const val CHARSET_GBK = 6    // Chinese GB18030
 
         init {
             System.loadLibrary("vvtts_core")

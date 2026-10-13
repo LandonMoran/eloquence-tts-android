@@ -3,7 +3,7 @@ name: openevv upstream sync
 # and opens/updates a PR into this repo. fork main = upstream + our engine mods;
 # the FORK keeps itself current with upstream on its own schedule
 # (.github/workflows/sync-upstream.yml), so this job only has to mirror fork main
-# into the app tree. Sources branch `main` so followed_by_er / chs fusions /
+# into the app tree. Sources branch `main` so followed_by_er /
 # es_delete_checked are preserved. No PAT required (github.token owns the app push).
 on:
   schedule:

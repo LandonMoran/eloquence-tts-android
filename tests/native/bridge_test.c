@@ -58,8 +58,6 @@ int et_synthesize(void *h) {
     if (cancel_during_copy == 2 || cancel_during_copy == 3) atomic_store(&waiting, 1);
     return 1;
 }
-/** Disable oracle synthesis in the bridge fixture; oracle behavior is tested separately. */
-size_t chs_build_pcm(const unsigned char *src, size_t n, short **out) { *out = NULL; return 0; }
 
 typedef struct { jsize len; short samples[]; } Array;
 /** Return the length of the fixed hello text fixture. */

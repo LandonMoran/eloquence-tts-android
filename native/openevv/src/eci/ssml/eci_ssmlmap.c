@@ -845,12 +845,10 @@ int32_t mapToIBMvxmldate(const char *value, char *out, int32_t length)
 
 /* A language written the way a document writes one -- `en-GB', `fr_CA' --
    turned into the number the engine knows it by. The country only decides
-   anything where the language has more than one dialect, and Hong Kong
-   Chinese comes out as Cantonese, which is the same crossing as in
-   src/eci/lang/eci_languageid.c. */
+   anything where the language has more than one dialect. */
 /* A document's `xml:lang' as a number.
 
-   Fifteen languages, and the fifteenth is the one thing here that is not
+   Fourteen languages, and the fourteenth is the one thing here that is not
    IBM's. Its own entry at family seventeen is Thai, which it never shipped
    a name for, a voice for or a rule of -- `LanguageId' in
    src/eci/lang/eci_languageid.c stops at fifteen and has no seventeen at all, so a
@@ -867,7 +865,7 @@ int32_t mapToIBMlang(const char *value, int32_t length)
 {
     static const struct { const char *name; int32_t packed; } MAJOR[] = {
         { "EN", 0x10000 }, { "ES", 0x20000 }, { "FR", 0x30000 },
-        { "DE", 0x40000 }, { "IT", 0x50000 }, { "ZH", 0x60000 },
+        { "DE", 0x40000 }, { "IT", 0x50000 },
         { "PT", 0x70000 }, { "JA", 0x80000 }, { "FI", 0x90000 },
         { "KO", 0xa0000 }, { "NL", 0xc0000 }, { "NO", 0xd0000 },
         { "SV", 0xe0000 }, { "DA", 0xf0000 }, { "PL", 0x110000 }
@@ -911,10 +909,6 @@ int32_t mapToIBMlang(const char *value, int32_t length)
             packed = 0x20001;
         } else if (packed == 0x30000 && strcmp(minor, "CA") == 0) {
             packed = 0x30001;
-        } else if (packed == 0x60000 && strcmp(minor, "TW") == 0) {
-            packed = 0x60001;
-        } else if (packed == 0x60000 && strcmp(minor, "HK") == 0) {
-            packed = 0xb0001;
         }
     }
 

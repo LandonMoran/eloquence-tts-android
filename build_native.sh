@@ -41,7 +41,7 @@ OUT=native-libs/$ABI
 mkdir -p "$OUT"
 rm -f "$OUT"/*.so
 
-LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/esmx lang/itit lang/jajp lang/plpl lang/ptb lang/fin lang/chs"
+LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/esmx lang/itit lang/jajp lang/plpl lang/ptb lang/fin"
 # Mirror the Makefile's SUF naming ( TAGS := notdir(LANGS), dash-joined; the
 # suffix branch is taken once the set is bigger than just enus, and then it
 # includes enus too -- checked against `make -p` database ( build/libevv-enus-....a(.
@@ -49,29 +49,6 @@ SUF=""
 for l in $LANGS; do
   SUF="$SUF-${l#lang/}"
 done
-
-# 0. chs oracle table: regenerate the runtime C from the consolidated TSV plus
-# the legacy C rows (fitter-only drops legacy audio; merge_build keeps both(.
-#Cheap (~seconds( and authoritative: never hand-edit it.
-if [ -f "oracle/table/zh-cn.consolidated.tsv" ] || ls oracle/table/*.consolidated.tsv >/dev/null 2>&1; then
-  # merge_build takes the table DIR, globs every *.consolidated.tsv (parts),
-  # reads the old committed C as legacy (and writes the merged bank back.
-  tmp="$(mktemp "${TMPDIR:-/tmp}/oracle_chs.XXXXXX")" || exit 1
-  if ! python3 oracle/merge_build.py oracle/table \
-    native/openevv/lang/chs/oracle_chs.c \
-    "$tmp"; then
-    rm -f "$tmp"
-    echo "ERROR: oracle_chs.c generation failed; tracked source was not changed" >&2
-    exit 1
-  fi
-  if cmp -s "$tmp" native/openevv/lang/chs/oracle_chs.c; then
-    echo "oracle_chs.c: regenerated content matches committed source (no tracked rewrite)"
-  else
-    echo >&2 "oracle_chs.c: regenerated content differs -- refreshing tracked source (audit the diff before committing)"
-    cp "$tmp" native/openevv/lang/chs/oracle_chs.c
-  fi
-  rm -f "$tmp"
-fi
 
 # 1. openevv: static archive, cross-compiled, PIC objects so they bind
 # into a shared library.  RULES=c bakes the rules as generated C (faster
@@ -100,7 +77,6 @@ fi
         -o "$OUT/libvvtts_core.so" \
         jni/vvtts_core.c \
         jni/eci_compat.c \
-        jni/chs_oracle_synth.c \
         jni/vv_resample.c \
         "$LIBEVV" \
             -lm -llog

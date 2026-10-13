@@ -33,7 +33,7 @@ echo "=== input stress start $(date +%T) ==="
 ROUNDS=20
 for i in $(seq 1 "$ROUNDS"); do
   # launch a TTS session via the autotest path
-  "$ADB" shell am start -n "$PKG/.ui.SettingsActivity" --es autotest chinese >/dev/null
+  "$ADB" shell am start -n "$PKG/.ui.SettingsActivity" --es autotest german >/dev/null
   sleep  0.5
   # home + fling burst: lightning + moderate
   "$ADB" shell input keyevent KEYCODE_HOME
@@ -49,7 +49,7 @@ for i in $(seq 1 "$ROUNDS"); do
   sleep  0.15
   "$ADB" shell input keyevent KEYCODE_BACK
   # instant relaunch ( cold process right after kill(
-  "$ADB" shell am start -n "$PKG/.ui.SettingsActivity" --es autotest chinese >/dev/null
+  "$ADB" shell am start -n "$PKG/.ui.SettingsActivity" --es autotest german >/dev/null
   sleep  0.3
   if [ $((i % 4)) -eq  0 ]; then
     tap_center "Text to speech"

@@ -8,12 +8,10 @@ import com.github.pemistahl.lingua.api.LanguageDetectorBuilder
  * Multi-language detection + text segmenter.
  *
  * Layer 1:Unicode rules(O(n)single-pass scan,zero latency,100% precise)
- *   kana -> Japanese,Hangul -> Korean,Han -> Chinese,Latin -> Latin runs
+ *   kana -> Japanese,Hangul -> Korean,Han -> unshipped (falls back),Latin -> Latin runs
  *   spaces/punct/separators -> always follow the previous segment's language(regardless of the default language)
  *
  * Layer 2:Lingua statistics(Latin 10-language disambiguation;short text falls back to the default language)
- *
- * Simplified/Traditional is not judged here——the user picks the Chinese dialect(Simplified zh-CN / Traditional zh-TW).
  */
 class LanguageDetector {
 
@@ -26,35 +24,32 @@ class LanguageDetector {
         private const val TAG = "LangDetector"
 
             // ECI dialect constants
-        const val DIALECT_EN_US = 0x10000
-        const val DIALECT_EN_GB = 0x10001
-        const val DIALECT_ES_ES =  0x20000
-        const val DIALECT_ES_US =  0x20001
-        const val DIALECT_ES_MX =  0x20002
-        const val DIALECT_FR_FR = 0x30000
-        const val DIALECT_FR_CA = 0x30001
-        const val DIALECT_DE_DE = 0x40000
-        const val DIALECT_IT_IT = 0x50000
-        const val DIALECT_ZH_CN = 0x60000
-        const val DIALECT_ZH_TW = 0x60001
-        const val DIALECT_PT_BR = 0x70000
-        const val DIALECT_JA_JP = 0x80000
-        const val DIALECT_FI_FI = 0x90000
-        const val DIALECT_KO_KR =  0xA0000
-        const val DIALECT_PL_PL =  0x110000
+        const val DIALECT_EN_US  =  0x10000
+        const val DIALECT_EN_GB  =  0x10001
+        const val DIALECT_ES_ES  =  0x20000
+        const val DIALECT_ES_US  =  0x20001
+        const val DIALECT_ES_MX  = 0x20002
+        const val DIALECT_FR_FR  =  0x30000
+        const val DIALECT_FR_CA  =  0x30001
+        const val DIALECT_DE_DE  =  0x40000
+        const val DIALECT_IT_IT  =  0x50000
+        const val DIALECT_JA_JP  =  0x80000
+        const val DIALECT_KO_KR  =  0xA0000
+        const val DIALECT_PT_BR  =  0x70000
+        const val DIALECT_FI_FI  =  0x90000
+        const val DIALECT_PL_PL  =  0x110000
 
         // Special value for "unspecified default language"
         const val DEFAULT_UNSPECIFIED = -1
 
             // all supported language codes(for the settings multi-select)
         // Only languages actually linked in this build (see build_native.sh LANGS).
-        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi", "zh")
+        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi")
         val ALL_LANG_NAMES = arrayOf(
-            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish", "Chinese",
+            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish",
         )
 
             // settings key
-        @Volatile private var chineseDialect = DIALECT_ZH_CN
         @Volatile private var englishDialect = DIALECT_EN_US
         @Volatile private var spanishDialect = DIALECT_ES_ES
         @Volatile private var frenchDialect = DIALECT_FR_FR
@@ -96,9 +91,6 @@ class LanguageDetector {
         private val latinCache = LinkedHashMap<String, Int>(128)
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
-
-        fun setChineseDialect(dialect: Int) { synchronized(stateLock) { chineseDialect = dialect } }
-        fun getChineseDialect() = chineseDialect
 
         fun setEnglishDialect(dialect: Int) { synchronized(stateLock) { englishDialect = dialect; invalidateLatinCache() } }
         fun getEnglishDialect() = englishDialect
@@ -266,7 +258,7 @@ class LanguageDetector {
         }
 
         private fun getEnabledLanguageEnums(): List<Language> {
-            // Lingua only disambiguates Latin scripts; CJK (zh/ja/ko) use Unicode
+            // Lingua only disambiguates Latin scripts; CJK (ja/ko) use Unicode
             // rules and never go through Lingua.
             val allLatin = ArrayList<Language>()
             allLatin.add(Language.ENGLISH)
@@ -335,7 +327,7 @@ class LanguageDetector {
 
             // pass 1:Unicode run-splitting
             var current = StringBuilder()
-            var currentType = -1  // 0=Chinese, 1=kana, 2=Hangul, 3=Latin,  4=separator,   5=digit
+            var currentType = -1  // 0=Han(unshipped), 1=kana, 2=Hangul, 3=Latin,  4=separator,   5=digit
             // Leading digit/date runs flush with the RUN's dialect; start from the
             // user's default language when set (e.g. zh) instead of hard English so a
             // leading timestamp doesn't get voiced in the wrong language.
@@ -396,14 +388,14 @@ class LanguageDetector {
 
         /**
          * Character classification.
-         * 0=Chinese(Han),1=Japanese kana, 2=Korean Hangul, 3=Latin, 4=separator
+         * 0=Han(unshipped),1=Japanese kana, 2=Korean Hangul, 3=Latin, 4=separator
          */
         private fun classifyCodePoint(cp: Int): Int {
             // kana
             if (cp in 0x3040..0x309F || cp in 0x30A0..0x30FF) return 1
             // Hangul
             if (cp in 0xAC00..0xD7AF) return 2
-            // CJK Han(no Simplified-vs-Traditional split;all treated as Chinese)
+            // CJK Han(no Simplified-vs-Traditional split;unshipped,falls to the default language)
             if (cp in 0x4E00..0x9FFF) return 0
             if (cp in 0x3400..0x4DBF) return 0
             // CJK Extension B-H and Compatibility Ideographs (surrogate pairs)
@@ -449,7 +441,6 @@ class LanguageDetector {
         /** character type -> target language code(for whitelist checks) */
         private fun typeToCode(type: Int): String? {
             return when (type) {
-                0 -> "zh"
                 1 -> "ja"
                 2 -> "ko"
                 3 -> "en" // Latin placeholder;Lingua actually decides
@@ -461,7 +452,7 @@ class LanguageDetector {
         private fun isShippedDialect(d: Int): Boolean {
             return when (d) {
                 DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_US, DIALECT_ES_MX,
-                DIALECT_FR_FR, DIALECT_FR_CA, DIALECT_DE_DE, DIALECT_IT_IT, DIALECT_ZH_CN,
+                DIALECT_FR_FR, DIALECT_FR_CA, DIALECT_DE_DE, DIALECT_IT_IT,
                 DIALECT_PT_BR, DIALECT_JA_JP, DIALECT_FI_FI, DIALECT_PL_PL -> true
                 else -> false
             }
@@ -470,7 +461,9 @@ class LanguageDetector {
         /** Character type -> ECI dialect(no whitelist check here;flushSegment handles the whitelist uniformly) */
         private fun typeToDialect(type: Int, fallbackDialect: Int): Int {
             return when (type) {
-                0 -> chineseDialect
+                // Han (code point type 0) has no shipped Chinese voice; it falls
+                // to the same path as the other unshipped scripts.
+                0 -> fallbackDialect
                 1 -> DIALECT_JA_JP
                 2 -> DIALECT_KO_KR
                 3 -> fallbackDialect
@@ -577,19 +570,18 @@ class LanguageDetector {
                 dialect = if (dl >= 0 && isLatinDialect(dl)) dl else fb
 
             } else {
-                // Chinese/Japanese/Korean:check the whitelist;if absent,fallback to the default language
+                // Japanese/Korean: check the whitelist; if absent, fall back to the default language
                 dialect = cjkDialectOrFallback(type, fallbackDialect)
             }
             // HARD INVARIANT: a run whose letters are ALL Latin must never be spoken with a
-            // CJK dialect. "release" (pure A-Z) was once spoken as Chinese because
-            // detectLatin()/resolveDefaultLanguage() fall back to defaultDialect=zh on
-            // uncertain single-word runs and digit-run fallbacks, and a CJK branch can
-            // otherwise route Latin text into a CJK dialect. Force the en-US Latin floor
-            // whenever the resolved dialect is not itself Latin. The only intentional
-            // exception — fixed-dialect mode consciously pinned zh by the user — never
-            // reaches here: the fixed-language path short-circuits in segment() to emit the
-            // whole run with fixedDialect directly, so flushSegment always runs with detection
-            // ON.
+            // CJK dialect. "release" (pure A-Z) was spoken with a CJK dialect when a CJK
+            // default leaked into Latin detection on uncertain single-word runs and digit-run
+            // fallbacks, and a CJK branch can otherwise route Latin text into a CJK dialect.
+            // Force the en-US Latin floor whenever the resolved dialect is not itself Latin.
+            // The only intentional exception — fixed-dialect mode consciously pinned to a
+            // non-Latin dialect by the user — never reaches here: the fixed-language path
+            // short-circuits in segment() to emit the whole run with fixedDialect directly, so
+            // flushSegment always runs with detection ON.
             val dl = resolveDefaultLanguage()
             if (isAllLatinRun(text)) {
                 if (!isLatinDialect(dialect)) {
@@ -642,7 +634,7 @@ class LanguageDetector {
         }
 
         /** Latin-text detection:always try Lingua first;only use the default language when detection returns null.
-        * key:Latin text must never fall back to Chinese/Korean/Japanese——that would be wrong.
+        * key: Latin text must never fall back to a Japanese/Korean dialect——that would be wrong.
         * if the detected language isn't in the whitelist, fall back to the default language(or English). */
         private fun latinFallback(dl: Int, fallbackDialect: Int): Int = when {
             isLatinDialect(dl) -> dl
@@ -664,9 +656,9 @@ class LanguageDetector {
                 val accentHinted = accentHint(text)
                 if (accentHinted >=  0) return accentHinted
                 if (isLatinDialect(fallbackDialect)) return fallbackDialect
-                // Pure-ASCII short words are English (loanwords(: they must never
-                // follow a non-Latin context nor a pinned zh/ja/ko default: "release"
-                // was read as Chinese behind a Chinese run (and when the zh pin leaked(.
+                // Pure-ASCII short words are English (loanwords: they must never
+                // follow a non-Latin context nor a pinned ja/ko default: "release"
+                // was read with a CJK dialect behind a Japanese run (and when the ja pin leaked).
                 // Latin contexts (de/fr/... keep following the previous segment as before.
                                 return englishDialect
 

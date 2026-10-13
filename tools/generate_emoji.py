@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Regenerates EmojiExpander* tables from Unicode emoji-test.txt + CLDR tts annotations.
 # Usage: python3 tools/generate_emoji.py
-# Outputs: EmojiExpander.kt (en), EmojiExpanderZhHans.kt (zh-CN), EmojiExpanderZhHant.kt (zh-TW).
+# Outputs: EmojiExpander.kt (en).
 import re, urllib.request, ssl, glob, os, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -138,9 +138,7 @@ def main():
             fh.write(data)
     seqs = emoji_seqs(data)
     print('emoji-test sequences:', len(seqs))
-    jobs = [('en', 'en', 'EmojiExpander', 'CLDR English short names'),
-              ('zh', 'zh-Hans', 'EmojiExpanderZhHans', 'CLDR zh-Hans short names'),
-              ('zh_Hant', 'zh-Hant', 'EmojiExpanderZhHant', 'CLDR zh-Hant short names')]
+    jobs = [('en', 'en', 'EmojiExpander', 'CLDR English short names')]
     for locale, doc, cls, docfirst,in jobs:
         lnames = cldr_names(locale)
         entries = build(seqs, lnames)

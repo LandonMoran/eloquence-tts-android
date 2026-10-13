@@ -50,7 +50,7 @@ The engine reads single bytes and IBM's engine does almost nothing between the c
 
 The exception is a language that declares characters of its own, which is Polish and none of IBM's nine. Those get their text converted from UTF-8 on the way in, and their own bytes let through the romanizer's table rather than turned into spaces. Those two are the fourth and fifth deliberate divergences, and the guard is the whole point: the nine IBM shipped declare no characters, so nothing about them changes.
 
-UTF-16 is not a way round that for these. ORing `eciUnicodeCodeSet` -- 0x800 -- into the language asks for it, and only a language whose text goes through a romanizer will take it: IBM's table of what may be asked for groups code sets under Chinese, Japanese and Korean and nothing else, so of the languages here that is Japanese alone. Asked for any of the others, `eciNewEx` answers no instance and `eciSetParam` answers -1 and leaves the language as it was, in IBM's engine and in ours. The code set is the third byte of the same word the language is in, and `eciLanguageDialect` is what the engine reads to find out; `eciTextMode` is a different setting and is not it.
+UTF-16 is not a way round that for these. ORing `eciUnicodeCodeSet` -- 0x800 -- into the language asks for it, and only a language whose text goes through a romanizer will take it, and of the languages here the only romanizer one is Japanese. Asked for any of the others, `eciNewEx` answers no instance and `eciSetParam` answers -1 and leaves the language as it was, in IBM's engine and in ours. The code set is the third byte of the same word the language is in, and `eciLanguageDialect` is what the engine reads to find out; `eciTextMode` is a different setting and is not it.
 
 ## Parameters that are not what they look like
 
@@ -96,11 +96,9 @@ Two of the seventy-one are empty in IBM's object as well as here: `eciGetAvailab
 
 ## The dictionary has a fourth volume, and it is not yours
 
-A set holds `eciMainDict`, `eciRootDict` and `eciAbbvDict`, and then `eciMainDictExt`, which keeps a part of speech beside each entry. That fourth one exists only for a language written in another script -- Chinese, Korean, Japanese -- so for every language in this tree all eight dictionary calls answer `eciDictInvalidVolume` when you ask for it. That is IBM's, and it is why the calls come in pairs: the `A` forms carry the part of speech the extended volume wants.
+A set holds `eciMainDict`, `eciRootDict` and `eciAbbvDict`, and then `eciMainDictExt`, which keeps a part of speech beside each entry. That fourth one exists only for a language written in another script -- Korean and Japanese -- so for every language in this tree all eight dictionary calls answer `eciDictInvalidVolume` when you ask for it. That is IBM's, and it is why the calls come in pairs: the `A` forms carry the part of speech the extended volume wants.
 
 `eciDictLookupA` answers an error code where `eciDictLookup` answers the string, and it finishes by turning an empty answer into `eciDictNoEntry` -- a test it makes even on the roads that never write your pointer. So clear your own variable before calling, or an invalid volume comes back as no entry. Both are IBM's.
-
-One asymmetry in IBM's own switch is carried here because it is IBM's: Chinese in code set two reaches the extended volume in its second dialect and not its first. No build of this tree can show it, there being no Chinese in this SDK at all.
 
 ## A dictionary can be loaded from a file here and not in IBM's engine
 

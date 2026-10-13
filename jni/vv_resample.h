@@ -1,13 +1,12 @@
 /*
  * vv_resample.h -- pure, host-testable resample helpers.
  *
- * Owned by the Chinese (oracle) path, which bypasses the engine and so still
- * needs to lift 11,025 Hz clips to the 44,100 Hz Android playback rate.  The
- * engine-driven English/multi-language path no longer uses this 4x core:
- * the engine's own resampler produces 44,100 Hz when eciSampleRate is set
- * above native (see vvtts_core.c).  Keeping these helpers in a single
- * dependency-free unit makes them host-compilable for regression tests and
- * lets the oracle path share one, tested sink.
+ * 4x resample helpers used by the synthesis path to lift 11,025 Hz clips
+ * to the 44,100 Hz Android playback rate.  The engine's own resampler
+ * produces 44,100 Hz when eciSampleRate is set above native (see
+ * vvtts_core.c).  Keeping these helpers in a single dependency-free unit
+ * makes them host-compilable for regression tests and lets the paths share
+ * one, tested sink.
  *
  * Also holds the edge-silence trim and edge-fade used for both paths.  All
  * durations are expressed in fixed real-time (seconds/ms) so behavior is

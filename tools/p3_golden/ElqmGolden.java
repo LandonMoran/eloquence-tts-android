@@ -13,7 +13,7 @@ public class ElqmGolden {
                 .fromLanguages(
                         Language.ENGLISH, Language.GERMAN, Language.SPANISH, Language.FINNISH,
                         Language.FRENCH, Language.ITALIAN, Language.JAPANESE, Language.KOREAN,
-                        Language.PORTUGUESE, Language.CHINESE)
+                        Language.PORTUGUESE)
                 .withPreloadedLanguageModels()
                 .build();
         String[] probes = {
@@ -21,7 +21,6 @@ public class ElqmGolden {
                 "Das ist ein wunderbarer sonniger Tag in Berlin",
                 "Tama on kaunis kesapaiva ja linnut laulavat",
                 "kino wa tomodachi to eiga o mimashita",
-                "jintian tianqi hen hao, women qu gongyuan sanbu ba",
                 "This is a test sentence with some German mixed in: das Haus is beautiful",
                 "12345 !@#$%^&*()",
                 "emoji only"
