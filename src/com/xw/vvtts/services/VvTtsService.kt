@@ -321,8 +321,12 @@ class VvTtsService : TextToSpeechService() {
         // pinned to en-US. Explicit system-picker voices bypass this method (they
         // arrive as a real request.voiceName at synthesis), so honoring the app voice
         // here cannot override a deliberate Android choice.
-        val appVoice = voiceConfig?.voice
-        if (appVoice != null) {
+        // Only an explicitly set preference counts as a pin (an unset "en-US" default
+        // must not override the country default), and only a name the registry
+        // advertises may be returned (setVoice does not validate; returning e.g. an
+        // unsupported stored name would make setLanguage report LANG_NOT_SUPPORTED).
+        val appVoice = voiceConfig?.explicitVoice
+        if (appVoice != null && CAPABLE_VOICES.any { it.voiceName == appVoice }) {
             val appLang = appVoice.substringBefore('-').takeIf { it.isNotEmpty() } ?: ""
             if (appLang.equals(lang, ignoreCase = true) && appVoice.substringAfter('-', "").isNotEmpty()) {
                 return appVoice

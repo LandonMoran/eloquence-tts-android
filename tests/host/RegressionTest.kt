@@ -527,6 +527,24 @@ private fun talkbackDefaultVoiceDialect() {
         check(resolveFor("eng", "USA") == "en-US") {
             "Non-English app voice must not leak into an English framework request"
         }
+        // [review] Unset preference must NOT act as a pin: with no voice stored at all,
+        // the country-based default applies (eng/GBR -> en-GB), not the implicit en-US.
+        config.removeVoice()
+        check(resolveFor("eng", "GBR") == "en-GB") {
+            "Unset voice pref was treated as the implicit en-US pin; country default eng/GBR must resolve to en-GB"
+        }
+        check(resolveFor("eng", "USA") == "en-US")
+        check(resolveFor("en", "GB") == "en-GB")
+        // [review] A stored voice the registry does not advertise must never be returned
+        // (setVoice does not validate; resolving it would make setLanguage report
+        // LANG_NOT_SUPPORTED). Fall through to the shipped default instead.
+        config.setVoice("en-ZZ")
+        check(resolveFor("eng", "USA") == "en-US") {
+            "Unsupported stored voice en-ZZ must not be returned for eng/USA; expected en-US fallback"
+        }
+        check(resolveFor("eng", "GBR") == "en-GB") {
+            "Unsupported stored voice en-ZZ must not be returned for eng/GBR; expected en-GB country default"
+        }
         println("PASS TalkBack default voice: pinned in-app dialect wins; other families and en-US pin preserved")
     } finally {
         config.setVoice("en-US")
