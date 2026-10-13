@@ -494,9 +494,51 @@ private fun defender() {
     println("PASS defender: pre-allocation line bound, shipped corpus, combining marks, case and locale")
 }
 
+/** Verify the TalkBack dialect fix: onGetDefaultVoiceNameFor honors the pinned in-app voice. */
+private fun talkbackDefaultVoiceDialect() {
+    val previousFixed = LanguageDetector.getFixedDialect()
+    val previousDefault = LanguageDetector.getDefaultLanguage()
+    val previousDetection = LanguageDetector.isDetectionEnabled()
+    val context = Context()
+    val config = VoiceConfig(context)
+    val service = VvTtsService()
+    set(service, "voiceConfig", config)
+    val resolve = service.javaClass.getDeclaredMethod(
+        "onGetDefaultVoiceNameFor", String::class.java, String::class.java, String::class.java
+    ).apply { isAccessible = true }
+    fun resolveFor(lang: String?, country: String?): String =
+        resolve.invoke(service, lang, country, "") as String
+    try {
+        // en-GB pinned in-app, framework requests the device locale (eng/USA):
+        // the resolved default voice must be the app's pin, not the old en-US fallback.
+        config.setVoice("en-GB")
+        check(resolveFor("eng", "USA") == "en-GB") { "TalkBack requested eng/USA but got en-US despite en-GB pin" }
+        check(resolveFor("en", "US") == "en-GB") { "en-US country request must still honor the en-GB pin" }
+        check(resolveFor("eng", "GBR") == "en-GB")
+        // Unsupported language family still falls through to the shipped default (no cross-family leak).
+        check(resolveFor("de", "DE") == "de-DE")
+        check(resolveFor("zz", "ZZ") == "en-US")
+        // en-US pin must still resolve en-US (intentional choice preserved).
+        config.setVoice("en-US")
+        check(resolveFor("eng", "USA") == "en-US")
+        check(resolveFor("en", "US") == "en-US")
+        // Unpinned (default) resolves to the country-based en-US fallback as before.
+        config.setVoice("fr-FR")
+        check(resolveFor("eng", "USA") == "en-US") {
+            "Non-English app voice must not leak into an English framework request"
+        }
+        println("PASS TalkBack default voice: pinned in-app dialect wins; other families and en-US pin preserved")
+    } finally {
+        config.setVoice("en-US")
+        LanguageDetector.setFixedDialect(previousFixed)
+        LanguageDetector.setDefaultLanguage(previousDefault)
+        LanguageDetector.setDetectionEnabled(previousDetection)
+    }
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender() }
     finally { Context.root.deleteRecursively() }
 }
