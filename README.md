@@ -7,10 +7,13 @@ Synthesis runs locally; speech text is not sent to a speech service.
 
 ## Supported languages and voices
 
-The app advertises these 10 locales — feature-parity with the languages the
-vendored openevv library ships: English (United States and United Kingdom),
-German (Germany), French (France and Canada), Spanish (Spain and Mexico),
-Italian (Italy), Japanese (Japan), and Polish (Poland).
+The app advertises these 10 locales — the locales this Android build ships
+(English (United States and United Kingdom), German (Germany), French (France
+and Canada), Spanish (Spain and Mexico), Italian (Italy), Japanese (Japan), and
+Polish (Poland)). The native engine at `native/openevv` is a git submodule
+tracking upstream openevv; it carries **12 languages** — the engine still holds
+`es-US`, `pt-BR`, and `fi-FI` — which will bring the advertised count to **12**
+when the engine is resynced.
 
 Eight named voice presets are available: Reed, Shelley, Sandy, Rocko, Flo,
 Grandma, Grandpa, and Eddy. A preset selects an ECI voice row and its default
@@ -45,8 +48,8 @@ links the C `openevv` engine and exposes a single `libvvtts_core.so` per ABI.
 The bridge returns signed 16-bit mono PCM. Native engine audio is 11,025 Hz;
 the bridge resamples it to 44,100 Hz for Android playback.
 
-All shipped locales synthesize from the in-tree `openevv` engine; Chinese
-Simplified is removed. The bridge's lifecycle, cancellation, size, and
+All advertised locales synthesize from the native engine submodule at
+`native/openevv`. The bridge's lifecycle, cancellation, size, and
 encoding constraints are described in [`jni/README.md`](jni/README.md).
 
 ## Repository layout
@@ -55,7 +58,7 @@ encoding constraints are described in [`jni/README.md`](jni/README.md).
 | --- | --- |
 | `src/` | Kotlin Android service, engine, settings, detection, and utilities |
 | `jni/` | Native ECI compatibility layer and JNI bridge |
-| `native/openevv/` | C speech engine, language modules, and engine documentation |
+| `native/openevv/` | C speech engine as a git submodule (pinned to upstream openevv), its language modules, and engine documentation |
 | `language-models/`, `libs/` | Packaged language-detection data and JVM libraries |
 | `res/`, `AndroidManifest.xml` | Android resources and application/service configuration |
 | `tests/` | Host regressions, native boundary tests, lifecycle tests, and contracts |
@@ -67,7 +70,9 @@ encoding constraints are described in [`jni/README.md`](jni/README.md).
 Android SDK/NDK builds are run in GitHub Actions; do not build Android APKs
 locally. The main build workflow compiles the native bridge and APKs for
 `arm64-v8a`, `armeabi-v7a`, and a universal package. An `x86_64` APK is
-test-only and is not a release asset. See
+test-only and is not a release asset. CI checkouts fetch the engine submodule
+automatically; a local clone needs `git submodule update --init --recursive`
+once before building. See
 [`build.yml`](.github/workflows/build.yml) for the current build lane.
 
 When a signed APK is available from a GitHub Release, choose the asset that
@@ -100,7 +105,7 @@ checks remain important release validation; see
 - If the engine cannot start, verify that the installed APK is a signed
   release build for the device ABI and that its installation has not been
   replaced by an ordinary CI-signed artifact.
-- If a locale is unavailable, compare it with the 13 entries in
+- If a locale is unavailable, compare it with the digits in
   [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt). Defined
   dialect constants do not necessarily mean that a locale is shipped.
 - If generated engine data or language assets differ from their

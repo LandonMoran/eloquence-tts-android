@@ -35,13 +35,15 @@ jobs exercise Android behavior.
 
 - `src/com/xw/vvtts/`: Kotlin service, engine, settings, and language detection.
 - `jni/`: JNI and compatibility bridge for the C ECI interface.
-- `native/openevv/`: C engine and its language modules.
+- `native/openevv/`: C engine as a git submodule, pinned to upstream openevv,
+  and its language modules. Local clones: `git submodule update --init --recursive`.
 - `docs/languages-voices-capabilities.md`: summary of shipped locale and voice
   capabilities; `VoiceRegistry.kt` is the executable locale source of truth.
 - `docs/repository-audit.md`: test commands and repository validation notes.
 
-The native APK library is built from `openevv` plus the JNI bridge. See the
-root README and the native bridge documentation for runtime details.
+The native APK library is built from the `native/openevv` submodule plus the
+JNI bridge. See the root README and the native bridge documentation for runtime
+details.
 
 ## Pull requests
 

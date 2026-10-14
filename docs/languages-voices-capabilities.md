@@ -8,7 +8,8 @@ checked by [`tests/contracts.py`](../tests/contracts.py).
 
 ## Shipped locales
 
-The Android app advertises 13 locales:
+The engine submodule carries **12 languages**. The Android app currently
+advertises **10**:
 
 | Locale | Language | Native dialect |
 | --- | --- | --- |
@@ -18,15 +19,15 @@ The Android app advertises 13 locales:
 | `fr-FR` | French (France) | `0x30000` |
 | `fr-CA` | French (Canada) | `0x30001` |
 | `es-ES` | Spanish (Spain) | `0x20000` |
-| `es-US` | Spanish (United States) | `0x20001` |
 | `es-MX` | Spanish (Mexico) | `0x20002` |
 | `it-IT` | Italian (Italy) | `0x50000` |
 | `ja-JP` | Japanese (Japan) | `0x80000` |
 | `pl-PL` | Polish (Poland) | `0x110000` |
-| `pt-BR` | Portuguese (Brazil) | `0x70000` |
-| `fi-FI` | Finnish (Finland) | `0x90000` |
 
-Korean (`ko-KR`) dialect constants and
+The other engine languages — **`es-US`, `pt-BR`, and `fi-FI`** — are held by the
+native engine submodule (tracking upstream `openevv`) and will be brought into
+`VoiceRegistry.kt` when the engine is resynced, bringing the advertised count
+to **12**. Korean (`ko-KR`) dialect constants and
 resources exist in parts of the repository, but they are not in
 `VoiceRegistry.kt` and are not advertised or synthesized by this Android build.
 

@@ -1,116 +1,80 @@
 #!/usr/bin/env bash
-# tools/vendor-openevv.sh — re-vendor native/openevv from a given openevv checkout's `main` branch.
-# Usage:  bash tools/vendor-openevv.sh <openevv-checkout-path> [upstream-sha]
+# tools/vendor-openevv.sh — bump the native/openevv engine submodule to the
+# current upstream Mudb0y/openevv `main`, PREVIEW the incoming delta (read-only),
+# and stage the gitlink pointer bump. This supersedes the old flat-copy vendor
+# flow: the engine is now a git submodule, so "re-vendoring" = moving the
+# pinned SHA. It is the release-time engine freshness step.
 #
-# Sources of truth (intentional split — do not "fix" this):
-#   * The OpenEVV engine is vendored directly from upstream (Mudb0y/openevv)
-#     main. This script copies that tree as-is; there is no maintained fork
-#     anymore (the local fork LandonMoran/openevv was retired and the library
-#     is consumed un-edited from upstream).
-#   * The vendored engine is a pure mirror of upstream main: languages, ROMs,
-#     and registration wiring all ship from upstream. There is no Android-local
-#     language layer, so nothing must be re-spliced across a re-vendor.
-#   * cli/* probe tools and the vendor script itself are Android-local too,
-#     but they are optional instrumentation, not runtime requirements.
-# The vendor sync script therefore copies upstream main exactly and FAILS FAST
-# on a failed fetch or a missing source checkout, never leaving $DST half-updated.
+# Usage:
+#   bash tools/vendor-openevv.sh                # preview what main brings, no stage
+#   bash tools/vendor-openevv.sh --apply        # move the submodule to main + git add
+#
+# Never auto-merges. Always leaves the pointer change staged for a real PR, so
+# the engine delta is reviewed as its own change before it ships. (Submodules
+# hide content behind a gitlink, so the PR body must describe the delta — see
+# the printed summary.)
 set -euo pipefail
 
-SRC=${1:?openevv checkout path required}
-UPSTREAM=${2:-unknown}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DST="$ROOT/native/openevv"
-[ -d "$SRC/.git" ] || { echo "error: $SRC is not a git checkout" >&2; exit 1; }
+MOD="native/openevv"
+SUBM="$ROOT/$MOD"
+APPLY=0
+if [ "${1:-}" = "--apply" ]; then APPLY=1; fi
 
-# ---------------------------------------------------------------------------
-# 1. Fetch the intended remote branch and FAIL if the fetch fails, so we never
-#    continue with a stale local main and never write a pin for it. We also do
-#    not touch $DST before this succeeds, so a failed/missing source leaves the
-#    existing vendored tree untouched.
-# ---------------------------------------------------------------------------
-cd "$SRC"
-
-# The intended source is the checkout's main, which is upstream's tree.
-# We never guess the source from a remote NAME: a remote named "pr-*" or a
-# random "fork-*" is not proof it is the intended fork (unrelated remotes
-# could be mistaken for the source). Default to the checkout's primary
-# remote `origin`; an explicit override may be supplied via OPENE_VV_REMOTE.
-# Fetching 'main' must succeed or we stop immediately.
-REMOTE="${OPENE_VV_REMOTE:-origin}"
-if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
-    echo "error: source remote '$REMOTE' is not configured in $SRC; refusing to guess" >&2
-    exit 1
-fi
-if ! git fetch -q "$REMOTE" main; then
-  echo "error: 'git fetch $REMOTE main' in $SRC failed; not re-vendoring from a stale or unreachable branch" >&2
+# The submodule must already be initialized; we never clone on demand here.
+[ -d "$SUBM/.git" ] || [ -e "$SUBM/.git" ] || {
+  echo "error: $MOD is not an initialized submodule. Run:" >&2
+  echo "  git submodule update --init --recursive" >&2
   exit 1
+}
+
+CUR=$(git -C "$SUBM" rev-parse HEAD)
+
+# ---------------------------------------------------------------------------
+# READ-ONLY PREVIEW: show exactly what an update to main would bring, before
+# any pointer is moved. This is the review path — intentional split.
+# ---------------------------------------------------------------------------
+echo "== engine submodule =="
+git -C "$SUBM" remote get-url origin
+echo "current pin: $CUR ($(git -C "$SUBM" log -1 --format='%s' "$CUR"))"
+git -C "$SUBM" fetch -q origin main
+
+# Set the target to what we actually fetched, never a possibly-stale local ref.
+TARGET=$(git -C "$SUBM" rev-parse "FETCH_HEAD^{commit}")
+echo "upstream main: $TARGET ($(git -C "$SUBM" log -1 --format='%s' "$TARGET"))"
+
+if [ "$CUR" = "$TARGET" ]; then
+  echo "ALREADY UP TO DATE: pin == upstream main. Nothing to do."
+  exit 0
 fi
 
-# Resolve the pin from the exact fetched commit (FETCH_HEAD), which is what we
-# actually checked out, not some possibly-stale local 'main' ref.
-FETCH_SHA=$(git rev-parse "FETCH_HEAD^{commit}") || { echo "error: revision of $REMOTE/main is not a commit" >&2; exit 1; }
-git checkout -q --detach "$FETCH_SHA" 2>/dev/null \
-  || { echo "error: could not check out $REMOTE/main ($FETCH_SHA)" >&2; exit 1; }
+if ! git -C "$SUBM" merge-base --is-ancestor "$CUR" "$TARGET" 2>/dev/null; then
+  echo "WARNING: current pin is not an ancestor of main (history rewritten / force-push)." >&2
+  echo "         Review '$CUR' carefully before bumping." >&2
+fi
+
+echo ""
+echo "== incoming commits: $CUR..$TARGET =="
+git -C "$SUBM" log --oneline "$CUR..$TARGET"
+echo ""
+echo "== files changed across the bump =="
+git -C "$SUBM" diff --stat "$CUR..$TARGET"
 
 # ---------------------------------------------------------------------------
-# 2. Pre-validate that the source checkout carries the shipped engine files
-#    BEFORE we delete $DST, so an incomplete source aborts the sync before any
-#    destructive step and leaves the existing vendored tree untouched. (#331)
+# APPLY (only with --apply): move the submodule pointer to main and stage the
+# gitlink. This is the whole "re-vendor". Safe: creates no copy, deletes nothing
+# (the old engine object stays in submodule history forever).
 # ---------------------------------------------------------------------------
-REQUIRED_SRC=(
-  "src/eci/lang/eci_languageid.c"
-  "src/port/port_ctors.c"
-)
-for f in "${REQUIRED_SRC[@]}"; do
-  if [ ! -s "$SRC/$f" ]; then
-    echo "error: required engine file '$f' missing from $SRC; aborting before any change (nothing was deleted)" >&2
-    exit 1
-  fi
-done
-
-# ---------------------------------------------------------------------------
-# 3. The vendored engine is a pure mirror of upstream main. Preserve the optional
-#    Android-local cli probes across the re-vendor; nothing else is local.
-# ---------------------------------------------------------------------------
-SNAP=$(mktemp -d)
-for p in cli/bench_synth.c cli/langdump.c cli/uncosp_test.c cli/probe.c; do
-  if [ -f "$DST/$p" ]; then
-    mkdir -p "$SNAP/cli"
-    cp -a "$DST/$p" "$SNAP/cli/" || { echo "error: failed to copy optional probe '$p'" >&2; exit 1; }
-  fi
-done
-
-rm -rf "$DST"; mkdir -p "$DST"
-( cd "$SRC" && tar -c --exclude='./.git' --exclude='./build' --exclude='./test' --exclude='./win' \
-       --exclude='./reference' --exclude='./.github' --exclude='./flake.nix' --exclude='./flake.lock' \
-       --exclude='./CLAUDE.md' --exclude='./.gitignore' --exclude='*.o' --exclude='*.a' . ) \
-  | ( cd "$DST" && tar -x )
-
-cp -a "$SNAP"/. "$DST"/ 2>/dev/null || true
-rm -rf "$SNAP"
-
-# ---------------------------------------------------------------------------
-# 4. Post-restore verification: the mirror must carry the shipped engine files;
-#    abort if it does not.
-# ---------------------------------------------------------------------------
-for f in "${REQUIRED_SRC[@]}"; do
-  if [ ! -s "$DST/$f" ]; then
-    echo "error: required engine file '$f' missing after restore; re-vendor failed" >&2
-    exit 1
-  fi
-done
-
-# ---------------------------------------------------------------------------
-# 5. Pin file describing the sync source (from the exact fetched commit).
-# ---------------------------------------------------------------------------
-SHORT=$(git -C "$SRC" rev-parse --short "$FETCH_SHA")
-{
-  echo "openevv_vendored=$FETCH_SHA"
-  echo "openevv_rebased_from=$SHORT"
-  echo "openevv_source=$REMOTE main (Mudb0y/openevv upstream; vendored un-edited)"
-  echo "openevv_behind_upstream=0"
-  if [ "$UPSTREAM" != unknown ]; then echo "openevv_upstream=$UPSTREAM"; fi
-} > "$DST/.openevv-pin"
-
-echo "main@$SHORT"
-echo "vendored $REMOTE/main ($FETCH_SHA)"
+if [ "$APPLY" = 1 ]; then
+  # Detached at FETCH_HEAD so the pinned tree == exactly what we previewed.
+  git -C "$SUBM" checkout -q --detach "$TARGET"
+  git -C "$ROOT" add "$MOD"
+  echo ""
+  echo "== applied: submodule bumped + staged. Suggested PR body: =="
+  echo "  chore(engine): bump openevv $(git -C "$SUBM" rev-parse --short "$CUR")->$(git -C "$SUBM" rev-parse --short "$TARGET")"
+  echo ""
+  git -C "$SUBM" log --oneline "$CUR..$TARGET" | sed 's/^/  /'
+else
+  echo ""
+  echo "Preview only (read-only). Re-run with --apply to move the pin."
+fi

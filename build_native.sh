@@ -12,6 +12,15 @@
 set -eu
 cd "$(dirname "$0")"
 
+# The engine is a git submodule ( Mudb0y/openevv pinned under native/). Fail
+# loudly if the submodule hasn't been initialized -- a missing engine is a
+# build error, not something to paper over with an empty library.
+if [ ! -f "native/openevv/include/eci.h" ]; then
+  echo "ERROR: engine submodule native/openevv is not checked out. Run:" >&2
+  echo "  git submodule update --init --recursive" >&2
+  exit 1
+fi
+
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-}}"
 # ABI selects the target: phones (arm64-v8a, default( or the emulator-test
@@ -41,7 +50,7 @@ OUT=native-libs/$ABI
 mkdir -p "$OUT"
 rm -f "$OUT"/*.so
 
-LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/itit lang/jajp lang/plpl"
+LANGS="lang/enus lang/engb lang/dede lang/frfr lang/frca lang/eses lang/esus lang/itit lang/jajp lang/plpl lang/fifi lang/ptbr"
 # Mirror the Makefile's SUF naming ( TAGS := notdir(LANGS), dash-joined; the
 # suffix branch is taken once the set is bigger than just enus, and then it
 # includes enus too -- checked against `make -p` database ( build/libevv-enus-....a(.
