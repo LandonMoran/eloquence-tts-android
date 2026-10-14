@@ -72,7 +72,7 @@ A language is one word: the family in the top half, the code set in the third by
 
 Family seventeen is Polish here and Thai in IBM's tables. That is the twelfth deliberate divergence and it costs nothing, there being no Thai in the SDK this engine came out of.
 
-The code set travels in that same word rather than in a setting of its own. ORing `eciUnicodeCodeSet` -- 0x800 -- into the language says that text handed over is UTF-16 rather than bytes, and `eciLanguageDialect` is what the engine reads to find out, not `eciTextMode`. Only a language with a romanizer takes it, and of the shipped languages the only romanizer one is Japanese: `eciNewEx(0x10800)` answers no instance, and asking an English instance for 0x10800 answers -1 and leaves it English.
+The code set travels in that same word rather than in a setting of its own. ORing `eciUnicodeCodeSet` -- 0x800 -- into the language says that text handed over is UTF-16 rather than bytes, and `eciLanguageDialect` is what the engine reads to find out, not `eciTextMode`. Only a language with a romanizer takes it -- IBM's table groups code sets under Chinese, Japanese and Korean alone -- so here it is Japanese's: `eciNewEx(0x10800)` answers no instance, and asking an English instance for 0x10800 answers -1 and leaves it English.
 
 ## Text in
 
@@ -248,7 +248,7 @@ A name is at most thirty bytes. The eight presets are called, in order, `Adult M
     int eciUpdateDict(ECIHand h, ECIDictHand dict, int volume,
                       const void *key, const void *translation);
 
-A set holds four volumes. Three are the set's own -- `eciMainDict`, `eciRootDict` and `eciAbbvDict` -- and an instance has one set in force at a time; `eciSetDict(h, 0)` puts none in force. The fourth, `eciMainDictExt`, keeps a part of speech beside each entry and exists only for a language written in another script: Korean and Japanese. **Ask any other language for it and every one of these answers `eciDictInvalidVolume`**, which is 7.
+A set holds four volumes. Three are the set's own -- `eciMainDict`, `eciRootDict` and `eciAbbvDict` -- and an instance has one set in force at a time; `eciSetDict(h, 0)` puts none in force. The fourth, `eciMainDictExt`, keeps a part of speech beside each entry and exists only for a language written in another script: Chinese, Korean and Japanese. **Ask any other language for it and every one of these answers `eciDictInvalidVolume`**, which is 7.
 
 `eciUpdateDict` teaches the engine a word: a key and what to say instead. `eciDictLookup` answers what a key was taught, or nothing. `eciDictFindFirst` and `eciDictFindNext` walk a volume, handing back the key and the translation of each entry until there are none left, which is `eciDictNoEntry`.
 

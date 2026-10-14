@@ -38,7 +38,7 @@ class Contracts(unittest.TestCase):
         kotlin = {int(constants[key],16) for key in re.findall(r'EloquenceEngine\.(DIALECT_\w+)',registry)}
         native = (ROOT/'jni/vvtts_core.c').read_text().split('static int vv_dialect_shipped')[1].split('JNIEXPORT jlong')[0]
         self.assertEqual(kotlin, {int(v,16) for v in re.findall(r'case (0x[0-9a-fA-F]+):', native)})
-        self.assertEqual(len(kotlin),13)
+        self.assertEqual(len(kotlin),10)
         self.assertNotIn('buildEloquenceConfig',engine)
 
     def test_release_signing_isolated(self):

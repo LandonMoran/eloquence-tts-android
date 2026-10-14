@@ -164,16 +164,13 @@ class VoiceConfig(private val context: Context) {
             Lang("en-US", "English (US)", 0, 0x10000L),
             Lang("en-GB", "English (UK)", 1, 0x10001L),
             Lang("es-ES", "Spanish (Spain)", 2, 0x20000L),
-            Lang("es-US", "Spanish (US)", -1, 0x20001L), // esus module
-            Lang("es-MX", "Spanish (Mexico)", 3, 0x20002L), // esmx module
+            Lang("es-MX", "Spanish (Mexico)", 3, 0x20001L),
             Lang("fr-FR", "French (France)", 4, 0x30000L),
             Lang("fr-CA", "French (Canada)", 5, 0x30001L),
             Lang("de-DE", "German", 6, 0x40000L),
             Lang("it-IT", "Italian", 7, 0x50000L),
-            Lang("pt-BR", "Portuguese (Brazil)", 8, 0x70000L),
-            Lang("fi-FI", "Finnish", 9, 0x90000L),
-            Lang("ja-JP", "Japanese", 10, 0x80000L),
-            Lang("pl-PL", "Polish", -1, 0x110000L), // plpl module
+            Lang("ja-JP", "Japanese", 8, 0x80000L),
+            Lang("pl-PL", "Polish", 9, 0x110000L), // plpl module
         )
 
         fun findLang(code: String?): Lang {

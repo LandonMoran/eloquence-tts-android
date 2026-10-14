@@ -22,11 +22,13 @@
    the running total the instance keeps. */
 #define REFUSED_CONVERSION 0x1000
 
-/* Only one language here is written in a code set wide enough to need
+/* Only three languages are written in a code set wide enough to need
    converting; the rest go through untouched. The language word holds the
    language in its second byte. */
 #define LANGUAGE_BYTE 0xff00
 #define LANG_JAPANESE 0x0800
+#define LANG_CHINESE  0x0900
+#define LANG_KOREAN   0x0a00
 
 /* How many filters this asks about at once, and how long a description it
    leaves room for. */
@@ -125,7 +127,8 @@ static int wide_language(int32_t lang)
 {
     int32_t which = lang & LANGUAGE_BYTE;
 
-    return which == LANG_JAPANESE;
+    return which == LANG_JAPANESE || which == LANG_CHINESE
+        || which == LANG_KOREAN;
 }
 
 /* Both converters answer nought when they had nothing to do or did it, and

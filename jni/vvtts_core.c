@@ -328,11 +328,10 @@ static void vv_unlock(pthread_mutex_t **lock) {
 static int vv_dialect_shipped(int32_t dialect) {
     switch (dialect) {
     case 0x10000: case 0x10001:  /* enus, engb */
-    case 0x20000: case 0x20001: case 0x20002:  /* eses, esus, esmx */
+    case 0x20000: case 0x20001:  /* eses, esmx (Mexican, module esus) */
     case 0x30000: case 0x30001:  /* frfr, frca */
     case 0x40000:                /* dede */
     case 0x50000:                /* itit */
-    case 0x70000: case 0x90000: /* ptb, fin */
     case 0x80000:                /* jajp */
     case 0x110000:               /* plpl */
         return 1;

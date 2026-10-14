@@ -279,6 +279,6 @@ int main(void) {
     assert(Java_com_xw_vvtts_core_VvttsCore_nativeSetParam(&env,NULL,h,5,1)==-1);
     refuse_delete=0; await_cleanup(); assert(reclaimed==freed+1);
     short tiny[]={1000,-1000}; vv_fade_edges(tiny,2,44100); assert(tiny[0]==0 && tiny[1]==0);
-    assert(vv_dialect_shipped(0x70000) && vv_dialect_shipped(0x90000));
+    assert(vv_dialect_shipped(0x20001) && !vv_dialect_shipped(0x70000) && !vv_dialect_shipped(0x90000) && !vv_dialect_shipped(0x20002));
     puts("PASS native: setup failures, stop generations, settlement ownership, repeat synthesis, control guards, ranges, PCM edges");
 }

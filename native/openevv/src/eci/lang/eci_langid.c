@@ -14,9 +14,9 @@
  *
  * The locale table has a wrinkle of the original's that is kept. Twelve of
  * the fourteen entries are full Windows locale identifiers, with the
- * country in the top half; Finnish is a bare primary language
- * identifier, 0x0b, so the locale that actually names that
- * country -- 0x40b -- falls through to nothing.
+ * country in the top half; Finnish and Korean are bare primary language
+ * identifiers, 0x0b and 0x12, so the locales that actually name those two
+ * countries -- 0x40b and 0x412 -- fall through to nothing.
  */
 
 #include <stdint.h>
@@ -51,6 +51,7 @@ THIS void lid_initLocale(LanguageID *l, uint16_t locale)
     case 0x416: l->language = 7; l->dialect = 0; break;
     case 0x411: l->language = 8; l->dialect = 0; break;
     case 0x00b: l->language = 9; l->dialect = 0; break;
+    case 0x012: l->language = 10; l->dialect = 0; break;
     default: break;
     }
 }

@@ -11,10 +11,12 @@
  * says what language it wants by name; and the answer the reader gives back
  * to the engine is the number again.
  *
- * Two things in here are the original's and are kept. Its own table
+ * Three things in here are the original's and are kept. Its own table
  * spells Finnish "Fn" going out and accepts "Fi" coming in, so a language
  * put in by name does not come back out under the name it went in by.
- * And `equals' ignores the code set while
+ * Hong Kong Chinese arrives as Chinese and leaves as Cantonese dialect one,
+ * and Cantonese dialect one leaves as Chinese in Hong Kong -- the pair is
+ * deliberately crossed. And `equals' ignores the code set while
  * `codeSetEquals' is the one that does not, which is the opposite of what
  * the two names suggest: the second compares the whole word.
  */
@@ -150,6 +152,15 @@ THIS void li_setString(LanguageId *l)
         strcpy(l->major, "It");
         strcpy(l->minor, "IT");
         break;
+    case 6:
+        strcpy(l->major, "Zh");
+        if (dialect == 0)
+            strcpy(l->minor, "CN");
+        else if (dialect == 1)
+            strcpy(l->minor, "TW");
+        else
+            strcpy(l->minor, "");
+        break;
     case 7:
         strcpy(l->major, "Pt");
         strcpy(l->minor, "BR");
@@ -162,6 +173,23 @@ THIS void li_setString(LanguageId *l)
     case 9:
         strcpy(l->major, "Fn");
         strcpy(l->minor, "FN");
+        break;
+    case 10:
+        strcpy(l->major, "Ko");
+        strcpy(l->minor, "KR");
+        break;
+    /* Cantonese, whose second dialect is Chinese in Hong Kong. */
+    case 11:
+        if (dialect == 0) {
+            strcpy(l->major, "Ct");
+            strcpy(l->minor, "CN");
+        } else if (dialect == 1) {
+            strcpy(l->major, "Zh");
+            strcpy(l->minor, "HK");
+        } else {
+            strcpy(l->major, "");
+            strcpy(l->minor, "");
+        }
         break;
     case 12:
         strcpy(l->major, "Nl");
@@ -309,12 +337,16 @@ THIS void li_initNames(LanguageId *l, const char *major, const char *minor)
         packed = 0x40000;
     else if (strcmp(major, "It") == 0)
         packed = 0x50000;
+    else if (strcmp(major, "Zh") == 0)
+        packed = 0x60000;
     else if (strcmp(major, "Pt") == 0)
         packed = 0x70000;
     else if (strcmp(major, "Ja") == 0)
         packed = 0x80000;
     else if (strcmp(major, "Fi") == 0)
         packed = 0x90000;
+    else if (strcmp(major, "Ko") == 0)
+        packed = 0xa0000;
     else if (strcmp(major, "Nl") == 0)
         packed = 0xc0000;
     else if (strcmp(major, "No") == 0)
@@ -323,6 +355,8 @@ THIS void li_initNames(LanguageId *l, const char *major, const char *minor)
         packed = 0xe0000;
     else if (strcmp(major, "Da") == 0)
         packed = 0xf0000;
+    else if (strcmp(major, "Ct") == 0)
+        packed = 0xb0000;
     else if (strcmp(major, "Pl") == 0)
         packed = 0x110000;
 
@@ -337,6 +371,10 @@ THIS void li_initNames(LanguageId *l, const char *major, const char *minor)
         packed = 0x20001;
     else if (packed == 0x30000 && strcmp(minor, "CA") == 0)
         packed = 0x30001;
+    else if (packed == 0x60000 && strcmp(minor, "TW") == 0)
+        packed = 0x60001;
+    else if (packed == 0x60000 && strcmp(minor, "HK") == 0)
+        packed = 0xb0001;
 
     li_setLanguagePacked(l, packed);
 }

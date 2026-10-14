@@ -74,13 +74,30 @@ extern THIS void lang_setString(LangIdentifier *l)
 
 /* ---- which languages are written two bytes to a character ------------ */
 
-/* The ranges were the original's own list, and there was no rule behind
-   them to shorten it with. Of the two-byte languages IBM shipped, only
-   Japanese is still here: its narrow form is 0x80000 and its wide form
-   0x80800. The Chinese and Cantonese ranges are gone with those languages. */
+/* The ranges are the original's own list, and there is no rule behind them
+   to shorten it with. */
 static int isMultiByte(int32_t lang)
 {
-    return lang == 0x80000 || lang == 0x80800;
+    if (lang > 0x80800) {
+        if (lang < 0xb0000)
+            return 0;
+        if (lang <= 0xb0001)
+            return 1;
+        if (lang <= 0xb07ff)
+            return 0;
+        return lang <= 0xb0801;
+    }
+    if (lang == 0x80800)
+        return 1;
+    if (lang < 0x60000)
+        return 0;
+    if (lang <= 0x60001)
+        return 1;
+    if (lang <= 0x607ff)
+        return 0;
+    if (lang <= 0x60801)
+        return 1;
+    return lang == 0x80000;
 }
 
 static int32_t currentLanguage(TextFilter *f)

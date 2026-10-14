@@ -167,16 +167,13 @@ class EloquenceEngine(context: Context) {
         const val DIALECT_EN_US = 0x10000    // [1.0] enu
         const val DIALECT_EN_GB = 0x10001    // [1.1] eng
         const val DIALECT_ES_ES = 0x20000    // [2.0] esp
-        const val DIALECT_ES_MX =                          0x20002    // [2.2] esmx (real Mexican Spanish module
-        const val DIALECT_ES_US =                          0x20001    // [2.1] esus — US Spanish (#18: no const existed; shipped module esus
+        const val DIALECT_ES_MX =                          0x20001    // [2.1] esus — Mexican Spanish (SDK code 0x20001)
         const val DIALECT_PL_PL =                         0x110000    // [11.0] plpl — Polish
         const val DIALECT_FR_FR = 0x30000    // [3.0] fra
         const val DIALECT_FR_CA = 0x30001    // [3.1] frc
         const val DIALECT_DE_DE = 0x40000    // [4.0] deu
         const val DIALECT_IT_IT = 0x50000    // [5.0] ita
-        const val DIALECT_PT_BR = 0x70000    // [7.0] ptb
         const val DIALECT_JA_JP = 0x80000    // [8.0] jpn
-        const val DIALECT_FI_FI = 0x90000    // [9.0] fin
         // Language modules actually linked in this build (matches build_native.sh LANGS)
         val SHIPPED_DIALECTS: Set<Long> = VoiceRegistry.voices.map { it.dialect.toLong() }.toSet()
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS

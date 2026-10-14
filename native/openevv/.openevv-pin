@@ -1,4 +1,4 @@
-openevv_vendored=331dcf2b03b40413f846c94c905a64116a44bbf1
-openevv_rebased_from=331dcf2
-openevv_source=fork main (LandonMoran/openevv; carries our engine mods)
+openevv_vendored=36e049edeb6b3f4503542df0549aacff3e6e0006
+openevv_rebased_from=36e049e
+openevv_source=origin main (Mudb0y/openevv upstream; vendored un-edited)
 openevv_behind_upstream=0

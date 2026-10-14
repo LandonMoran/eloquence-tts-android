@@ -27,15 +27,12 @@ class LanguageDetector {
         const val DIALECT_EN_US  =  0x10000
         const val DIALECT_EN_GB  =  0x10001
         const val DIALECT_ES_ES  =  0x20000
-        const val DIALECT_ES_US  =  0x20001
-        const val DIALECT_ES_MX  = 0x20002
+        const val DIALECT_ES_MX  =  0x20001
         const val DIALECT_FR_FR  =  0x30000
         const val DIALECT_FR_CA  =  0x30001
         const val DIALECT_DE_DE  =  0x40000
         const val DIALECT_IT_IT  =  0x50000
         const val DIALECT_JA_JP  =  0x80000
-        const val DIALECT_PT_BR  =  0x70000
-        const val DIALECT_FI_FI  =  0x90000
         const val DIALECT_PL_PL  =  0x110000
 
         // Special value for "unspecified default language"
@@ -43,9 +40,9 @@ class LanguageDetector {
 
             // all supported language codes(for the settings multi-select)
         // Only languages actually linked in this build (see build_native.sh LANGS).
-        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl", "pt", "fi")
+        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl")
         val ALL_LANG_NAMES = arrayOf(
-            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish", "Portuguese", "Finnish",
+            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish",
         )
 
             // settings key
@@ -265,8 +262,6 @@ class LanguageDetector {
             allLatin.add(Language.FRENCH)
             allLatin.add(Language.SPANISH)
             allLatin.add(Language.ITALIAN)
-            allLatin.add(Language.PORTUGUESE)
-            allLatin.add(Language.FINNISH)
             allLatin.add(Language.POLISH)
 
             val en = enabledLanguages
@@ -292,8 +287,6 @@ class LanguageDetector {
             if (lang == Language.SPANISH) return "es"
             if (lang == Language.ITALIAN) return "it"
             if (lang == Language.POLISH) return "pl"
-            if (lang == Language.PORTUGUESE) return "pt"
-            if (lang == Language.FINNISH) return "fi"
             return "en"
         }
 
@@ -304,8 +297,6 @@ class LanguageDetector {
             if (lang == Language.SPANISH) return spanishDialect
             if (lang == Language.ITALIAN) return DIALECT_IT_IT
             if (lang == Language.POLISH) return DIALECT_PL_PL
-            if (lang == Language.PORTUGUESE) return DIALECT_PT_BR
-            if (lang == Language.FINNISH) return DIALECT_FI_FI
             return englishDialect
         }
 
@@ -449,9 +440,9 @@ class LanguageDetector {
         /** Numeric runs must not feed the engine an unshipped dialect (kana raw seeds crash the native voice-table walk). */
         private fun isShippedDialect(d: Int): Boolean {
             return when (d) {
-                DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_US, DIALECT_ES_MX,
+                DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_MX,
                 DIALECT_FR_FR, DIALECT_FR_CA, DIALECT_DE_DE, DIALECT_IT_IT,
-                DIALECT_PT_BR, DIALECT_JA_JP, DIALECT_FI_FI, DIALECT_PL_PL -> true
+                DIALECT_JA_JP, DIALECT_PL_PL -> true
                 else -> false
             }
         }
@@ -595,8 +586,8 @@ class LanguageDetector {
                     // Italian live on-device) now floor the same way as dash-cluttered ones.
 
                     // Floor to the user's pinned Latin default when set(their voice),else
-                    // English. Finnish/Portuguese/etc-default users keep their own voice;
-                    // English-default users get clean en-US.no more random accents.
+                    // English; users of a shipped non-English voice keep their own,
+                    // English-default users get clean en-US, no more random accents.
 
                     val latinFloor = if (dl >= 0 && isLatinDialect(dl)) dl else englishDialect
 
@@ -724,9 +715,7 @@ class LanguageDetector {
                     2 -> frenchDialect
                     3 -> spanishDialect
                     4 -> DIALECT_IT_IT
-                    5 -> DIALECT_PT_BR
-                    6 -> DIALECT_FI_FI
-                    7 -> DIALECT_PL_PL
+                    5 -> DIALECT_PL_PL
                     else -> -1
                 }
                 if (dialect >=0) {
@@ -786,8 +775,6 @@ class LanguageDetector {
                 "es" -> spanishDialect
                 "it" -> DIALECT_IT_IT
                 "pl" -> DIALECT_PL_PL
-                "pt" -> DIALECT_PT_BR
-                "fi" -> DIALECT_FI_FI
                 else -> -1
             }
         }
@@ -797,10 +784,9 @@ class LanguageDetector {
             return dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB
                 || dialect == DIALECT_DE_DE
                 || dialect == DIALECT_FR_FR || dialect == DIALECT_FR_CA
-                || dialect == DIALECT_ES_ES || dialect == DIALECT_ES_US || dialect == DIALECT_ES_MX
+                || dialect == DIALECT_ES_ES || dialect == DIALECT_ES_MX
                 || dialect == DIALECT_IT_IT
                 || dialect == DIALECT_PL_PL
-                || dialect == DIALECT_PT_BR || dialect == DIALECT_FI_FI
         }
 
         private fun mergeConsecutive(segments: MutableList<Segment>) {

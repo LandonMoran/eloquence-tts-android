@@ -28,8 +28,8 @@ import java.util.Locale
 
 /**
  * Eloquence TTS service (openevv port, single engine).
- * 13 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
- * de-DE/fr-FR/fr-CA/es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL/pt-BR/fi-FI,
+ * 10 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
+ * de-DE/fr-FR/fr-CA/es-ES/es-MX/it-IT/ja-JP/pl-PL,
  * matching the voices advertised in onGetVoices().
  */
 class VvTtsService : TextToSpeechService() {
@@ -316,12 +316,10 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return when (c) { "US", "USA" -> "es-US"; "MX", "MEX" -> "es-MX"; else -> "es-ES" }
+        if (lang.startsWith("es")) return if (c == "MX" || c == "MEX") "es-MX" else "es-ES"
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
-        if (lang.startsWith("pt")) return "pt-BR"
-        if (lang.startsWith("fi")) return "fi-FI"
         return "en-US"
         }
     }
@@ -335,7 +333,7 @@ class VvTtsService : TextToSpeechService() {
         return voiceSafe(emptyList()) {
             // #18: catalog derives from the single voice registry — every advertised voice
             // is by constructiona shipped native dialect (no advertise-only entries —the
-            // pt-BR/fi-FI mismatch class is impossible here(.
+            // unshipped-dialect mismatch class is impossible here(.
             // Features are non-null (emptySet()* because Voice.parceling converts features
             // to ArrayList,and null features have been observed corrupting the binder reply
             // on Android 15+ (Settings/TalkBack die decodinga poisoned parcel:

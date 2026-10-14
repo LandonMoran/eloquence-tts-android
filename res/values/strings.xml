@@ -121,15 +121,12 @@ Tap to change the spoken language</string>
     <string name="lang_italian">Italian</string>
     <string name="lang_japanese">Japanese</string>
     <string name="lang_polish">Polish</string>
-    <string name="lang_portuguese">Portuguese</string>
-    <string name="lang_finnish">Finnish</string>
     <string name="ok">OK</string>
 
     <!-- Accent names -->
     <string name="accent_en_us">American English (en-US)</string>
     <string name="accent_en_gb">British English (en-GB)</string>
     <string name="accent_es_es">Spain (es-ES)</string>
-    <string name="accent_es_us">United States (es-US)</string>
     <string name="accent_es_mx">Mexico (es-MX)</string>
     <string name="accent_fr_fr">France (fr-FR)</string>
     <string name="accent_fr_ca">Canada (fr-CA)</string>

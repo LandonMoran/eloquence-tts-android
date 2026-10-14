@@ -3,17 +3,17 @@
 # Usage:  bash tools/vendor-openevv.sh <openevv-checkout-path> [upstream-sha]
 #
 # Sources of truth (intentional split — do not "fix" this):
-#   * Shared OpenEVV engine changes, incl. our maintained engine mods
-#     (followed_by_er, es_delete_checked), come from the OpenEVV fork
-#     (LandonMoran/openevv) main. This script copies that engineered tree.
-#   * The vendored engine is a pure mirror of fork main: languages, ROMs, and
-#     registration wiring all ship from the fork. There is no Android-local
-#     language layer anymore (Chinese was removed from both sides), so nothing
-#     must be re-spliced across a re-vendor.
+#   * The OpenEVV engine is vendored directly from upstream (Mudb0y/openevv)
+#     main. This script copies that tree as-is; there is no maintained fork
+#     anymore (the local fork LandonMoran/openevv was retired and the library
+#     is consumed un-edited from upstream).
+#   * The vendored engine is a pure mirror of upstream main: languages, ROMs,
+#     and registration wiring all ship from upstream. There is no Android-local
+#     language layer, so nothing must be re-spliced across a re-vendor.
 #   * cli/* probe tools and the vendor script itself are Android-local too,
 #     but they are optional instrumentation, not runtime requirements.
-# The vendor sync script therefore copies fork main exactly and FAILS FAST on a
-# failed fetch or a missing source checkout, never leaving $DST half-updated.
+# The vendor sync script therefore copies upstream main exactly and FAILS FAST
+# on a failed fetch or a missing source checkout, never leaving $DST half-updated.
 set -euo pipefail
 
 SRC=${1:?openevv checkout path required}
@@ -30,7 +30,7 @@ DST="$ROOT/native/openevv"
 # ---------------------------------------------------------------------------
 cd "$SRC"
 
-# The intended source is the checkout's main, which carries our engine mods.
+# The intended source is the checkout's main, which is upstream's tree.
 # We never guess the source from a remote NAME: a remote named "pr-*" or a
 # random "fork-*" is not proof it is the intended fork (unrelated remotes
 # could be mistaken for the source). Default to the checkout's primary
@@ -69,7 +69,7 @@ for f in "${REQUIRED_SRC[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 3. The vendored engine is a pure mirror of fork main. Preserve the optional
+# 3. The vendored engine is a pure mirror of upstream main. Preserve the optional
 #    Android-local cli probes across the re-vendor; nothing else is local.
 # ---------------------------------------------------------------------------
 SNAP=$(mktemp -d)
@@ -107,7 +107,7 @@ SHORT=$(git -C "$SRC" rev-parse --short "$FETCH_SHA")
 {
   echo "openevv_vendored=$FETCH_SHA"
   echo "openevv_rebased_from=$SHORT"
-  echo "openevv_source=$REMOTE main (LandonMoran/openevv; carries our engine mods)"
+  echo "openevv_source=$REMOTE main (Mudb0y/openevv upstream; vendored un-edited)"
   echo "openevv_behind_upstream=0"
   if [ "$UPSTREAM" != unknown ]; then echo "openevv_upstream=$UPSTREAM"; fi
 } > "$DST/.openevv-pin"

@@ -7,10 +7,10 @@ Synthesis runs locally; speech text is not sent to a speech service.
 
 ## Supported languages and voices
 
-The app advertises these 13 locales: English (United States and United
-Kingdom), German (Germany), French (France and Canada), Spanish (Spain,
-United States, and Mexico), Italian (Italy), Japanese (Japan), Polish
-(Poland), Portuguese (Brazil), and Finnish (Finland).
+The app advertises these 10 locales — feature-parity with the languages the
+vendored openevv library ships: English (United States and United Kingdom),
+German (Germany), French (France and Canada), Spanish (Spain and Mexico),
+Italian (Italy), Japanese (Japan), and Polish (Poland).
 
 Eight named voice presets are available: Reed, Shelley, Sandy, Rocko, Flo,
 Grandma, Grandpa, and Eddy. A preset selects an ECI voice row and its default

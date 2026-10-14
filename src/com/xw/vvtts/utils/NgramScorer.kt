@@ -11,8 +11,8 @@ import java.util.zip.GZIPInputStream
 /**
  * Fast in-RAM Latin detection over the shipped pruned n-gram tables
  * (assets/ngram_uni_bi.tsv.gz, generated from the language-models JSON files).
- * The index order (0..7) MUST match LanguageDetector.getEnabledLanguageEnums():
- * EN, DE, FR, ES, IT, PT, FI, PL.
+ * The index order MUST match LanguageDetector.getEnabledLanguageEnums():
+ * EN, DE, FR, ES, IT, PL.
  *
  * Primary path on the delivery thread; Lingua is demoted to ambiguous-only
  * fallback. Scores are sum-of-frequencies over present n-grams, normalized
@@ -40,7 +40,7 @@ object NgramScorer {
     private const val BACKOFF_BASE_MS = 1000L
     private const val BACKOFF_MAX_MS = 60_000L
 
-    private val LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pt", "fi", "pl")
+    private val LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pl")
 
     /** Immutable published scoring tables. All maps are read-only views; never mutate in place. */
     private class Snapshot(
@@ -108,10 +108,10 @@ object NgramScorer {
 
     /** Builds complete local tables (never touching a published snapshot), then freezes them. */
     private fun buildTables(context: Context): Snapshot {
-        val unigrams = arrayOfNulls<HashMap<Int, Float>>(8)
-        val bigrams = arrayOfNulls<HashMap<Int, Float>>(8)
-        val uniTotals = FloatArray(8)
-        val biTotals = FloatArray(8)
+        val unigrams = arrayOfNulls<HashMap<Int, Float>>(LANG_CODES.size)
+        val bigrams = arrayOfNulls<HashMap<Int, Float>>(LANG_CODES.size)
+        val uniTotals = FloatArray(LANG_CODES.size)
+        val biTotals = FloatArray(LANG_CODES.size)
 
         val raw = context.assets.open("ngram_uni_bi.tsv.gz")
         BufferedReader(InputStreamReader(GZIPInputStream(raw), "UTF-8")).use { reader ->
@@ -137,9 +137,9 @@ object NgramScorer {
         // Freeze the private builder maps into read-only views before publication so
         // no caller can ever mutate a published snapshot.
 
-        val uniViews = arrayOfNulls<Map<Int, Float>>(8)
-        val biViews = arrayOfNulls<Map<Int, Float>>(8)
-        for (idx in 0..7) {
+        val uniViews = arrayOfNulls<Map<Int, Float>>(LANG_CODES.size)
+        val biViews = arrayOfNulls<Map<Int, Float>>(LANG_CODES.size)
+        for (idx in LANG_CODES.indices) {
             uniViews[idx] = unigrams[idx]?.let { Collections.unmodifiableMap(it) }
             biViews[idx] = bigrams[idx]?.let { Collections.unmodifiableMap(it) }
         }
@@ -152,7 +152,7 @@ object NgramScorer {
         uniTotals: FloatArray,
         biTotals: FloatArray,
     ) {
-        for (idx in 0..7) {
+        for (idx in LANG_CODES.indices) {
             val ut = uniTotals[idx]
             if (ut > 0f) {
                 unigrams[idx]?.let { m ->
@@ -212,14 +212,14 @@ object NgramScorer {
         return if (hits == 0) -1f else score / hits
     }
 
-    /** Returns language index 0..7 (LANG_CODES order) or -1 when unsure/tables unloaded. */
+    /** Returns the language index in LANG_CODES order or -1 when unsure/tables unloaded. */
     fun detect(text: String, enabled: Set<String>): Int {
         val snap = snapshot ?: return -1
         var best = -1
         var bestScore = 0.0f
         var second = 0.0f
         var i = 0
-        while (i < 8) {
+        while (i < LANG_CODES.size) {
             if (enabled.contains(LANG_CODES[i])) {
                 val s = scoreText(snap, text, i)
                 if (s >= 0) {

@@ -878,8 +878,6 @@ class SettingsActivity : Activity() {
             getString(R.string.lang_italian),
             getString(R.string.lang_japanese),
             getString(R.string.lang_polish),
-            getString(R.string.lang_portuguese),
-            getString(R.string.lang_finnish),
         )
         // values[i] is the dialect for items[i] (English/French/Spanish use the current accent)
         val values = intArrayOf(
@@ -887,12 +885,10 @@ class SettingsActivity : Activity() {
             LanguageDetector.getEnglishDialect(),     // English (accent setting picks US/UK)
             LanguageDetector.DIALECT_DE_DE,
             LanguageDetector.getFrenchDialect(),      // French (accent setting picks France/Canada)
-            LanguageDetector.getSpanishDialect(),     // Spanish (accent setting picks Spain/US/Mexico)
+            LanguageDetector.getSpanishDialect(),     // Spanish (accent setting picks Spain/Mexico)
             LanguageDetector.DIALECT_IT_IT,
             LanguageDetector.DIALECT_JA_JP,
             LanguageDetector.DIALECT_PL_PL,
-            LanguageDetector.DIALECT_PT_BR,
-            LanguageDetector.DIALECT_FI_FI,
         )
 
         val cur = LanguageDetector.getDefaultLanguage()
@@ -966,11 +962,10 @@ class SettingsActivity : Activity() {
 
     /** Spanish accent */
         private fun showSpanishDialectDialog() {
-        val items = arrayOf(getString(R.string.accent_es_es), getString(R.string.accent_es_us), getString(R.string.accent_es_mx))
+        val items = arrayOf(getString(R.string.accent_es_es), getString(R.string.accent_es_mx))
             val cur = LanguageDetector.getSpanishDialect()
             val checked = when (cur) {
-                LanguageDetector.DIALECT_ES_US -> 1
-                LanguageDetector.DIALECT_ES_MX -> 2
+                LanguageDetector.DIALECT_ES_MX -> 1
                 else -> 0
             }
             AlertDialog.Builder(this)
@@ -978,8 +973,7 @@ class SettingsActivity : Activity() {
                 .setSingleChoiceItems(items, checked) { d, which ->
                     LanguageDetector.setSpanishDialect(
                         when (which) {
-                            1 -> LanguageDetector.DIALECT_ES_US
-                            2 -> LanguageDetector.DIALECT_ES_MX
+                            1 -> LanguageDetector.DIALECT_ES_MX
                             else -> LanguageDetector.DIALECT_ES_ES
                         })
                     saveLanguageSettings()

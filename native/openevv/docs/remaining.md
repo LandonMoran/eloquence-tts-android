@@ -110,7 +110,7 @@ The last ten went in on 4 September 2026. Eight are the dictionary calls -- `eci
 
 Three things came out of writing the eight and are worth keeping.
 
-**A set has four volumes, not three.** `eciMainDictExt` keeps a part of speech beside each entry and exists only for a language written in another script -- Korean in two code sets, Japanese in two. Every other language answers `eciDictInvalidVolume`, and that answer is most of what those calls do for anything in this tree. All eight carry the same switch on the language to decide, which was checked by comparing the constants their compares hold rather than assumed; `ed_road` is the one copy of it here.
+**A set has four volumes, not three.** `eciMainDictExt` keeps a part of speech beside each entry and exists only for a language written in another script -- Chinese in four code sets, Korean in two, Japanese in two. Every other language answers `eciDictInvalidVolume`, and that answer is most of what those calls do for anything in this tree. All eight carry the same switch on the language to decide, which was checked by comparing the constants their compares hold rather than assumed; `ed_road` is the one copy of it here. One asymmetry in it is IBM's own slip and is kept: Chinese code set two reaches the extended road in its second dialect and not its first.
 
 **Two instance fields are named now.** What were `direct` and `direct2` with twelve unknown bytes after them are the five slots the dictionary layer answers into: the translation, the key, a length for each and the part of speech. And `owned1` and `owned2` are the narrow copies handed back to the caller, which the instance frees on the next call. Nothing but these eight calls reads any of them, which is why the names were not knowable before.
 
