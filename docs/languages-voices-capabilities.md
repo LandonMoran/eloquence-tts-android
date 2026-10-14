@@ -27,9 +27,9 @@ advertises **10**:
 The other engine languages — **`es-US`, `pt-BR`, and `fi-FI`** — are held by the
 native engine submodule (tracking upstream `openevv`) and will be brought into
 `VoiceRegistry.kt` when the engine is resynced, bringing the advertised count
-to **12**. Korean (`ko-KR`) dialect constants and
-resources exist in parts of the repository, but they are not in
-`VoiceRegistry.kt` and are not advertised or synthesized by this Android build.
+to **12**. Korean is fully removed from this build: the korean user model
+(`language-models/ko`) is pruned, there is no `ko-KR` dialect in `VoiceRegistry.kt`,
+and the app neither advertises nor synthesizes Korean.
 
 ## Voice presets and parameters
 
