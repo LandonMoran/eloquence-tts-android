@@ -28,23 +28,20 @@ python3 tools/prepare_assets.py --verify
 
 `bash tests/host/run.sh` compiles the host application regressions but requires
 `ANDROID_JAR`, `KOTLINC_CP` (Kotlin 1.9.25), and `KXML_JAR` (kxml2 2.3.0).
-The main CI workflow runs these checks as well as the Android builds. A separate
-`chs-smoke` job validates the Chinese oracle synthesis path; emulator jobs
-exercise Android behavior.
+The main CI workflow runs these checks as well as the Android builds; emulator
+jobs exercise Android behavior.
 
 ## Architecture and source of truth
 
 - `src/com/xw/vvtts/`: Kotlin service, engine, settings, and language detection.
 - `jni/`: JNI and compatibility bridge for the C ECI interface.
 - `native/openevv/`: C engine and its language modules.
-- `oracle/`: Chinese audio table generation and related development material.
 - `docs/languages-voices-capabilities.md`: summary of shipped locale and voice
   capabilities; `VoiceRegistry.kt` is the executable locale source of truth.
 - `docs/repository-audit.md`: test commands and repository validation notes.
 
-The native APK library is built from `openevv` plus the JNI bridge. Chinese
-Simplified uses the generated oracle bank. See the root README and the native
-bridge documentation for runtime details.
+The native APK library is built from `openevv` plus the JNI bridge. See the
+root README and the native bridge documentation for runtime details.
 
 ## Pull requests
 

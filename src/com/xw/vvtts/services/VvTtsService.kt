@@ -18,8 +18,6 @@ import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.engine.VoiceRegistry
 import com.xw.vvtts.utils.MirroredPreferences
 import com.xw.vvtts.utils.EmojiExpander
-import com.xw.vvtts.utils.EmojiExpanderZhHans
-import com.xw.vvtts.utils.EmojiExpanderZhHant
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.NgramScorer
 import com.xw.vvtts.utils.VoiceConfig
@@ -30,9 +28,9 @@ import java.util.Locale
 
 /**
  * Eloquence TTS service (openevv port, single engine).
- * 14 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
- * de-DE/fr-FR/fr-CA/es-ES/es-US/es-MX/it-IT/ja-JP/pl-PL/pt-BR/fi-FI/zh-CN,
- * matching the voices advertised in onGetVoices().ko is not linked here.
+ * 10 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
+ * de-DE/fr-FR/fr-CA/es-ES/es-MX/it-IT/ja-JP/pl-PL,
+ * matching the voices advertised in onGetVoices().
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
@@ -53,7 +51,7 @@ class VvTtsService : TextToSpeechService() {
     // Settings are mirrored once at startup and re-read only when something
         // actually changed. Cross-process UI edits are caught via the shared_prefs dir mtime. Re-reading per
         // utterance re-built VoiceConfig and VoiceProfile and re-applied language state,
-        // which could drop a per-utterance zh pin on EVERY TalkBack swipe; the
+        // which could drop a per-utterance voice pin on EVERY TalkBack swipe; the
         // dirty gate removes that whole per-swipe cost.
     @Volatile private var settingsDirty = true
     private val registeredPrefs = mutableSetOf<SharedPreferences>()
@@ -63,7 +61,7 @@ class VvTtsService : TextToSpeechService() {
 
     // refreshSettings() re-reads three prefs files: voice config, voice profile,
     // language state. Re-reading them on every swipe costs CPUand the
-    // language-state re-apply can drop a per-utterance zh pin, so register
+    // language-state re-apply can drop a per-utterance voice pin, so register
     // dirty listeners on all three from both the device-protected storage and
     // the credential store, so any UI edit marks settings dirty exactly once.
 
@@ -318,13 +316,10 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return when (c) { "US", "USA" -> "es-US"; "MX", "MEX" -> "es-MX"; else -> "es-ES" }
+        if (lang.startsWith("es")) return if (c == "MX" || c == "MEX") "es-MX" else "es-ES"
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
-        if (lang.startsWith("pt")) return "pt-BR"
-        if (lang.startsWith("fi")) return "fi-FI"
-        if (lang.startsWith("zh")) return "zh-CN"
         return "en-US"
         }
     }
@@ -338,7 +333,7 @@ class VvTtsService : TextToSpeechService() {
         return voiceSafe(emptyList()) {
             // #18: catalog derives from the single voice registry — every advertised voice
             // is by constructiona shipped native dialect (no advertise-only entries —the
-            // pt-BR/fi-FI/zh-CN mismatch class is impossible here(.
+            // unshipped-dialect mismatch class is impossible here(.
             // Features are non-null (emptySet()* because Voice.parceling converts features
             // to ArrayList,and null features have been observed corrupting the binder reply
             // on Android 15+ (Settings/TalkBack die decodinga poisoned parcel:
@@ -365,7 +360,6 @@ class VvTtsService : TextToSpeechService() {
 
 
         val supported = CAPABLE_VOICES.any { it.locale.language.equals(lang, ignoreCase = true) }
-        if (lang.startsWith("zh") && (country.equals("TW", ignoreCase = true) || country.equals("TWN", ignoreCase = true))) return TextToSpeech.LANG_NOT_SUPPORTED
         if (!supported) return TextToSpeech.LANG_NOT_SUPPORTED
 
         // has country/variant -> COUNTRY_VAR_AVAILABLE; language only -> AVAILABLE
@@ -501,10 +495,6 @@ class VvTtsService : TextToSpeechService() {
                 }
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
-
-        // A zh picker row iso honored per-utterance (and reverted in finally):the
-                // engine speaks zh via its oracle bank, so a zh voice must be pinned for
-                // that utterance;the app's own detection/default stays untouched
 synchronized(synthesisLock) {
         refreshSettings()
         synchronized(LanguageDetector.stateLock) {
@@ -512,41 +502,19 @@ synchronized(synthesisLock) {
         val savedFixed = LanguageDetector.getFixedDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
-        // A zh voice from the *system picker* always pins zh (explicit user
-        // choice(;the app's own "Voice" row only pins zh when detection is OFF
-        // with Auto ON the spoken-voice locale must follow the detected text,
         // #159: no stale per-utterance language pin from a previous run may leak into
         // this utterance's detection (a crash path can skip the finally).
         LanguageDetector.setTransientEnabledLangs(null)
-        // otherwise choosing "Auto detect" after a zh voice pick would read
-        // every language as Chinese (the reported bug).
-        val autoDetect = LanguageDetector.isDetectionEnabled()
-        val zhRequested = (voiceName != null && voiceName.lowercase().startsWith("zh"))
-            || (voiceName.isNullOrBlank() && !autoDetect && appVoice != null && appVoice.lowercase().startsWith("zh"))
-        if (zhRequested) {
-
-            LanguageDetector.setDefaultLanguage(EloquenceEngine.DIALECT_ZH_CN)
-
-
-            LanguageDetector.setTransientEnabledLangs(LanguageDetector.getEnabledLanguages() + "zh")
-
-
-            LanguageDetector.setFixedDialect(EloquenceEngine.DIALECT_ZH_CN)
-
-
-        }
 
         // Pin user voice rows into base dialect (system picker first;else app row.
-        if (!zhRequested) {
-            val pv = voiceName ?: appVoice
+        val pv = voiceName ?: appVoice
 
-            if (pv != null) {
-                val pd = VoiceConfig.findLang(pv).eciDialect
+        if (pv != null) {
+            val pd = VoiceConfig.findLang(pv).eciDialect
 
-                if (pd != 0L) {
-                    LanguageDetector.setDefaultLanguage(pd.toInt())
-                    if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt())
-                }
+            if (pd != 0L) {
+                LanguageDetector.setDefaultLanguage(pd.toInt())
+                if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt())
             }
         }
 
@@ -625,7 +593,7 @@ synchronized(synthesisLock) {
             Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
         }
                 // CJK normalization (width + number + symbol readings) happens once,
-                // inside EloquenceEngine.preprocess for zh segments. Do not repeat it
+                // inside EloquenceEngine.preprocess for Japanese segments. Do not repeat it
                 // here: a second pass after symbols were expanded defeats the
                 // date/time boundary detection (2024-03-15 -> mangled readings).
                 // Synthesize long segments into small, sentence-aware pieces: each
@@ -642,11 +610,7 @@ synchronized(synthesisLock) {
                         break
                     }
                     var textToSynth: String = chunkText
-                    val expanded = when (seg.dialect) {
-                        LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(chunkText)
-                        LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(chunkText)
-                        else -> EmojiExpander.expand(chunkText)
-                    }
+                    val expanded = EmojiExpander.expand(chunkText)
                     if (expanded != null && expanded.isNotEmpty()) {
                         textToSynth = expanded
                     }
@@ -822,7 +786,6 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         private fun restoreLanguageSettings(prefs: MirroredPreferences) {
             LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
             LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-            LanguageDetector.setChineseDialect(prefs.getInt("chinese_dialect", LanguageDetector.DIALECT_ZH_CN))
             LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
             LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
             LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))

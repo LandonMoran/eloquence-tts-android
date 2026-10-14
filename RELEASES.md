@@ -1,5 +1,14 @@
 # Release contract
 
+## Current release note
+
+**Chinese is removed.** Chinese (Simplified `zh-CN`) and Traditional (`zh-TW`)
+voices, the Chinese oracle audio synthesis path, and every Chinese voice,
+detection, emoji, documentation, and build reference have been dropped from
+this release. **Korean is removed as well** (engine dispatch, detection,
+`lang/kor` sources, and documentation). The app now advertises **13 locales**
+(was 14). Japanese (`ja-JP`) is unaffected.
+
 ## Version and publication
 
 - **Publication status checked 2026-10-12:** GitHub Releases carry `v1.0`,

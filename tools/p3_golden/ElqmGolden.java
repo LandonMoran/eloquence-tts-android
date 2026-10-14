@@ -11,17 +11,16 @@ public class ElqmGolden {
     public static void main(String[] args) throws Exception {
         LanguageDetector d = LanguageDetectorBuilder
                 .fromLanguages(
-                        Language.ENGLISH, Language.GERMAN, Language.SPANISH, Language.FINNISH,
-                        Language.FRENCH, Language.ITALIAN, Language.JAPANESE, Language.KOREAN,
-                        Language.PORTUGUESE, Language.CHINESE)
+                        Language.ENGLISH, Language.GERMAN, Language.SPANISH,
+                        Language.FRENCH, Language.ITALIAN, Language.POLISH)
                 .withPreloadedLanguageModels()
                 .build();
         String[] probes = {
                 "The quick brown fox jumps over the lazy dog",
                 "Das ist ein wunderbarer sonniger Tag in Berlin",
-                "Tama on kaunis kesapaiva ja linnut laulavat",
+                "Hola, esto es una prueba de síntesis de voz.",
                 "kino wa tomodachi to eiga o mimashita",
-                "jintian tianqi hen hao, women qu gongyuan sanbu ba",
+                "To jest test syntezy mowy.",
                 "This is a test sentence with some German mixed in: das Haus is beautiful",
                 "12345 !@#$%^&*()",
                 "emoji only"

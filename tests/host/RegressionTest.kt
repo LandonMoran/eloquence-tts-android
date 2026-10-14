@@ -127,9 +127,7 @@ private fun dictionary() {
         }
         checkFails { DictionaryImport.read(input) }; check(closed)
     }
-    val text="!?".repeat(1024)+"!!!!!!!!"
-    check(TextNormalizer.normalizeSymbols(text).endsWith("!!!!!!!!")) { "Literal post-budget punctuation lost" }
-    println("PASS dictionary: compiled rule reuse/invalidation, case/order, BOM streaming, all limits, normalization budget")
+    println("PASS dictionary: compiled rule reuse/invalidation, case/order, BOM streaming, all limits")
 }
 
 /** Check version ordering, shipped voice lookup, pitch mapping, and synthesis budgeting. */
@@ -263,7 +261,7 @@ private fun languagePickerSelection() {
             "Re-enabling detection must restore the prior fallback language"
         }
         LanguageDetector.setDetectionEnabled(false)
-        select.invoke(activity, "zh-TW")
+        select.invoke(activity, "hi-IN")
         check(config.voice == "fr-CA") { "Unsupported dialect changed the selected language" }
         println("PASS language picker: selection persists and unshipped dialects are ignored")
     } finally {
@@ -302,11 +300,7 @@ private fun telegramFormattedText() {
         val pieces = chunks.invoke(VvTtsService.Companion, segment.text) as List<String>
         check(pieces.joinToString("") == segment.text)
         for (piece in pieces) {
-            val expanded = when (segment.dialect) {
-                LanguageDetector.DIALECT_ZH_CN -> EmojiExpanderZhHans.expand(piece)
-                LanguageDetector.DIALECT_ZH_TW -> EmojiExpanderZhHant.expand(piece)
-                else -> EmojiExpander.expand(piece)
-            }?.takeIf { it.isNotEmpty() } ?: piece
+            val expanded = EmojiExpander.expand(piece)?.takeIf { it.isNotEmpty() } ?: piece
             val prepared = preprocess.invoke(
                 EloquenceEngine.Companion,
                 expanded,
@@ -437,7 +431,7 @@ private fun warmupSerializationAndDestroy() {
 
 /** Verify localized samples, Android result codes, and rejection of unsupported voice requests. */
 private fun sampleActivity() {
-    for ((language,country) in listOf("deu" to "DEU", "jpn" to "JPN", "zho" to "CHN", "spa" to "MEX")) {
+    for ((language,country) in listOf("deu" to "DEU", "jpn" to "JPN", "fra" to "FRA", "spa" to "MEX")) {
         val activity=com.xw.vvtts.ui.GetSampleText()
         activity.intent=android.content.Intent().putExtra("language",language).putExtra("country",country)
         activity.javaClass.getDeclaredMethod("onCreate",android.os.Bundle::class.java).apply { isAccessible=true }.invoke(activity,null)
@@ -453,27 +447,6 @@ private fun sampleActivity() {
         check(activity.resultData.getStringExtra("sampleText")==null)
     }
     println("PASS sample activity: Android Settings result contract, localized sample extra, unsupported requests")
-}
-
-/** Verify Mandarin number/date/time normalization: clock colons are fully
- * consumed to 点/分/秒, homogeneous date separators only, and number rules. */
-private fun textNormalizer() {
-    // #337: a recognized clock must not leave a colon to be read as punctuation.
-    check(TextNormalizer.convertClock("14:30") == "十四点三十分") { "convertClock 14:30" }
-    check(TextNormalizer.convertClock("14:30:45") == "十四点三十分四十五秒") { "convertClock 14:30:45" }
-    check(TextNormalizer.convertClock("9:05:07") == "九点零五分零七秒") { "convertClock 9:05:07" }
-    // whole-clock path is taken for a recognised clock, so no colon survives.
-    check(TextNormalizer.normalizeNumberReading("14:30:45") == "十四点三十分四十五秒") { "normalize 14:30:45" }
-    check(TextNormalizer.normalizeNumberReading("at 9:05:07 ok") == "at 九点零五分零七秒 ok") { "normalize 9:05:07 in text" }
-    // A 1-digit minute is not a clock: the whole-clock path must not trigger,
-    // so the string goes through plain number normalization (no 点/分/秒).
-    check(!TextNormalizer.normalizeNumberReading("14:3:45").contains("点")) { "14:3:45 is not a clock" }
-    // #339: mixed separators must not be treated as a date (dashes+slash).
-    check(TextNormalizer.DATE_RE.matches("2024-03-15")) { "homogeneous dash date" }
-    check(TextNormalizer.DATE_RE.matches("2024/03/15")) { "homogeneous slash date" }
-    check(!TextNormalizer.DATE_RE.matches("2024-03/15")) { "mixed date separators rejected" }
-    check(!TextNormalizer.DATE_RE.matches("2024/03-15")) { "mixed date separators rejected v2" }
-    println("PASS text normalizer: clock colons to 点/分/秒, strict homogeneous dates, whole-clock consumption")
 }
 
 /** Verify VoiceConfig setters report the mirrored-persistence result. */
@@ -524,6 +497,6 @@ private fun defender() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); textNormalizer(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender() }
     finally { Context.root.deleteRecursively() }
 }

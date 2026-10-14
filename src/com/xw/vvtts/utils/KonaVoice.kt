@@ -20,8 +20,6 @@ class KonaVoice {
     class Voice(
         /** English voice name */
         val name: String,
-        /** Chinese voice name */
-        val nameCn: String,
         /** the Apple CSV's eciVoiceNumber(used for switching) */
         val eciVoiceNumber: Int,
         val gender: Int,
@@ -58,21 +56,21 @@ class KonaVoice {
         *  gender comes straight from the CSV's vocalTract field(0=male, 1=female);this is what keeps female voices from sounding "manly". */
         val VOICES = arrayOf(
             // 1 Reed(vocalTract=0 male)
-            Voice("Reed", "Reed", 1, 0, 50, 65, 30, 0, 0, 50, 92, 0),
+            Voice("Reed", 1, 0, 50, 65, 30, 0, 0, 50, 92, 0),
             // 2 Shelley(vocalTract=1 female)
-            Voice("Shelley", "Shelley", 2, 1, 50, 81, 30, 0, 50, 50, 95, 1),
+            Voice("Shelley", 2, 1, 50, 81, 30, 0, 50, 50, 95, 1),
             // 3 Sandy(vocalTract=1 female)
-            Voice("Sandy", "Sandy", 3, 1, 22, 93, 30, 0, 50, 50, 95, 1),
+            Voice("Sandy", 3, 1, 22, 93, 30, 0, 50, 50, 95, 1),
             // 4 Rocko(vocalTract=0 male)
-            Voice("Rocko", "Rocko", 4, 0, 86, 56, 47, 0, 0, 50, 93, 0),
+            Voice("Rocko", 4, 0, 86, 56, 47, 0, 0, 50, 93, 0),
             // 5 Flo(vocalTract=1 female)
-            Voice("Flo", "Flo", 6, 1, 56, 89, 35, 0, 40, 50, 95, 1),
+            Voice("Flo", 6, 1, 56, 89, 35, 0, 40, 50, 95, 1),
             // 6 Grandma(vocalTract=1 female)
-            Voice("Grandma", "Grandma", 7, 1, 45, 68, 30, 3, 40, 50, 90, 1),
+            Voice("Grandma", 7, 1, 45, 68, 30, 3, 40, 50, 90, 1),
             // 7 Grandpa(vocalTract=0 male)
-            Voice("Grandpa", "Grandpa", 8, 0, 30, 61, 44, 18, 20, 50, 90, 0),
+            Voice("Grandpa", 8, 0, 30, 61, 44, 18, 20, 50, 90, 0),
             // 8 Eddy(vocalTract=0 male)
-            Voice("Eddy", "Eddy", 9, 0, 50, 69, 34, 0, 0, 50, 92, 0),
+            Voice("Eddy", 9, 0, 50, 69, 34, 0, 0, 50, 92, 0),
         )
 
         /** UI preset number 1-8 -> voice */

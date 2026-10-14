@@ -159,24 +159,18 @@ class VoiceConfig(private val context: Context) {
 
         // eciDialect values: measured from each language module's registered constant
         // (lang/*/eci_ini_*.c *_eci_library_lang); one-to-one with build_native.sh LANGS
-        // 0 = language not linked here (ko/zh-TW have no module; zh-CN IS linked via oracle)
+        // 0 = language not linked here
         val LANGS = arrayOf(
             Lang("en-US", "English (US)", 0, 0x10000L),
             Lang("en-GB", "English (UK)", 1, 0x10001L),
             Lang("es-ES", "Spanish (Spain)", 2, 0x20000L),
-            Lang("es-US", "Spanish (US)", -1, 0x20001L), // esus module
-            Lang("es-MX", "Spanish (Mexico)", 3, 0x20002L), // esmx module
+            Lang("es-MX", "Spanish (Mexico)", 3, 0x20001L),
             Lang("fr-FR", "French (France)", 4, 0x30000L),
             Lang("fr-CA", "French (Canada)", 5, 0x30001L),
             Lang("de-DE", "German", 6, 0x40000L),
             Lang("it-IT", "Italian", 7, 0x50000L),
-            Lang("pt-BR", "Portuguese (Brazil)", 8, 0x70000L),
-            Lang("fi-FI", "Finnish", 9, 0x90000L),
-            Lang("ja-JP", "Japanese", 10, 0x80000L),
-            Lang("pl-PL", "Polish", -1, 0x110000L), // plpl module
-            Lang("ko-KR", "Korean", 11, 0L), // not linked
-            Lang("zh-CN", "Chinese (Mandarin)", 12, 0x60000L), // linked: oracle synth path
-            Lang("zh-TW", "Chinese (Taiwan)", 13, 0x60001L), // not linked
+            Lang("ja-JP", "Japanese", 8, 0x80000L),
+            Lang("pl-PL", "Polish", 9, 0x110000L), // plpl module
         )
 
         fun findLang(code: String?): Lang {

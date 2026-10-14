@@ -385,6 +385,12 @@ $(BUILD)/$(SONAME): lib/eci_api.c $(OBJECTSPIC) $(RULESTAMP)
 sotest: $(BUILD)/libecitest
 	@cd $(BUILD) && EVV_ECI_LIB=./libeci$(LIBSUF).so ./libecitest -o sotest.wav \
 	   "Hello. This is OpenEVV speaking."
+	@cd $(BUILD) && for e in live unload; do \
+	   EVV_ECI_LIB=./libeci$(LIBSUF).so timeout 60 ./libecitest -e $$e \
+	     -o sotest-$$e.wav "Hello. This is OpenEVV speaking." || exit 1; \
+	   cmp -s sotest.wav sotest-$$e.wav \
+	     || { echo "sotest: ending with -e $$e changed what it said"; exit 1; }; \
+	 done
 
 $(BUILD)/libecitest: test/lib/dll.c $(BUILD)/$(SONAME)
 	@$(CC) $(OPT) -std=gnu99 test/lib/dll.c -ldl -o $@
@@ -1213,9 +1219,11 @@ OBJDIRWIN  := $(BUILD)/objwin-$(RULES)/$(subst $(space),-,$(TAGS))
 
 CFLAGSWIN  := $(OPT) $(ALIAS) -std=gnu99 $(INCS) $(WARN) -DEVV_ARENA=1 \
               $(TRIM) $(ROMDEFS) $(CFLAGS)
-# Static, so what ships is one file. MINGW64_LDFLAGS is where the cross gcc's
-# thread runtime is; the flake sets it, since nothing puts it on the link path
-# outside a real cross stdenv.
+# Static, so what ships is one file. MINGW64_LDFLAGS, and MINGW_LDFLAGS for
+# thirty-two bits, are for a cross gcc whose thread runtime is a library of its
+# own, as nixpkgs' default mcfgthreads is: outside a real cross stdenv nothing
+# puts it on the link path. The flake's compilers use gcc's own win32 threads,
+# as the releases' do, and need neither.
 LDFLAGSWIN := -static $(MINGW64_LDFLAGS)
 
 # The same list for Windows, and RULECODE is named here for the same reason
@@ -1280,9 +1288,16 @@ $(BUILD)/eci.dll: lib/eci_api.c $(OBJDIRWIN)/eci.res $(BUILD)/libevv-win$(SUF).a
 	@cp lib/eci.ini $(BUILD)/eci.ini
 	@echo "built $@"
 
+# What Windows shows as the library's version: the release workflow names
+# the tag, and anything else is 0.0.0.
+EVV_VERSION ?= 0.0.0
+RCVERSION := $(subst ., ,$(EVV_VERSION)) 0 0 0
+RCDEFS    := -DEVV_MAJOR=$(word 1,$(RCVERSION)) -DEVV_MINOR=$(word 2,$(RCVERSION)) \
+             -DEVV_PATCH=$(word 3,$(RCVERSION))
+
 $(OBJDIRWIN)/eci.res: lib/eci.rc
 	@mkdir -p $(OBJDIRWIN)
-	@$(WINDRES) -I lib lib/eci.rc -O coff -o $@
+	@$(WINDRES) $(RCDEFS) -I lib lib/eci.rc -O coff -o $@
 
 # Speaks through the library rather than against the engine, by name, the way
 # an add-on does. `test/hash.sh build/dlltest.exe' then holds what comes out of
@@ -1347,7 +1362,7 @@ $(BUILD)/evv32.exe: cli/evv.c $(BUILD)/libevv-win32$(SUF).a $(RULESTAMP)
 
 $(OBJDIRWIN32)/eci.res: lib/eci.rc
 	@mkdir -p $(OBJDIRWIN32)
-	@$(WINDRES32) -I lib lib/eci.rc -O coff -o $@
+	@$(WINDRES32) $(RCDEFS) -I lib lib/eci.rc -O coff -o $@
 
 $(OBJDIRWIN32)/%.o: %.c $(HEADERS)
 	@mkdir -p $(OBJDIRWIN32)

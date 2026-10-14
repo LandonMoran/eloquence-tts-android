@@ -22,11 +22,10 @@ are statically linked into one `libvvtts_core.so` for each packaged ABI.
   generation and late results are discarded. A session that cannot settle is
   retired rather than having its buffers reused.
 - Text input is limited to 16 KiB. Buffered engine audio is limited to
-  60 seconds at the native sample rate. Oracle clips are checked before
-  allocation.
-- The 14 shipped locales must match `VoiceRegistry.kt`; `tests/contracts.py`
-  checks parity. Traditional Chinese and Korean are not advertised by this
-  Android build.
+  60 seconds at the native sample rate.
+- The 13 shipped locales must match `VoiceRegistry.kt`; `tests/contracts.py`
+  checks parity. Korean is removed from this build (dispatch, detection, and
+  engine `lang/kor` sources).
 
 ## Build and verification
 
@@ -43,6 +42,6 @@ bash tests/native/run.sh
 
 This test uses JDK headers, GCC, AddressSanitizer, and
 UndefinedBehaviorSanitizer to exercise JNI admission, cancellation, buffer
-ownership, bounded oracle allocation, and compatibility failure propagation.
+ownership, and compatibility failure propagation.
 Device listening and rapid TalkBack stop/restart remain device-level release
 checks.
