@@ -263,7 +263,9 @@ class SettingsActivity : Activity() {
         // no-op on older versions where the permission is a normal-time grant.
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED) {
+            PackageManager.PERMISSION_GRANTED &&
+            !UpdateNotifPrefs.hasAskedNotifPermission(this)) {
+            UpdateNotifPrefs.markNotifPermissionAsked(this)
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_POST_NOTIF)
         }
 
@@ -550,6 +552,9 @@ class SettingsActivity : Activity() {
         tv.setPadding(0, dp(2), 0, dp(2))
         val sw = Switch(this)
         sw.isChecked = checked
+        // TalkBack cannot infer which switch is which from the adjacent label,
+        // so set the switch's own content description for a clear announcement.
+        sw.contentDescription = label
         sw.setOnCheckedChangeListener {  _,on -> onToggle(on) }
         row.addView(tv)
         row.addView(sw)

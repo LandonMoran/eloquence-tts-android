@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -38,9 +40,15 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+        if (!UpdateNotifPrefs.isEnabled(applicationContext)) return
         val data = message.data ?: return
         if (data["type"] != "release") return
         val version = data["version"] ?: return
+        // Defense-in-depth against a drifted dev-topic subscription: if the
+        // user has prereleases off, drop it even if one somehow arrived.
+        val from = message.from ?: ""
+        val isPrerelease = from.endsWith("_dev")
+        if (isPrerelease && !UpdateNotifPrefs.usesPrereleases(applicationContext)) return
         postUpdateNotification(version)
     }
 
@@ -70,10 +78,14 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
         } catch (security: SecurityException) {
             // POST_NOTIFICATIONS revoked since backgrounding the dialog;
             // fall back to a Toast rather than crash the receive callback.
+            // FCM dispatches on a work thread; Toasts must run on the main
+            // thread, so hop to the main Looper before showing.
             val fallback = "${
                 getString(R.string.update_notification_title)
             }: $version"
-            Toast.makeText(this, fallback, Toast.LENGTH_LONG).show()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, fallback, Toast.LENGTH_LONG).show()
+            }
         }
     }
 

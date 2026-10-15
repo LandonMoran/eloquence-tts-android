@@ -57,9 +57,9 @@ free Firebase Crashlytics crash analytics.
 
 ## Known behavior note
 
-- language-models pack: legacy zipped models.elqm at the APK root under
-  /language-models/; AGP places assets under assets/. The app reads it via
-  ElqmBridge getResourceAsStream("/language-models/...") which on Android
-  resolves against the assets dir, so the pack is shipped at
-  assets/language-models/ and excludes the JSON inputs + generator stamp.
-  Runtime lookup behavior is preserved.
+- language-models pack: legacy zipped models.elqm. The dex classloader's
+  `getResourceAsStream("/language-models/...")` resolves against the runtime
+  classpath, so the pack is packaged under `assets/language-models/` (wired via
+  `assets.srcDirs = ['assets', 'language-models']` in build.gradle) where the
+  classloader finds it; the JSON inputs + generator stamp are excluded from the
+  APK. Runtime lookup behavior is preserved from the pre-Gradle build.sh path.
