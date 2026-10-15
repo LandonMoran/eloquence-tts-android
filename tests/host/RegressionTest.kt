@@ -494,6 +494,22 @@ private fun defender() {
     println("PASS defender: pre-allocation line bound, shipped corpus, combining marks, case and locale")
 }
 
+/** Verify telemetry consent defaults off, persists, and is a safe no-op to apply. */
+private fun telemetryConsent() {
+    val context = Context()
+    // Defaults OFF so nothing uploads until the user opts in.
+    check(!TelemetryPrefs.isEnabled(context)) { "telemetry must default OFF" }
+    // Applying consent in either state is a safe no-op on the host.
+    Telemetry.apply(context)
+    // Consent persists through the mirrored prefs store.
+    TelemetryPrefs.setEnabled(context, true)
+    check(TelemetryPrefs.isEnabled(context)) { "telemetry consent did not persist ON" }
+    Telemetry.apply(context)
+    TelemetryPrefs.setEnabled(context, false)
+    check(!TelemetryPrefs.isEnabled(context)) { "telemetry consent did not persist OFF" }
+    println("PASS telemetryConsent: default off, persists, apply() safe no-op")
+}
+
 /** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */
 private fun crashInit() {
     val context = Context()
@@ -516,6 +532,6 @@ private fun crashInit() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender(); crashInit() }
+    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); defender(); crashInit(); telemetryConsent() }
     finally { Context.root.deleteRecursively() }
 }

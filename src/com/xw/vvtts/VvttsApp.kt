@@ -2,6 +2,7 @@ package com.xw.vvtts
 
 import android.app.Application
 import com.xw.vvtts.utils.CrashlyticsFx
+import com.xw.vvtts.utils.Telemetry
 
 /**
  * Application entry point.
@@ -23,5 +24,6 @@ class VvttsApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashlyticsFx.initProcess(this)
+        Telemetry.apply(this)
     }
 }
