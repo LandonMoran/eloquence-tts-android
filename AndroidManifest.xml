@@ -22,6 +22,12 @@
         android:extractNativeLibs="true"
         android:theme="@style/Theme.Vvtts">
 
+        <!-- Privacy: GA4/Performance data collection is OFF by default. Nothing
+             is uploaded until a user-facing telemetry opt-in enables it. -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+
         <!-- directBootAware: the engine can start and speak on the lock screen
              ( before first unlock(. Settings are mirrored to device-protected storage
              by the service each time it starts unlocked; the first-ever locked start
