@@ -3,13 +3,17 @@ package com.xw.vvtts.utils
 import android.content.Context
 
 /**
- * Consent state for all Firebase telemetry (Crashlytics crash reports, GA4
- * analytics, Firebase Performance Monitoring).
+ * Consent state for the marker-opt-in Firebase telemetry: GA4 analytics and
+ * Firebase Performance Monitoring.
  *
- * Defaults to OFF so nothing is uploaded until the user opts in via the
- * Settings toggle — matching the disclosure in AndroidManifest.xml
- * ("no telemetry uploads until a user-facing opt-in enables it") and the
- * product posture of collecting only minimal, actionable diagnostics.
+ * Defaults to OFF so neither analytics nor performance data is uploaded until
+ * the user opts in via the Settings > Share diagnostics toggle, matching the
+ * AndroidManifest.xml disclosure.
+ *
+ * Crashlytics crash reporting is intentionally NOT governed by this flag — it
+ * is always on (the app's primary diagnostics surface, incl. native engine
+ * crashes from the :tts process) and never collects speech text. See
+ * [CrashlyticsFx] and the Settings note.
  *
  * Stored in ordinary SharedPreferences (via [MirroredPreferences]) so the value
  * is readable both in the main process and the isolated ":tts" engine process.
