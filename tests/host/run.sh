@@ -10,6 +10,9 @@ trap 'rm -rf "$test_out"' EXIT
 mkdir -p "$test_out/production" "$test_out/stubs" "$test_out/tests"
 python3 tests/host/generate_r.py "$test_out/R.java"
 javac -d "$test_out/production" "$test_out/R.java"
+mapfile -d '' -t firebase_stubs < <(find tests/host/firebase-stubs -name '*.java' -print0)
+test "${#firebase_stubs[@]}" -gt 0
+javac -cp "$ANDROID_JAR" -d "$test_out/production" "${firebase_stubs[@]}"
 libs="$(echo libs/*.jar | tr ' ' ':')"
 # GitHub runners do not guarantee ripgrep. Preserve filenames and fail if no sources exist.
 mapfile -d '' -t kotlin_sources < <(find src -name '*.kt' -print0)
