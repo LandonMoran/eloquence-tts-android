@@ -17,6 +17,7 @@
         android:protectionLevel="signature" />
 
     <application
+        android:name=".VvttsApp"
         android:label="@string/app_name"
         android:largeHeap="true"
         android:extractNativeLibs="true"
