@@ -42,6 +42,9 @@ class SettingsActivity : Activity() {
     companion object {
         const val EXTRA_OPEN_UPDATE_DIALOG = "com.xw.vvtts.EXTRA_OPEN_UPDATE_DIALOG"
         private const val REQ_POST_NOTIF = 4073
+        private var processEngine: EloquenceEngine? = null
+        private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
+        private const val PREFS_NAME = "vvtts_lang_settings"
     }
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
@@ -1140,10 +1143,5 @@ class SettingsActivity : Activity() {
             .setMessage(getString(R.string.about_body_fmt, version))
             .setPositiveButton(getString(R.string.ok), null)
             .show()
-    }
-    companion object {
-    private var processEngine: EloquenceEngine? = null
-        private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
-    private const val PREFS_NAME = "vvtts_lang_settings"
     }
 }
