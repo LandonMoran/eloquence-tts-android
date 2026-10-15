@@ -1,0 +1,171 @@
+import org.gradle.api.tasks.Exec
+
+plugins {
+    id 'com.android.application' version '8.9.2'
+    id 'org.jetbrains.kotlin.android' version '1.9.25'
+    id 'com.google.gms.google-services' version '4.4.2'
+}
+
+android {
+    namespace 'com.xw.vvtts'
+    // Same platform/build-tools era as the legacy build.sh (android-34 jar, tools 35).
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'com.xw.vvtts'
+        versionCode 10
+        versionName '1.0.9'
+        minSdkVersion 28
+        targetSdkVersion 36
+    }
+
+    // Reproduce the legacy 4-way APK matrix (build.sh $ABI) with product flavors.
+    //   arm64  -> vvtts-arm64-v8a.apk
+    //   armv7  -> vvtts-armeabi-v7a.apk   (minSdk may drop to 25 via -PtestMinApi)
+    //   univ   -> vvtts-universal.apk     (both phone ABIs; x86_64 kept test-only)
+    //   x64    -> vvtts-test-x86_64.apk   (never shipped)
+    flavorDimensions 'abi'
+    productFlavors {
+        arm64 {
+            dimension 'abi'
+            ndk { abiFilters 'arm64-v8a' }
+        }
+        armv7 {
+            dimension 'abi'
+            ndk { abiFilters 'armeabi-v7a' }
+            // Test-only override (mirrors TEST_MIN_API in the old workflow).
+            def tma = rootProject.findProperty('testMinApi') ?: '28'
+            minSdkVersion tma.toInteger()
+        }
+        univ {
+            dimension 'abi'
+            ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+        }
+        x64 {
+            dimension 'abi'
+            ndk { abiFilters 'x86_64' }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Legacy build did no shrinking; keep identical for byte-fidelity.
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig = resolveReleaseSigning()
+        }
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            kotlin.srcDirs = ['src']
+            res.srcDirs = ['res']
+            // assets/ = crash-code defender corpus + ngram pack (legacy assets dir).
+            // The packed language model must sit under assets/ so the dex
+            // classloader's getResourceAsStream("/language-models/...") finds it
+            // on-device (mirrors the semantics the legacy root-zip relied on).
+            assets.srcDirs = ['assets', 'language-models']
+            // build_native.sh writes to native-libs/<abi>/; AGP packages those.
+            jniLibs.srcDirs = ['native-libs']
+        }
+    }
+
+    packagingOptions {
+        // Legacy language-models ships the packed .elqm only; drop the JSON
+        // source inputs + generator stamp from the APK (build.sh removed all
+        // *.json and marked the pack non-regenerable at runtime). Excludes are
+        // full APK entry paths (assets/ + jniLibs root namespace).
+        exclude 'assets/language-models/**/*.json'
+        exclude 'assets/language-models/**/*.sha256'
+        exclude 'META-INF/ELQM*'
+        exclude 'META-INF/*.version'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    lint {
+        abortOnError false
+    }
+
+    // Name produced APKs exactly like the legacy pipeline so downstream tools
+    // (audit_apk_abis.py, publish_release.py) keep working unchanged.
+    applicationVariants.all { variant ->
+        def abiKey = ''
+        if (variant.productFlavors[0].name == 'arm64') abiKey = 'arm64-v8a'
+        else if (variant.productFlavors[0].name == 'armv7') abiKey = 'armeabi-v7a'
+        else if (variant.productFlavors[0].name == 'univ') abiKey = 'universal'
+        else abiKey = 'test-x86_64'
+        // Legacy pipeline produced exactly these filenames (no buildType suffix);
+        // downstream tools audit_apk_abis.py / publish_release.py depend on them.
+        variant.outputs.all {
+            outputFileName = "vvtts-${abiKey}.apk"
+        }
+    }
+}
+
+// Legacy build.sh used an ephemeral CI key (or the release keystore on tags).
+// Gradle: debug builds use the debug keystore; release uses KEYSTORE/KS_PASS/
+// KEY_PASS env when present, else falls back to debug so untagged CI passes.
+def resolveReleaseSigning() {
+    if (System.getenv('KEYSTORE') && System.getenv('KS_PASS')) {
+        return signingConfigs.create('releaseEnv') {
+            storeFile file(System.getenv('KEYSTORE'))
+            storePassword System.getenv('KS_PASS')
+            keyAlias System.getenv('KEY_ALIAS') ?: 'vvttts'
+            keyPassword System.getenv('KEY_PASS') ?: System.getenv('KS_PASS')
+        }
+    }
+    return signingConfigs.debug
+}
+
+dependencies {
+    // Vendored jars, dexed exactly like the legacy build.sh (libs/*, minus the
+    // stdlib which the Kotlin plugin supplies to avoid duplicate classes).
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: ['kotlin-stdlib-1.9.25.jar'])
+    // Crashlytics runtime (free on Spark, no billing attached). Auto-initializes
+    // via ContentProvider injected from google-services.json; no Application
+    // subclass or manual init needed.
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-crashlytics'
+}
+
+// ---------------------------------------------------------------------------
+// Native + asset regeneration (mirror the pre-build steps of build.sh).
+// ---------------------------------------------------------------------------
+
+def testAbi = rootProject.findProperty('testMinApi') ?: '28'
+
+tasks.register('buildNative', Exec) {
+    group = 'build'
+    description = 'Cross-compile the openevv engine + JNI bridge via NDK (build_native.sh).'
+    def abis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+    commandLine 'bash', '-c', abis.collect { "ABI=$it bash build_native.sh" }.join(' && ')
+    outputs.upToDateWhen { false }
+}
+
+// Regenerate patched lingua-slim.jar + models.elqm when the generator/inputs
+// changed (prepare_assets.py is idempotent and writes only when stale).
+tasks.register('prepareAssets', Exec) {
+    group = 'build'
+    description = 'Regenerate patched lingua-slim and packed language model.'
+    commandLine 'python3', 'tools/prepare_assets.py'
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('preBuild') {
+    dependsOn tasks.named('buildNative'), tasks.named('prepareAssets')
+}

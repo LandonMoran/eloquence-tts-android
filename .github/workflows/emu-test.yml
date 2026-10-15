@@ -44,7 +44,7 @@ jobs:
           }
           export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          sdk "platform-tools" "platforms;android-34" "build-tools;35.0.0" "ndk;26.3.11579264"
+          sdk "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;26.3.11579264"
           sdk "emulator" "system-images;android-35;google_apis;x86_64"
           ls "$SDK/emulator/emulator" "$SDK/system-images/android-35/google_apis/x86_64"
 
@@ -92,21 +92,14 @@ jobs:
           manifest.write_text(text)
           PY
 
-      - name: Build native bridge (x86_64)
+      - name: Build APK (x86_64) via Gradle
         run: |
-          export ANDROID_SDK="$HOME/android-sdk" ABI="x86_64"
-          bash build_native.sh
-
-      - name: Build APK (x86_64)
-        run: |
-          export ANDROID_SDK="$HOME/android-sdk"
-          bash build.sh
-        env:
-          KEYSTORE: vvttts.jks
-          KS_PASS: ${{ env.KS_PASS }}
-          KEY_PASS: ${{ env.KEY_PASS }}
-          KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
-          ABI: x86_64
+          export ANDROID_SDK="$HOME/android-sdk" ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk"
+          # Gradle :buildNative cross-compiles the x86_64 bridge, then AGP assembles
+          # the test-only x86_64 flavor; rename to the artifact the test expects.
+          ./gradlew --no-daemon --no-build-cache :assembleX64Release \
+            -PtestMinApi=28
+          find build/outputs/apk -name 'vvtts-test-x86_64.apk' -exec cp -f {} ./vvtts_signed.apk \;
 
       - name: Boot emulator + run crash test ( test button path)
         uses: reactivecircus/android-emulator-runner@v2
