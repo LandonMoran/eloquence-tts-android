@@ -168,7 +168,14 @@ dependencies {
     // firebase-core must be enabled); custom synth-latency traces work without.
     // NOTE: auto-instrumentation attaches to the main process; the isolated
     // :tts engine process is not bytecode-instrumented.
-    implementation 'com.google.firebase:firebase-perf'
+    implementation ('com.google.firebase:firebase-perf') {
+        // The repo vendors its own okio (libs/okio.jar = 2.10.0) that Moshi
+        // depends on. firebase-perf pulls a transitive okio 1.15.0, which
+        // collides at :check*ReleaseDuplicateClasses -> duplicate okio.*
+        // classes across two jars. Vendored 2.10.0 is a strict superset
+        // (backward compat), so exclude the transitive copy and rely on it.
+        exclude group: 'com.squareup.okio'
+    }
 }
 
 // ---------------------------------------------------------------------------
