@@ -1,11 +1,11 @@
 #include <assert.h>
 #include <stdio.h>
 #include "../../jni/eci_compat.c"
-static int stop_result, delete_result, callback_refused;
+static int stop_result, callback_refused;
 /** Return the configured stop result for compatibility-wrapper tests. */
 int eo_stop(OldInst *h) { return stop_result; }
-/** Return the configured deletion result without freeing the stack fixture. */
-int es_delete_checked(OldInst *h) { return delete_result; }
+/** Upstream es_delete always releases; the wrapper returns NULL (deleted) after it. */
+int es_delete(OldInst *h) { (void)h; return 0; }
 /** Store callback fields unless the fixture is configured to refuse registration. */
 void eo_registerCallback(OldInst *h,void *cb,void *data) { if (!callback_refused) { h->callback=cb; h->cbdata=data; } }
 /** Encode voice and parameter IDs into a result to verify accessor delegation. */
@@ -18,7 +18,7 @@ static int callback(ECIHand h,ECIMessage m,int p,void *d) { return 0; }
 int main(void) {
     OldInst h={0};
     stop_result=0; assert(eciStop(&h)==0); stop_result=1; assert(eciStop(&h)==1);
-    delete_result=0; assert(eciDelete(&h)==&h); delete_result=1; assert(eciDelete(&h)==NULL);
+    assert(eciDelete(&h)==NULL); /* upstream always deletes: handle is gone */
     callback_refused=1; assert(!vv_register_callback(&h,callback,&h));
     callback_refused=0; assert(vv_register_callback(&h,callback,&h));
     assert(eciGetVoiceParam(&h,16,2)==162);

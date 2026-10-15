@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Crashlytics is included as a runtime dependency only (no Crashlytics Gradle
+      plugin — we stay on the free Spark plan with zero billing surface). Without
+      the plugin there is no generated build ID, which would make the SDK throw
+      "build ID is missing" and crash at FirebaseInitProvider startup on EVERY launch.
+
+      Setting this bool resource to false is Firebase's documented way to run the
+      runtime SDK without the Gradle plugin's build-ID generation. Crashlytics still
+      records and reports crashes; it simply skips the build-ID validation step.
+    -->
+    <bool name="com.crashlytics.RequireBuildId">false</bool>
+</resources>
