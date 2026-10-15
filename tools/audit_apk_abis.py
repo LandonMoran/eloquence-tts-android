@@ -22,9 +22,26 @@ def audit(path):
         libraries = {entry.filename for entry in native_entries}
         if len(libraries) != len(native_entries):
             raise ValueError(f"{path.name}: duplicate native library ZIP entries")
-        wanted = {f"lib/{abi}/libvvtts_core.so" for abi in expected}
-        if libraries != wanted:
-            raise ValueError(f"{path.name}: expected {sorted(wanted)}, found {sorted(libraries)}")
+        required = {f"lib/{abi}/libvvtts_core.so" for abi in expected}
+        # firebase-crashlytics-ndk ships its own per-ABI .so (trampoline,
+        # handler, common) that lands alongside libvvtts_core.so in every ABI.
+        # They are legitimate runtime crash-capture artifacts — present, never
+        # empty — and must not trip the unexpected-library guard below.
+        allowed_crashlytics = {
+            "libcrashlytics-common.so",
+            "libcrashlytics-handler.so",
+            "libcrashlytics-trampoline.so",
+            "libcrashlytics.so",
+        }
+        if not required.issubset(libraries):
+            raise ValueError(f"{path.name}: missing required {sorted(required)}, found {sorted(libraries)}")
+        unexpected = {
+            lib for lib in libraries
+            if lib not in required
+            and not any(lib.endswith(w) for w in allowed_crashlytics)
+        }
+        if unexpected:
+            raise ValueError(f"{path.name}: unexpected native libraries {sorted(unexpected)}")
         if any(apk.getinfo(name).file_size == 0 for name in libraries):
             raise ValueError(f"{path.name}: empty native library")
     print(f"PASS {path.name}: {', '.join(sorted(expected))}")
