@@ -19,9 +19,10 @@ import com.xw.vvtts.ui.SettingsActivity
  * Firebase Cloud Messaging and surfaces them as a high-importance update dialog.
  *
  * The server sends a data-only message to topic `eloquence_updates` (stable
- * releases) or `eloquence_updates_dev` (pre-releases). We subscribe to both so
- * a device always receives what applies to its installed channel; a pre-release
- * push simply never arrives unless one is published.
+ * releases) or `eloquence_updates_dev` (pre-releases). Subscriptions are managed
+ * by [syncFcmTopics] based on the user's toggle preferences (see FcmTopicSync):
+ * stable is subscribed when notifications are enabled; the prerelease topic only
+ * when the user has opted in. Nothing is subscribed when notifications are off.
  *
  * Tap does not open a web page — it opens SettingsActivity, which forwards the
  * same EXTRA to UpdateActions.showCheckDialog so the system notification leads
@@ -29,23 +30,10 @@ import com.xw.vvtts.ui.SettingsActivity
  */
 class FcmUpdateReceiver : FirebaseMessagingService() {
 
-    /** Android ignores unknown topics; subscribe so pushes can route to us. */
+    /** Android ignores unknown topics; re-assert our preferred subscriptions. */
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        val topics = listOf(TOPIC_STABLE, TOPIC_DEV)
-        for (t in topics) {
-            try {
-                com.google.firebase.messaging.FirebaseMessaging.getInstance()
-                    .subscribeToTopic(t)
-                    .addOnCompleteListener { task ->
-                        if (!task.isSuccessful) {
-                            Log.w(TAG, "subscribeToTopic($t) failed", task.exception)
-                        }
-                    }
-            } catch (rejected: Exception) {
-                Log.w(TAG, "subscribeToTopic($t) rejected: ${rejected.message}")
-            }
-        }
+        syncFcmTopics(applicationContext)
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -104,10 +92,7 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
     }
 
     private companion object {
-        const val TAG = "FcmUpdateReceiver"
         const val CHANNEL_ID = "eloquence_updates"
-        const val TOPIC_STABLE = "eloquence_updates"
-        const val TOPIC_DEV = "eloquence_updates_dev"
         const val REQUEST_DIALOG = 5539
         const val NOTIFICATION_ID = 5539
     }

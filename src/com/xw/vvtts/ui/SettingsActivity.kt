@@ -1,5 +1,7 @@
 package com.xw.vvtts.ui
 import com.xw.vvtts.update.UpdateActions
+import com.xw.vvtts.update.UpdateNotifPrefs
+import com.xw.vvtts.update.syncFcmTopics
 
 import android.app.Activity
 import android.Manifest
@@ -210,6 +212,21 @@ class SettingsActivity : Activity() {
         updateBtnLocal.setOnClickListener {
             UpdateActions.showCheckDialog(this)
         }
+        addNoteRow(mainContainer, R.string.update_notif_note)
+        addSwitchRow(mainContainer, getString(R.string.update_notif_enable),
+            UpdateNotifPrefs.isEnabled(this)) { on ->
+            UpdateNotifPrefs.get(this).edit { e ->
+                e.putBoolean(UpdateNotifPrefs.NOTIFICATIONS_ENABLED, on)
+            }
+            syncFcmTopics(this)
+        }
+        addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
+            UpdateNotifPrefs.usesPrereleases(this)) { on ->
+            UpdateNotifPrefs.get(this).edit { e ->
+                e.putBoolean(UpdateNotifPrefs.USE_PRERELEASES, on)
+            }
+            syncFcmTopics(this)
+        }
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
@@ -246,6 +263,10 @@ class SettingsActivity : Activity() {
             PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_POST_NOTIF)
         }
+
+        // Keep FCM topic subscriptions in sync with stored toggle prefs on every
+        // open (covers first-run defaults and any prefs drifted from a cold boot).
+        syncFcmTopics(this)
     }
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)
