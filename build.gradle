@@ -4,6 +4,10 @@ plugins {
     id 'com.android.application' version '8.9.2'
     id 'org.jetbrains.kotlin.android' version '1.9.25'
     id 'com.google.gms.google-services' version '4.4.2'
+    // Crashlytics Gradle plugin: generates a per-build Build ID and uploads the
+    // mapping file / native symbols, and unlocks native crash capture. Requires
+    // AGP 8.1+ / google-services 4.4.1+ (both satisfied).
+    id 'com.google.firebase.crashlytics' version '3.0.8'
 }
 
 android {
@@ -142,6 +146,10 @@ dependencies {
     // subclass or manual init needed.
     implementation platform('com.google.firebase:firebase-bom:33.7.0')
     implementation 'com.google.firebase:firebase-crashlytics'
+    // NDK runtime for native crash capture: picks up SIGSEGV/SIGABRT inside the
+    // libvvtts_core.so TTS engine (runs in the isolated :tts process), which a
+    // pure Java uncaught-exception reporter cannot see.
+    implementation 'com.google.firebase:firebase-crashlytics-ndk'
     // Client-side FCM: receives release notifications pushed by release.yml's
     // send_fcm.py (topics eloquence_updates[_dev]) and posts an update dialog.
     implementation 'com.google.firebase:firebase-messaging'

@@ -32,6 +32,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
 import com.xw.vvtts.engine.EloquenceEngine
+import com.xw.vvtts.utils.CrashlyticsFx
 import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
@@ -73,6 +74,9 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
+        // Tag the main-process session so crashes from the UI process are
+        // distinguishable from engine (:tts) process native crashes.
+        CrashlyticsFx.setContext(if (Build.SUPPORTED_ABIS.isEmpty()) "unknown" else Build.SUPPORTED_ABIS[0])
         // Parse autotest hook before engine init (hook is only honored in debug builds).
         val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val autotest = if (debuggable) intent?.getStringExtra("autotest") else null  // #198: never honor external autotest hooks in non-debuggable (release( builds
@@ -84,6 +88,7 @@ class SettingsActivity : Activity() {
                 initOk = fresh.initialize() && fresh.isInitialized()
             } catch (t: Throwable) {
                 Log.e("SettingsActivity", "engine initialize() failed", t)
+                CrashlyticsFx.record("engine:initialize-failed", t)
             }
             if (initOk) {
                 e = fresh
@@ -92,6 +97,7 @@ class SettingsActivity : Activity() {
                 // Never FC the settings screen because the native engine is
                 // unhealthy: toast and continue; the test button surfaces the
                 // engine error for diagnosis.
+                CrashlyticsFx.record("engine:unhealthy", RuntimeException("EloquenceEngine init returned false"))
                 Toast.makeText(this, "TTS engine failed to initialize", Toast.LENGTH_LONG).show()
             }
         }

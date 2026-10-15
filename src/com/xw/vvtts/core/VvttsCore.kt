@@ -1,6 +1,8 @@
 package com.xw.vvtts.core
 
+import android.os.Build
 import android.util.Log
+import com.xw.vvtts.utils.CrashlyticsFx
 
 /**
  * In-house ECI bridge (libvvtts_core.so) v3.
@@ -19,6 +21,11 @@ class VvttsCore {
 
         init {
             System.loadLibrary("vvtts_core")
+            // The native engine runs in the isolated :tts process; tag this
+            // process's session and register a breadcrumb when the .so loads so
+            // the dashboard can distinguish engine-process native crashes.
+            CrashlyticsFx.setContext(if (Build.SUPPORTED_ABIS.isEmpty()) "unknown" else Build.SUPPORTED_ABIS[0])
+            CrashlyticsFx.br("libvvtts_core loaded")
         }
 
         @JvmStatic external fun nativeInitEngine(configDir: String, libDir: String, dialect: Int): Long
@@ -34,9 +41,12 @@ class VvttsCore {
         @JvmStatic
         fun openEngine(configDir: String?, libDir: String?, dialect: Int): Long {
             return try {
-                nativeInitEngine(configDir!!, libDir!!, dialect)
+                val h = nativeInitEngine(configDir!!, libDir!!, dialect)
+                CrashlyticsFx.br("openEngine dialect=$dialect handle=${"0x%x".format(h)}")
+                h
             } catch (e: Throwable) {
                 Log.e("VvttsCore", "openEngine native crash", e)
+                CrashlyticsFx.record("openEngine:failed", e)
                 0
             }
         }
@@ -49,6 +59,7 @@ class VvttsCore {
                 nativeSynthesize(handle, dialect, text, charsetId, outPath)
             } catch (e: Throwable) {
                 Log.e("VvttsCore", "synth native crash", e)
+                CrashlyticsFx.record("synth:failed dialect=$dialect", e)
                 shortArrayOf()
             }
         }
@@ -100,7 +111,9 @@ class VvttsCore {
         fun shutdown(handle: Long) {
             try {
                 nativeShutdown(handle)
+                CrashlyticsFx.br("engine shutdown handle=${"0x%x".format(handle)}")
             } catch (e: Throwable) {
+                CrashlyticsFx.record("shutdown:failed", e)
                 // ignore
             }
         }

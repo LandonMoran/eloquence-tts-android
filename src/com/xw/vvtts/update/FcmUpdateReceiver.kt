@@ -15,6 +15,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.xw.vvtts.R
 import com.xw.vvtts.ui.SettingsActivity
+import com.xw.vvtts.utils.CrashlyticsFx
 
 /**
  * Receives release notifications pushed by CI (release.yml -> send_fcm.py) over
@@ -49,6 +50,7 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
         val from = message.from ?: ""
         val isPrerelease = from.endsWith("_dev")
         if (isPrerelease && !UpdateNotifPrefs.usesPrereleases(applicationContext)) return
+        CrashlyticsFx.br("FCM release v$version ($from)")
         postUpdateNotification(version)
     }
 
@@ -86,6 +88,10 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
             Handler(Looper.getMainLooper()).post {
                 Toast.makeText(this, fallback, Toast.LENGTH_LONG).show()
             }
+            // The high-importance notification was silently downgraded to a Toast
+            // because POST_NOTIFICATIONS is revoked; surface it as a non-fatal so
+            // the dashboard shows release pings that never displayed.
+            CrashlyticsFx.record("FCM:notify-suppressed", security)
         }
     }
 
