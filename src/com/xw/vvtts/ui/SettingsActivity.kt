@@ -2,12 +2,15 @@ package com.xw.vvtts.ui
 import com.xw.vvtts.update.UpdateActions
 
 import android.app.Activity
+import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.os.Build
 
 import android.media.AudioTrack
 import android.os.Bundle
@@ -34,6 +37,10 @@ import com.xw.vvtts.utils.VoiceProfile
 import java.util.HashSet
 
 class SettingsActivity : Activity() {
+    companion object {
+        const val EXTRA_OPEN_UPDATE_DIALOG = "com.xw.vvtts.EXTRA_OPEN_UPDATE_DIALOG"
+        private const val REQ_POST_NOTIF = 4073
+    }
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
     private var engine: EloquenceEngine? = null
@@ -224,6 +231,21 @@ class SettingsActivity : Activity() {
         scroll.addView(mainContainer)
         outer.addView(scroll)
         setContentView(outer)
+
+        // #355: an FCM release notification tap reopens us with this extra;
+        // surface the same update dialog a manual check would (once per launch).
+        if (intent?.getBooleanExtra(EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
+            UpdateActions.showCheckDialog(this)
+        }
+
+        // Android 13+: notify() silently drops without this runtime grant. Ask
+        // once on launch so FCM release notifications can surface; harmless
+        // no-op on older versions where the permission is a normal-time grant.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_POST_NOTIF)
+        }
     }
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)

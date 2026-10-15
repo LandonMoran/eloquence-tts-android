@@ -161,5 +161,8 @@ Tap to change the spoken language</string>
     <string name="update_failed_fmt">Update failed: %1$s</string>
     <string name="update_install_ok">Update installed</string>
     <string name="update_open_release">Open release page</string>
+    <string name="update_notification_title">Eloquence TTS update</string>
+    <string name="update_channel_name">Updates</string>
+    <string name="update_channel_desc">Release notifications for Eloquence TTS</string>
     <string name="dict_import_failed">Dictionary import failed: %1$s. No entries were changed.</string>
 </resources>

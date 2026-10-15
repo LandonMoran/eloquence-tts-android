@@ -142,6 +142,9 @@ dependencies {
     // subclass or manual init needed.
     implementation platform('com.google.firebase:firebase-bom:33.7.0')
     implementation 'com.google.firebase:firebase-crashlytics'
+    // Client-side FCM: receives release notifications pushed by release.yml's
+    // send_fcm.py (topics eloquence_updates[_dev]) and posts an update dialog.
+    implementation 'com.google.firebase:firebase-messaging'
 }
 
 // ---------------------------------------------------------------------------
