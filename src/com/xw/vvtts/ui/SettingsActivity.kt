@@ -5,12 +5,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.media.AudioAttributes
 import android.media.AudioFormat
 
 import android.media.AudioTrack
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -27,6 +29,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.xw.vvtts.R
 import com.xw.vvtts.engine.EloquenceEngine
+import com.xw.vvtts.update.UpdateNotificationScheduler
 import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.VoiceConfig
@@ -56,6 +59,11 @@ class SettingsActivity : Activity() {
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
     private val REQ_DICT_CREATE = 703
+    private val REQ_POST_NOTIFICATIONS = 704
+    /** Switch awaiting the POST_NOTIFICATIONS permission result, null when idle. */
+    private var pendingNotifyToggle: Switch? = null
+    /** Guards the launch auto-update dialog so it surfaces at most once per process. */
+    @Volatile private var launchUpdateDialogShown = false
     /** Initializes settings and the shared engine, builds the settings screen and schedules requested autotests. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -203,6 +211,13 @@ class SettingsActivity : Activity() {
         updateBtnLocal.setOnClickListener {
             UpdateActions.showCheckDialog(this)
         }
+        // Optional background update notifications (daily AlarmManager check).
+        var updateNotifySwitch: Switch? = null
+        updateNotifySwitch = addSwitchRow(
+            mainContainer,
+            getString(R.string.update_notify_toggle),
+            UpdateNotificationScheduler.isEnabled(this)
+        ) { on -> onUpdateNotifyToggleChanged(on, updateNotifySwitch) }
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
@@ -224,6 +239,7 @@ class SettingsActivity : Activity() {
         scroll.addView(mainContainer)
         outer.addView(scroll)
         setContentView(outer)
+        maybeShowLaunchUpdateDialog()
     }
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)
@@ -835,6 +851,71 @@ class SettingsActivity : Activity() {
             REQ_DICT_OPEN -> if (data?.data != null) importDictFromUri(data.data!!)
             REQ_DICT_CREATE -> if (data?.data != null) exportDictToUri(data.data!!)
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_POST_NOTIFICATIONS) return
+        val sw = pendingNotifyToggle
+        pendingNotifyToggle = null
+        if (sw == null) return
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            finalizeUpdateNotify(true, sw)
+        } else {
+            // Denied: revert the switch and stay disabled (no alarm, no persisted flag).
+            sw?.isChecked = false
+            finalizeUpdateNotify(false, sw)
+        }
+    }
+
+    /**
+     * Applies a change to the "notify when updates available" toggle. On API 33+ an
+     * unchecked->checked transition first requests POST_NOTIFICATIONS and defers here
+     * until the result arrives. Persists the flag, then schedules or cancels the alarm.
+     */
+    private fun onUpdateNotifyToggleChanged(on: Boolean, sw: Switch?) {
+        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(UpdateNotificationScheduler.PERMISSION_POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            pendingNotifyToggle = sw
+            requestPermissions(arrayOf(UpdateNotificationScheduler.PERMISSION_POST_NOTIFICATIONS), REQ_POST_NOTIFICATIONS)
+            return
+        }
+        finalizeUpdateNotify(on, sw)
+    }
+
+    private fun finalizeUpdateNotify(on: Boolean, sw: Switch?) {
+        try {
+            UpdateNotificationScheduler.setEnabled(this, on)
+            if (on) {
+                UpdateNotificationScheduler.schedule(this)
+            } else {
+                UpdateNotificationScheduler.cancel(this)
+            }
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "failed to update background notifications", t)
+            sw?.isChecked = !on
+        }
+    }
+
+    /**
+     * Surfaces the update dialog automatically: (A) on every app launch when a newer
+     * release exists (once per process, at most — suppresses re-nagging within a session),
+     * and (B) when the app was opened by tapping the update notification
+     * (extra [UpdateNotificationScheduler.EXTRA_OPEN_UPDATE_DIALOG]). showCheckDialog runs
+     * the check on a background thread, shows nothing when up to date, and guards re-entry.
+     * Independent of the background-notification toggle: launch dialog always on.
+     */
+    private fun maybeShowLaunchUpdateDialog() {
+        val fromNotification = intent?.getBooleanExtra(
+            UpdateNotificationScheduler.EXTRA_OPEN_UPDATE_DIALOG, false) ?: false
+        if (fromNotification) {
+            UpdateActions.showCheckDialog(this)
+            return
+        }
+        if (launchUpdateDialogShown) return
+        launchUpdateDialogShown = true
+        UpdateActions.showCheckDialog(this)
     }
 
     override fun onDestroy() {
