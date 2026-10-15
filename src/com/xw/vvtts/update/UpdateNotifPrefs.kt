@@ -26,7 +26,7 @@ object UpdateNotifPrefs {
         get(context).getBoolean(NOTIF_PERMISSION_PROMPTED, false)
 
     fun markNotifPermissionAsked(context: Context) =
-        get(context).edit().putBoolean(NOTIF_PERMISSION_PROMPTED, true).apply()
+        get(context).edit { it.putBoolean(NOTIF_PERMISSION_PROMPTED, true) }
 
     fun isEnabled(context: Context): Boolean =
         get(context).getBoolean(NOTIFICATIONS_ENABLED, true)

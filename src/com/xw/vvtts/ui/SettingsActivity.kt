@@ -221,6 +221,7 @@ class SettingsActivity : Activity() {
             UpdateNotifPrefs.get(this).edit { e ->
                 e.putBoolean(UpdateNotifPrefs.NOTIFICATIONS_ENABLED, on)
             }
+            if (on) maybeRequestNotifPermission()
             syncFcmTopics(this)
         }
         addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
@@ -259,19 +260,25 @@ class SettingsActivity : Activity() {
         }
 
         // Android 13+: notify() silently drops without this runtime grant. Ask
-        // once on launch so FCM release notifications can surface; harmless
-        // no-op on older versions where the permission is a normal-time grant.
+        // once while notifications are enabled so FCM release pings can surface;
+        // harmless no-op on older versions where it is a normal-time grant.
+        maybeRequestNotifPermission()
+
+        // Keep FCM topic subscriptions in sync with stored toggle prefs on every
+        // open (covers first-run defaults and any prefs drifted from a cold boot).
+        syncFcmTopics(this)
+    }
+    private fun maybeRequestNotifPermission() {
+        // Only ask while the user has notifications enabled (i.e. they opted in),
+        // and only once, so we do not nag on every open after a denial.
         if (Build.VERSION.SDK_INT >= 33 &&
+            UpdateNotifPrefs.isEnabled(this) &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED &&
             !UpdateNotifPrefs.hasAskedNotifPermission(this)) {
             UpdateNotifPrefs.markNotifPermissionAsked(this)
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_POST_NOTIF)
         }
-
-        // Keep FCM topic subscriptions in sync with stored toggle prefs on every
-        // open (covers first-run defaults and any prefs drifted from a cold boot).
-        syncFcmTopics(this)
     }
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)
@@ -552,8 +559,11 @@ class SettingsActivity : Activity() {
         tv.setPadding(0, dp(2), 0, dp(2))
         val sw = Switch(this)
         sw.isChecked = checked
-        // TalkBack cannot infer which switch is which from the adjacent label,
-        // so set the switch's own content description for a clear announcement.
+        // Associate the adjacent label with the switch so TalkBack announces
+        // which switch this is (labelFor links the TextView to the Switch), and
+        // keep a content description as a fallback for non-label scopes.
+        sw.id = View.generateViewId()
+        tv.labelFor = sw.id
         sw.contentDescription = label
         sw.setOnCheckedChangeListener {  _,on -> onToggle(on) }
         row.addView(tv)
