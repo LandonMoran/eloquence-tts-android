@@ -106,10 +106,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          api-level: 35
+          api-level: 30
           target: google_apis
           arch: x86_64
-          profile: pixel_6
+          profile: nexus
+          emulator-options: -cores 4 -memory 4096 -no-snapshot -gpu swiftshader_indirect
           emulator-boot-timeout: 1800
           script: bash "${GITHUB_WORKSPACE}/.github/scripts/crash_test.sh"
 
