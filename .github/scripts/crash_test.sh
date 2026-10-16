@@ -38,7 +38,7 @@ sleep 100
 "$ADB" shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" || true
 "$ADB" logcat -d -v threadtime > logcat-full.txt || true
 echo "=== SYNTHESIS / CRASHHOOK DIAG LINES ===="
-grep -nE "SPD|CRASHHOOK" logcat-full.txt | head -60 || true
+grep -nE "RoleTest|SPD|CRASHHOOK" logcat-full.txt | head -60 || true
 echo "=== APP-ENGINE LINES (EloquenceEngine / VvTts / vvtts( ==="
 grep -nE " (EloquenceEngine|VvTts|VvttsCore|vvttts|AndroidRuntime):" logcat-full.txt | tail -60 || echo "no app-engine lines at all"
 echo "=== FATAL / CRASH LINES ===="
@@ -47,9 +47,13 @@ if grep -nE "FATAL EXCEPTION|SIGSEGV|SIGABRT|Fatal signal|Abort message|backtrac
 fi
 echo "=== TAIL 40 ===="
 tail -40 logcat-full.txt
-if ! grep -qE "SPD.*synth=.*pcm=[1-9][0-9]*" logcat-full.txt;then
+# Main-process test-button path (autotest german -> testGerman) synthesizes directly in
+# SettingsActivity and reports PCM size via RoleTest. The SPD.*synth=.*pcm= line is emitted
+# only by VvTtsService in the separate :tts process, which this lane never starts — so gate
+# on the RoleTest audio-count line the driven path actually produces.
+if ! grep -qE "RoleTest.*total=[1-9][0-9]*" logcat-full.txt;then
 	# Dump whatever the synthesis path actually logged, then fail.
-	grep -nE "SPD.*(synth|pcm|samples)" logcat-full.txt | head -20 || echo "no SPD synthesis line at all"
+	grep -nE "RoleTest.*total|SPD.*(synth|pcm|samples)" logcat-full.txt | head -20 || echo "no RoleTest synthesis line at all"
 	echo "NO_SYNTH_SAMPLES - the triggered synthesis produced no audio; failing"
 	exit 1
 fi
