@@ -443,7 +443,11 @@ class SettingsActivity : Activity() {
                     Log.e("CRASHHOOK", "exception", t)
                     null
                 }
-                Log.i("CRASHHOOK", if (pcm2 != null && pcm2.size > 0) "done:" + pcm2.size else "fail")
+                Log.i("CRASHHOOK", "done:" + if (pcm2 != null && pcm2.size > 0) pcm2.size else "fail")
+                // Force a fatal crash so a real report reaches the dashboard —
+                // the whole point of the debug-only autotest crash hook
+                // (am start --es autotest crash).
+                CrashlyticsFx.crash()
             }
 
             /** Per-language sample texts */

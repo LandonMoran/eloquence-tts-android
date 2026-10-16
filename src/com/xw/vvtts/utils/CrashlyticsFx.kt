@@ -99,6 +99,18 @@ object CrashlyticsFx {
         } catch (t: Throwable) { /* no-op */ }
     }
 
+    /**
+     * Force an intentional fatal crash — the Firebase-documented test-crash
+     * mechanism ([FirebaseCrashlytics.crash]) used to verify crash reports
+     * actually reach the dashboard. Only reachable through the debug-only
+     * autotest hook (am start --es autotest crash); release builds never honor
+     * external autotest intents and never call this.
+     */
+    fun crash() {
+        val c = cs ?: return
+        try { c.crash() } catch (t: Throwable) { throw t }
+    }
+
     /** Add a breadcrumb to the current session's crash timeline. */
     fun br(msg: String) {
         val c = cs ?: return
