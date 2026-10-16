@@ -4,9 +4,18 @@ plugins {
     id 'com.android.application' version '8.9.2'
     id 'org.jetbrains.kotlin.android' version '1.9.25'
     id 'com.google.gms.google-services' version '4.4.2'
-    // Crashlytics Gradle plugin: generates a per-build Build ID and uploads the
-    // mapping file / native symbols, and unlocks native crash capture. Requires
-    // AGP 8.1+ / google-services 4.4.1+ (both satisfied).
+    // Crashlytics Gradle plugin: generates a per-build Build ID and unlocks
+    // native crash capture (the firebase-crashlytics-ndk handler catches
+    // SIGSEGV/SIGABRT in libvvtts_core.so). Requires AGP 8.1+ / google-services
+    // 4.4.1+ (both satisfied).
+    //
+    // Native symbolication: the .so is deliberately NOT stripped — build_native.sh
+    // no longer runs llvm-strip, so libvvtts_core.so keeps its .symtab and native
+    // crash frames resolve to their function names in the dashboard. Do not
+    // re-add stripping: it degrades native locations to bare addresses + PC.
+    // (Firebase uploads the debug symbols when firebaseCrashlytics NDK symbol
+    // upload is enabled; keeping the .so unstripped ships exactly what the
+    // uploadSymbolsFile task needs.)
     id 'com.google.firebase.crashlytics' version '3.0.8'
     // Firebase Performance Monitoring Gradle plugin: bytecode-instruments network
     // requests and app-start automatically, and supports custom metric traces for

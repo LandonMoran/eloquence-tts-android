@@ -81,9 +81,14 @@ fi
         "$LIBEVV" \
             -lm -llog
 
-# P1 re-baseline: symbol-strip（symtab/strtab ≈5.5 MB raw per ABI）— keeps
-# dynsym（JNI exports）so dlopen + the check below still work; ELF stays valid.
-"$TC/llvm-strip" --strip-unneeded "$OUT/libvvtts_core.so"
+# Native stack symbolication: NO strip. Keeping .symtab lets Crashlytics
+# resolve engine-internal frames (vvtts_core_*, eci_*, delta machine) to
+# function names in the dashboard, not bare addresses. Cost: ~5.5 MB/ABI of
+# symtab. Do not re-add --strip-unneeded or native locations regress to
+# "global offset/symbol + PC" and the crash dashboard loses the function name
+# for the crashing engine frame.
+# JNIEXPORT natives stay public via -fvisibility=hidden + JNIEXPORT, so dlopen
+# and nm -D still see the 8 Java_* exports even without stripping.
 
 echo "native bridge OK:"
 file "$OUT/libvvtts_core.so"
