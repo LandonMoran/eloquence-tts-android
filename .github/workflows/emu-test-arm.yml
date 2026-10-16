@@ -7,18 +7,15 @@ on:
 
 jobs:
   emulator:
-    # Hosted ARM64 runner (free public-preview on public repos); aarch64-on-aarch64
-    # so the arm64-v8a system image runs natively with no x86 translation.
-    runs-on: ubuntu-24.04-arm
+    # Apple Silicon (arm64) macos runner. Google ships NO linux-aarch64 android
+    # emulator (only linux/x64, macosx/x64 + macosx/aarch64, windows/x64), so
+    # Linux-ARM would need a fragile community build. macos-15 runs the official
+    # macosx/aarch64 emulator + arm64-v8a image natively (aarch64-on-aarch64,
+    # no x86 translation) — the real production ABI.
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm || true
 
       - uses: actions/setup-java@v5
         with:
@@ -27,13 +24,8 @@ jobs:
 
       - name: Install Android SDK packages (incl. emulator + arm64-v8a image)
         run: |
-          SDK="$HOME/android-sdk"
-          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
-            curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-            mkdir -p "$SDK/cmdline-tools" /tmp/cmdtools
-            unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
-            mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
-          fi
+          SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
           sdk() {
             for i in  1 2 3; do
               if "$SDK/cmdline-tools/latest/bin/sdkmanager" "$@"; then
@@ -44,10 +36,11 @@ jobs:
             done
             return 1
           }
-          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           sdk "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;26.3.11579264"
           sdk "emulator" "system-images;android-30;google_apis;arm64-v8a"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           ls "$SDK/emulator/emulator" "$SDK/system-images/android-30/google_apis/arm64-v8a"
 
       - name: Fetch Kotlin compiler jars
@@ -67,7 +60,7 @@ jobs:
           fetch_jar /tmp/trove4j-1.0.20200330.jar /maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
           fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
           fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
-          (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
+          (cd /tmp && { command -v sha256sum >/dev/null && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256" || shasum -a 256 -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256"; })
 
       - name: Prepare ephemeral CI signing key
         run: |
@@ -96,12 +89,13 @@ jobs:
 
       - name: Build APK (arm64-v8a, the production ABI) via Gradle
         run: |
-          export ANDROID_SDK="$HOME/android-sdk" ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk"
+          export ANDROID_SDK="$ANDROID_HOME" ANDROID_HOME="$ANDROID_HOME" ANDROID_SDK_ROOT="$ANDROID_HOME"
           # This is the SAME arm64-v8a build users install (assembleArm64Release);
           # rename to the artifact the test expects.
           ./gradlew --no-daemon --no-build-cache :assembleArm64Release \
             -PtestMinApi=28
           find build/outputs/apk -name 'vvtts-arm64-v8a.apk' -exec cp -f {} ./vvtts_signed.apk \;
+          ls -la vvtts_signed.apk
 
       - name: Boot emulator + run crash test ( test button path )
         uses: reactivecircus/android-emulator-runner@v2
