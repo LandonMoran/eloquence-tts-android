@@ -100,15 +100,19 @@ object CrashlyticsFx {
     }
 
     /**
-     * Force an intentional fatal crash — the Firebase-documented test-crash
-     * mechanism ([FirebaseCrashlytics.crash]) used to verify crash reports
-     * actually reach the dashboard. Only reachable through the debug-only
-     * autotest hook (am start --es autotest crash); release builds never honor
-     * external autotest intents and never call this.
+     * Force an intentional fatal crash so a real report reaches the dashboard.
+     * equivalent is throwing from the calling (main) thread — the
+     * SDK's uncaught-exception handler turns the resulting process death into
+     * a Crashlytics fatal report. Only reachable through the debug-only autotest
+     * hook (am start --es autotest crash); release builds never honor external
+     * autotest intents and never call this.
      */
     fun crash() {
         val c = cs ?: return
-        try { c.crash() } catch (t: Throwable) { throw t }
+        // Sentinel value so the dashboard message is identifiable in grep.
+        val marker = "ELQ_VERDICT autotest-crash " + (Thread.currentThread().name ?: "main")
+        c.log(marker)
+        throw RuntimeException("Intentional autotest crash (debug hook) [$marker]")
     }
 
     /** Add a breadcrumb to the current session's crash timeline. */
