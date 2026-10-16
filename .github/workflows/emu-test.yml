@@ -109,7 +109,7 @@ jobs:
           api-level: 30
           target: google_apis
           arch: x86_64
-          profile: nexus
+          profile: pixel
           emulator-options: -cores 4 -memory 4096 -no-snapshot -gpu swiftshader_indirect
           emulator-boot-timeout: 1800
           script: bash "${GITHUB_WORKSPACE}/.github/scripts/crash_test.sh"
