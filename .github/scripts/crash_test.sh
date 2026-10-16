@@ -12,6 +12,11 @@ APK=$(ls ./vvtts_signed.apk 2>/dev/null | head -1)
 echo "pkg=$PKG apk=$APK"
 
 "$ADB" install -r "$APK"
+# The app targets API 33+, and the google_apis emulator image shows a
+# POST_NOTIFICATIONS grant dialog on first launch. That dialog steals
+# foreground and starves the SettingsActivity autotest-synthesis path, so the
+# lane used to fail with a false NO_SYNTH_SAMPLES. Pre-grant before starting.
+"$ADB" shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 "$ADB" logcat -c
 "$ADB" shell am start -n "$PKG/.ui.SettingsActivity" --es autotest german
 
@@ -20,7 +25,16 @@ echo "pkg=$PKG apk=$APK"
 # compute that is merely beating the lane's time budget on the emulator. This is
 # the ONLY way to tell a true non-terminating delta_rule loop from a bounded
 # million-rule generation that outruns ~120s on a software-rendered emulator.
-APP_PID=$("$ADB" shell pidof -s "$PKG" | tr -d '\r' || true)
+APP_PID=$(
+	# Cold app spawn can take several seconds right after install; poll until
+	# the process exists or we give up so we never skip the two-snapshot probe
+	# for a merely-slow first launch.
+	for _ in $(seq 1 30); do
+		p=$("$ADB" shell pidof -s "$PKG" | tr -d '\r' || true)
+		[ -n "$p" ] && { echo "$p"; break; }
+		sleep 2
+	done
+)
 take_snap() {
 	local out="$1"
 	"$ADB" root >/dev/null 2>&1 || true
