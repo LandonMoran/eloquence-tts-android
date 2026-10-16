@@ -1,0 +1,127 @@
+name: Emulator Crash Test (ARM64 real-ABI path)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feat/**', 'fix/**']
+
+jobs:
+  emulator:
+    # Hosted ARM64 runner (free public-preview on public repos); aarch64-on-aarch64
+    # so the arm64-v8a system image runs natively with no x86 translation.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK packages (incl. emulator + arm64-v8a image)
+        run: |
+          SDK="$HOME/android-sdk"
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            mkdir -p "$SDK/cmdline-tools" /tmp/cmdtools
+            unzip -q -o /tmp/cmdtools.zip -d /tmp/cmdtools
+            mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
+          fi
+          sdk() {
+            for i in  1 2 3; do
+              if "$SDK/cmdline-tools/latest/bin/sdkmanager" "$@"; then
+                return 0
+              fi
+              echo "  sdkmanager $* failed (try $i); retrying in 15s..."
+              sleep 15
+            done
+            return 1
+          }
+          export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          sdk "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;26.3.11579264"
+          sdk "emulator" "system-images;android-30;google_apis;arm64-v8a"
+          ls "$SDK/emulator/emulator" "$SDK/system-images/android-30/google_apis/arm64-v8a"
+
+      - name: Fetch Kotlin compiler jars
+        run: |
+          fetch_jar() {
+            local out="$1" path="$2" base
+            for base in "https://repo.maven.apache.org" "https://maven-central.storage-download.googleapis.com" "https://repo1.maven.org"; do
+              if curl --retry 3 --retry-delay 2 --retry-all-errors -fsSL -o "$out" "$base$path"; then
+                echo "fetched $path via $base"
+                return 0
+              fi
+            done
+            echo "ERROR: all mirrors failed for $path" >&2
+            return 1
+          }
+          fetch_jar /tmp/kotlin-compiler-embeddable-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
+          fetch_jar /tmp/trove4j-1.0.20200330.jar /maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
+          fetch_jar /tmp/kotlin-stdlib-1.9.25.jar /maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
+          fetch_jar /tmp/annotations-24.1.0.jar /maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
+          (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
+
+      - name: Prepare ephemeral CI signing key
+        run: |
+          KS_PASS="$(openssl rand -hex 32)"
+          echo "::add-mask::$KS_PASS"
+          keytool -genkeypair -keystore vvttts.jks -storepass "$KS_PASS" -keypass "$KS_PASS" \
+            -alias vvttts -keyalg RSA -keysize 2048 -validity 30 -dname "CN=CI Build,O=Home,C=US"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
+
+      # The APK is deliberately built from the release manifest, so enable the
+      # debug-only autotest hook for this emulator-only diagnostic lane.
+      - name: Enable emulator autotest hook
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("AndroidManifest.xml")
+          text = manifest.read_text()
+          marker = '<application android:debuggable="true"'
+          if marker not in text:
+              text = text.replace("<application\n", f"{marker}\n", 1)
+          manifest.write_text(text)
+          PY
+
+      - name: Build APK (arm64-v8a, the production ABI) via Gradle
+        run: |
+          export ANDROID_SDK="$HOME/android-sdk" ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk"
+          # This is the SAME arm64-v8a build users install (assembleArm64Release);
+          # rename to the artifact the test expects.
+          ./gradlew --no-daemon --no-build-cache :assembleArm64Release \
+            -PtestMinApi=28
+          find build/outputs/apk -name 'vvtts-arm64-v8a.apk' -exec cp -f {} ./vvtts_signed.apk \;
+
+      - name: Boot emulator + run crash test ( test button path )
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          api-level: 30
+          target: google_apis
+          arch: arm64-v8a
+          profile: pixel
+          emulator-options: -cores 4 -memory 4096 -no-snapshot -gpu swiftshader_indirect -no-window -no-audio
+          emulator-boot-timeout: 1800
+          script: bash "${GITHUB_WORKSPACE}/.github/scripts/crash_test.sh"
+
+      - name: Upload logcat
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-arm64-logcat
+          path: |
+            logcat-full.txt
+            native-stacks.txt
+          if-no-files-found: warn
