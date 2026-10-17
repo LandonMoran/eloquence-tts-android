@@ -74,9 +74,31 @@ object CrashlyticsFx {
             val appCtx = ctx.applicationContext
             if (FirebaseApp.getApps(appCtx).isEmpty()) FirebaseApp.initializeApp(appCtx)
             val c = cs ?: return // now initializable in this process
+            // Apply the user's crash-reporting opt-out (default ON) so THIS
+            // process immediately stops collecting/transmitting when disabled.
+            // The SDK persists the value, so it holds across both processes and
+            // restarts. Applied before any keys/log so a disabled session sets none.
+            try { c.setCrashlyticsCollectionEnabled(TelemetryPrefs.isCrashEnabled(appCtx)) }
+            catch (t: Throwable) { /* never crash the app for telemetry */ }
             c.setCustomKey("process", processName)
             c.log("crashlytics initialized process=$processName")
         } catch (t: Throwable) { /* never crash the app for telemetry */ }
+    }
+
+    /**
+     * Turn crash-report collection/transmission on or off for this process (the
+     * "Crash reporting" setting). Called at init in BOTH processes (see
+     * [initProcess]) so the choice is consistent, and immediately whenever the
+     * user toggles it from Settings. The SDK persists the value across restarts.
+     *
+     * LIMITATION (disclosed to the user): disabling stops NEW collection and the
+     * transmission of crashes that occur after the change, as far as the SDK
+     * permits, but reports already collected/queued on-device may still be
+     * uploaded, and data already uploaded to Firebase cannot be deleted.
+     */
+    fun setCrashCollectionEnabled(enabled: Boolean) {
+        val c = cs ?: return
+        try { c.setCrashlyticsCollectionEnabled(enabled) } catch (t: Throwable) { /* no-op */ }
     }
 
     /** Attach stable per-session tags so dashboard reports are filterable. */

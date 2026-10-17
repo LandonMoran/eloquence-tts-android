@@ -9,11 +9,9 @@ import android.content.Context
  *
  *  - Analytics  (GA4): opt-in, defaults OFF.
  *  - Performance (Firebase Performance Monitoring): opt-in, defaults OFF.
- *
- * Crashlytics crash reporting is intentionally NOT governed by either flag —
- * it is always on (the app's primary diagnostics surface, incl. native engine
- * crashes from the :tts process) and never collects speech text. See
- * [CrashlyticsFx] and the Settings note.
+ *  - Crash     (Crashlytics): opt-out, defaults ON (the app's primary
+ *    diagnostics surface, incl. native engine crashes from the :tts process,
+ *    and EngineMetrics keys). Independent of the opt-in pair.
  *
  * Stored in ordinary SharedPreferences (via [MirroredPreferences]) so the value
  * is readable both in the main process and the isolated ":tts" engine process.
@@ -22,6 +20,7 @@ object TelemetryPrefs {
     const val PREFS_NAME = "vvtts_telemetry"
     const val ANALYTICS = "analytics_enabled"
     const val PERFORMANCE = "performance_enabled"
+    const val CRASH = "crash_enabled"
     private const val LEGACY_COMBINED = "telemetry_enabled"
 
     fun isAnalyticsEnabled(context: Context): Boolean {
@@ -42,6 +41,16 @@ object TelemetryPrefs {
     fun setPerfEnabled(context: Context, on: Boolean) {
         val p = MirroredPreferences(context, PREFS_NAME)
         p.edit { e -> e.putBoolean(PERFORMANCE, on).putBoolean(LEGACY_COMBINED, false) }
+    }
+
+    /** Crash reporting is an OPT-OUT: default ON. Independent of analytics/perf
+     *  and deliberately excluded from [migrateLegacy] (the old combined flag
+     *  never governed crash reporting, which has always been its own channel). */
+    fun isCrashEnabled(context: Context): Boolean =
+        MirroredPreferences(context, PREFS_NAME).getBoolean(CRASH, true)
+
+    fun setCrashEnabled(context: Context, on: Boolean) {
+        MirroredPreferences(context, PREFS_NAME).edit { e -> e.putBoolean(CRASH, on) }
     }
 
     /** One-time migration: a user who opted into the pre-split single

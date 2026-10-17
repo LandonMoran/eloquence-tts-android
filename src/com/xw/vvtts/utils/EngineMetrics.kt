@@ -1,5 +1,7 @@
 package com.xw.vvtts.utils
 
+import android.content.Context
+
 /**
  * Privacy-conscious, aggregate-only diagnostics for the Eloquence speech engine.
  *
@@ -107,7 +109,11 @@ object EngineMetrics {
      *  process init and before expected teardown; keys are stable and sparse.
      *  Crashlytics has no Long-key overload, so durations/counts are stored as
      *  decimal strings (numeric, still machine-readable). */
-    fun attachCrashKeys() {
+    fun attachCrashKeys(context: Context) {
+        // When the user has turned off crash reporting, do not populate any
+        // Crashlytics keys this session (nothing would transmit, and keys should
+        // never be populated on a session that opted out).
+        if (!TelemetryPrefs.isCrashEnabled(context)) return
         val s = snapshot()
         CrashlyticsFx.setKey("m_init_n", s.initCount.toString())
         CrashlyticsFx.setKey("m_init_fail", s.initFailCount.toString())

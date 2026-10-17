@@ -258,6 +258,13 @@ class SettingsActivity : Activity() {
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
         addNoteRow(mainContainer, R.string.extra_logging_note)
+        // Crash reporting: the primary diagnostics channel, ON by default (opt-out).
+        addSwitchRow(mainContainer, getString(R.string.crash_row),
+            TelemetryPrefs.isCrashEnabled(this)) { on ->
+            TelemetryPrefs.setCrashEnabled(this, on)
+            CrashlyticsFx.setCrashCollectionEnabled(on)
+        }
+        addNoteRow(mainContainer, R.string.crash_note)
         addSwitchRow(mainContainer, getString(R.string.analytics_row),
             TelemetryPrefs.isAnalyticsEnabled(this)) { on ->
             TelemetryPrefs.setAnalyticsEnabled(this, on)
@@ -270,7 +277,6 @@ class SettingsActivity : Activity() {
             Telemetry.apply(this)
         }
         addNoteRow(mainContainer, R.string.perf_note)
-        addNoteRow(mainContainer, R.string.crash_note)
 
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)
