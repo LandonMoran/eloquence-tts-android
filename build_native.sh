@@ -12,16 +12,15 @@
 set -eu
 cd "$(dirname "$0")"
 
-# Host prebuilt dir: NDK names it linux-x86_64, darwin-x86_64, darwin-aarch64
-# (Apple Silicon), or windows-x86_64. Detect it instead of assuming Linux.
+# Host prebuilt dir: NDK names it linux-x86_64, darwin-x86_64 (macOS ships
+# x86_64 even on Apple Silicon; runs under Rosetta 2), or windows-x86_64.
+# Detect the host OS instead of assuming Linux.
 OS="$(uname -s)"
-MACH="$(uname -m)"
-case "$OS:$MACH" in
-  Linux:x86_64)  HOST_PREBUILT="linux-x86_64" ;;
-  Darwin:x86_64) HOST_PREBUILT="darwin-x86_64" ;;
-  Darwin:arm64)  HOST_PREBUILT="darwin-aarch64" ;;
-  MINGW*|MSYS*:x86_64) HOST_PREBUILT="windows-x86_64" ;;
-  *) echo "ERROR: unsupported host $OS/$MACH for NDK prebuilt" >&2; exit 1 ;;
+case "$OS" in
+  Linux)   HOST_PREBUILT="linux-x86_64" ;;
+  Darwin)  HOST_PREBUILT="darwin-x86_64" ;;  # NDK has no darwin-aarch64 archive
+  MINGW*|MSYS*|CYGWIN*) HOST_PREBUILT="windows-x86_64" ;;
+  *) echo "ERROR: unsupported host OS '$OS' for NDK prebuilt" >&2; exit 1 ;;
 esac
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-}}"
