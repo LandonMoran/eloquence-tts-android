@@ -550,6 +550,10 @@ synchronized(synthesisLock) {
         var started = false
         var pipeEnded = false
         var synthFailedOrTruncated = false
+        // A synthesis chunk exceeded the engine watchdog. Tracked separately so
+        // a timeout is counted exactly once as RC_TIMEOUT (never double-counted
+        // as RC_FAIL); the final outcome is decided in the finally block below.
+        var timedOut = false
         try {
             var text: String? = request.charSequenceText?.toString()
             if (text == null || text.isEmpty()) {
@@ -644,7 +648,16 @@ synchronized(synthesisLock) {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    val pcm = try {
+                        currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    } catch (e: java.util.concurrent.TimeoutException) {
+                        // Engine watchdog fired. NOT counted as RC_FAIL here — the
+                        // finally block records exactly one final outcome (RC_TIMEOUT).
+                        Log.e(TAG, "synthesis chunk timed out (engine watchdog); single timeout outcome", e)
+                        timedOut = true
+                        synthFailedOrTruncated = true  // pipeline must hear error(), not done()
+                        null
+                    }
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if (voiceConfig?.extraLogging == true) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
@@ -743,17 +756,23 @@ synchronized(synthesisLock) {
 
 
                         Log.w(TAG, "synthesis failed or truncated; reporting error()")
-                        EngineMetrics.recordOutcome(EngineMetrics.RC_FAIL)
+                        // Exactly one final outcome (issue #2): a watchdog timeout is
+                        // RC_TIMEOUT, anything else is RC_FAIL — never both.
+                        EngineMetrics.recordOutcome(EngineMetrics.finalOutcome(interrupted = false, timedOut = timedOut, failed = true, ok = false))
                         try {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (e: Throwable) {
                             Log.e(TAG, "callback.error failed", e)
                         }
                     } else {
-                        EngineMetrics.recordOutcome(EngineMetrics.RC_OK)
+                        // Record success only AFTER the framework completion callback
+                        // returns (issue #3): if done() throws and the fallback error
+                        // path is used, this request is a failure, not a success.
+                        var doneFailed = false
                         try {
                             callback.done()
                         } catch (e: Throwable) {
+                            doneFailed = true
                             // done() after a successful start must not leave a dangling
                             // utterance: error() is the fallback termination.
                             Log.e(TAG, "callback.done failed; terminating with error()", e)
@@ -762,6 +781,7 @@ synchronized(synthesisLock) {
                             } catch (ignore: Throwable) {
                             }
                         }
+                        EngineMetrics.recordOutcome(EngineMetrics.finalOutcome(interrupted = false, timedOut = false, failed = doneFailed, ok = !doneFailed))
                     }
                 }
         }

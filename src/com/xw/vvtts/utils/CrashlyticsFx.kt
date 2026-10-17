@@ -36,6 +36,20 @@ object CrashlyticsFx {
         try { FirebaseCrashlytics.getInstance() } catch (t: Throwable) { null }
     }
 
+    // Write gate for the opt-out (review #5). Crash reporting is an OPT-OUT that
+    // defaults ON, so this starts true (writes allowed) and is narrowed to the
+    // consent value by [initProcess] in Application.onCreate. When a process is
+    // opted out it must emit NO keys, breadcrumbs, or exceptions — even if the
+    // SDK's disable toggle could not be applied (fail closed: do not populate
+    // Crashlytics for a user who asked to opt out).
+    private var writesAllowed = true
+
+    // Host-regression seams (always null in production): force the toggle path's
+    // missing-method / invocation-failure outcome and observe every attempted
+    // write, so the harness can assert an opted-out process emits nothing.
+    private var toggleSeam: (() -> Boolean)? = null
+    private var writeProbe: ((String) -> Unit)? = null
+
     // Current process name from /proc/self/cmdline. Isolated processes are
     // named "<app>:<name>" (e.g. "com.xw.vvtts:tts"); the default process is
     // just "<app>". Report is tagged with this so engine-process crashes are
@@ -75,11 +89,17 @@ object CrashlyticsFx {
             val appCtx = ctx.applicationContext
             if (FirebaseApp.getApps(appCtx).isEmpty()) FirebaseApp.initializeApp(appCtx)
             val c = cs ?: return // now initializable in this process
-            // Apply the user's crash-reporting opt-out (default ON) so THIS
-            // process immediately stops collecting/transmitting when disabled.
-            // The SDK persists the value, so it holds across both processes and
-            // restarts. Applied before any keys/log so a disabled session sets none.
-            setCollectionEnabled(c, TelemetryPrefs.isCrashEnabled(appCtx))
+            // Apply the user's crash-reporting opt-out (default ON). The toggle
+            // may be a no-op if the SDK lacks the method or the reflection call
+            // fails — that is detected and warned about by setCollectionEnabled.
+            val enabled = TelemetryPrefs.isCrashEnabled(appCtx)
+            setCollectionEnabled(c, enabled)
+            // Write gate (review #5): an opted-out process emits NOTHING — no
+            // process key, no breadcrumb, no exception. Fail closed: even if the
+            // dialog toggle could not be applied (SDK may still be live), do not
+            // populate Crashlytics for a user who asked to opt out.
+            writesAllowed = enabled
+            if (!enabled) return
             c.setCustomKey("process", processName)
             c.log("crashlytics initialized process=$processName")
         } catch (t: Throwable) { /* never crash the app for telemetry */ }
@@ -119,32 +139,47 @@ object CrashlyticsFx {
 
     /**
      * Call FirebaseCrashlytics.setCrashlyticsCollectionEnabled(boolean) via
-     * reflection. The host-contract stub exposes a REDUCED FirebaseCrashlytics
-     * API (no such method — it only mirrors the small surface the app touches),
-     * so a direct call would fail the host regression gate, while the real SDK
-     * shipped in the app DOES have it. Reflecting preserves a genuine runtime
-     * toggle on device and degrades to a safe no-op where the method is absent
-     * (host harness / tests). The official API is what actually toggles
-     * collection, so the opt-out is real, not just a documented preference.
+     * reflection and report whether it took effect. The host-contract stub
+     * exposes a REDUCED FirebaseCrashlytics API (no such method — it only
+     * mirrors the small surface the app touches), so a direct call would fail
+     * the host regression gate, while the real SDK shipped in the app DOES have
+     * it. Reflecting preserves a genuine runtime toggle on device and degrades
+     * to a safe no-op where the method is absent (host harness / tests). The
+     * official API is what actually toggles collection, so the opt-out is real,
+     * not just a documented preference.
+     *
+     * Returns true only when the toggle was actually applied. On any failure —
+     * missing method OR reflection invocation error (review #5) — it warns once
+     * and returns false so callers know the SDK's disable did NOT take effect
+     * than they can fail closed.
      */
-    private fun setCollectionEnabled(c: FirebaseCrashlytics, enabled: Boolean) {
-        try {
+    private fun setCollectionEnabled(c: FirebaseCrashlytics, enabled: Boolean): Boolean {
+        return try {
+            // Host-regression seam: force the missing-method / invocation-failure
+            // outcome without depending on the reduced stub's reflection surface.
+            // Fired inside the try so a throwing seam is treated exactly like a
+            // real reflection invocation failure (caught -> toggle not applied).
+            toggleSeam?.invoke()
             c.javaClass.getMethod("setCrashlyticsCollectionEnabled", Boolean::class.javaPrimitiveType)
                 .invoke(c, enabled)
-        } catch (e: NoSuchMethodException) {
+            true
+        } catch (e: Throwable) {
             // A real device running a newer Firebase SDK should never hit this.
             // Warn visibly (once) rather than fail silently, so a drift that makes
             // the opt-out a no-op cannot pass unnoticed.
             if (!toggleMissingWarned) {
                 toggleMissingWarned = true
-                Log.w("CrashlyticsFx", "setCrashlyticsCollectionEnabled missing from this SDK — crash reporting opt-out is a NO-OP")
+                Log.w("CrashlyticsFx", "setCrashlyticsCollectionEnabled unavailable/failed — crash reporting opt-out is a NO-OP; writes suppressed for opted-out processes")
             }
-        } catch (t: Throwable) { /* no-op: host stub/older SDK lacks the method */ }
+            false
+        }
     }
 
     /** Attach stable per-session tags so dashboard reports are filterable. */
     fun setContext(abi: String) {
         val c = cs ?: return
+        if (!writesAllowed) return  // opted-out process emits no keys (review #5)
+        writeProbe?.invoke("context")
         try {
             c.setCustomKey("abi", abi)
             c.setCustomKey("android_sdk", Build.VERSION.SDK_INT)
@@ -157,12 +192,16 @@ object CrashlyticsFx {
      *  aggregate engine-health metrics in [EngineMetrics]; never carries text. */
     fun setKey(name: String, value: String) {
         val c = cs ?: return
+        if (!writesAllowed) return
+        writeProbe?.invoke("key:$name")
         try { c.setCustomKey(name, value) } catch (t: Throwable) { /* no-op */ }
     }
 
     /** Report a caught-but-not-fatal exception with a short location tag. */
     fun record(tag: String, e: Throwable) {
         val c = cs ?: return
+        if (!writesAllowed) return
+        writeProbe?.invoke("record:$tag")
         try {
             c.log(tag)
             c.recordException(e)
@@ -186,8 +225,10 @@ object CrashlyticsFx {
     }
 
     /** Add a breadcrumb to the current session's crash timeline. */
-    fun br(msg: String) {
-        val c = cs ?: return
-        try { c.log(msg) } catch (t: Throwable) { /* no-op */ }
-    }
+    fun br(label: String) {
+            val c = cs ?: return
+            if (!writesAllowed) return
+            writeProbe?.invoke("br:$label")
+            try { c.log(label) } catch (t: Throwable) { /* no-op */ }
+        }
 }

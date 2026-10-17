@@ -747,9 +747,10 @@ class EloquenceEngine(context: Context) {
             future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS).takeIf { requestEpoch == engineEpoch.get() }
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e)
+            // Hang diagnostic is distinct from the request's final outcome: the
+            // single outcome (RC_TIMEOUT) is decided by the top-level caller (the
+            // TTS service), so this watchdog is NOT double-counted as a failure.
             EngineMetrics.recordSynthTimeout()
-            // A hang is also a failed request — count it in the outcome tally too.
-            EngineMetrics.recordOutcome(EngineMetrics.RC_TIMEOUT)
             var first = true
             for ((t, st)in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
@@ -757,7 +758,9 @@ class EloquenceEngine(context: Context) {
             }
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
-            null
+            // Rethrow so the caller can tell a watchdog timeout apart from a
+            // genuine synthesis failure (both would otherwise surface as null).
+            throw e
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             null

@@ -785,9 +785,108 @@ private fun crashInit() {
     println("PASS crashInit: per-process init is a safe no-op; Application wired for every process")
 }
 
+/** Review #1: a failed consent read (prefs store / file-lock) must be swallowed
+ *  and fail closed — it must never throw out of the public record*() paths that
+ *  run in synthesis/shutdown finally blocks, and nothing may be persisted.
+ *  Deterministic driver: the consentReadSeam throws on the next read. */
+private fun engineMetricsFailClosedOnConsentRead() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+    check(store.getLong("synth_n", -1L) == 0L)
+    // Simulate the prefs store / file lock being unreadable at flush time.
+    set(EngineMetrics, "consentReadSeam") { throw IllegalStateException("prefs file lock unavailable") }
+    try {
+        var threw = false
+        try { EngineMetrics.recordSynth(12L) } catch (t: Throwable) { threw = true }
+        check(!threw) { "consent-read failure must NOT throw out of recordSynth — telemetry broke the engine result path" }
+        // Fail closed: the failed consent read dropped the delta, leaving the
+        // shared aggregate untouched.
+        check(store.getLong("synth_n", -1L) == 0L) { "fail-closed consent read must not persist/(attach) diagnostics" }
+    } finally {
+        set(EngineMetrics, "consentReadSeam", null)
+    }
+    EngineMetrics.clear(context)
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS engineMetricsFailClosedOnConsentRead: consent-read failure swallowed, nothing persisted, engine result path intact")
+}
+
+/** Reviews #2 & #3: a synthesis request is classified into EXACTLY ONE final
+ *  outcome, through the single classifier the service now drives.
+ *  - #2: a watchdog timeout is RC_TIMEOUT — never double-counted as RC_FAIL.
+ *  - #3: success is only RC_OK once the completion callback actually returned;
+ *        a failing done() is RC_FAIL, never RC_OK. */
+private fun finalOutcomeIsExactlyOne() {
+    check(EngineMetrics.finalOutcome(interrupted=false, timedOut=false, failed=false, ok=true) == EngineMetrics.RC_OK)
+    // #3: done() failed -> FAIL, never OK.
+    check(EngineMetrics.finalOutcome(interrupted=false, timedOut=false, failed=true, ok=true) == EngineMetrics.RC_FAIL)
+    // #2: timeout -> RC_TIMEOUT, never RC_FAIL, regardless of the generic failed flag.
+    check(EngineMetrics.finalOutcome(interrupted=false, timedOut=true, failed=true, ok=false) == EngineMetrics.RC_TIMEOUT)
+    check(EngineMetrics.finalOutcome(interrupted=false, timedOut=true, failed=false, ok=false) == EngineMetrics.RC_TIMEOUT)
+    // Fail-closed: no explicit success disposition is not a success.
+    check(EngineMetrics.finalOutcome(interrupted=false, timedOut=false, failed=false, ok=false) == EngineMetrics.RC_FAIL)
+    // Interruption wins over everything — still exactly one bucket.
+    check(EngineMetrics.finalOutcome(interrupted=true, timedOut=true, failed=true, ok=true) == EngineMetrics.RC_INTERRUPTED)
+    check(EngineMetrics.finalOutcome(interrupted=true, timedOut=false, failed=false, ok=false) == EngineMetrics.RC_INTERRUPTED)
+    println("PASS finalOutcomeIsExactlyOne: timeout==RC_TIMEOUT (not also RC_FAIL); failing done()==RC_FAIL (not RC_OK); one code per request")
+}
+
+/** Review #5, missing-method path: when the SDK has no
+ *  setCrashlyticsCollectionEnabled method, an opted-out process must still emit
+ *  NO Crashlytics keys/logs/exceptions (fail closed) — even though the toggle
+ *  could not be applied and the SDK may still be live underneath. */
+private fun crashOptOutWritesNothingMissingToggle() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, false) // opt out
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "writeProbe") { label: String -> seen.add(label) }
+    try {
+        CrashlyticsFx.initProcess(context)
+        CrashlyticsFx.setContext("x86_64")
+        CrashlyticsFx.setKey("probe", "v")
+        CrashlyticsFx.record("p", RuntimeException("x"))
+        CrashlyticsFx.br("p")
+        // The host stub lacks the toggle method (documented gap) -> NOT applied.
+        check(!CrashlyticsFx.collectionToggleAvailable())
+        check(seen.isEmpty()) { "opted-out process wrote Crashlytics data although the disable toggle is missing (fail-closed violated): $seen" }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashOptOutWritesNothingMissingToggle: opted-out process emits nothing when disable toggle is missing")
+}
+
+/** Review #5, invocation-failure path: even when setCollectionEnabled's
+ *  reflection call throws (toggle not applied), an opted-out process emits
+ *  nothing. Deterministic driver: toggleSeam throws, mirroring a real
+ *  InvocationTargetException inside the reflection call. */
+private fun crashOptOutWritesNothingInvocationFailure() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, false) // opt out
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "toggleSeam") { throw java.lang.reflect.InvocationTargetException(RuntimeException("remote toggle failed")) }
+    set(CrashlyticsFx, "writeProbe") { label: String -> seen.add(label) }
+    try {
+        CrashlyticsFx.initProcess(context)
+        CrashlyticsFx.setContext("x86_64")
+        CrashlyticsFx.record("p", RuntimeException("x"))
+        CrashlyticsFx.br("p")
+        check(seen.isEmpty()) { "opted-out process wrote Crashlytics data although the toggle invocation FAILED (fail-closed violated): $seen" }
+    } finally {
+        set(CrashlyticsFx, "toggleSeam", null)
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashOptOutWritesNothingInvocationFailure: opted-out process emits nothing when disable toggle invocation fails")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure() }
     finally { Context.root.deleteRecursively() }
 }

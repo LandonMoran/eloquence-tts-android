@@ -119,6 +119,11 @@ object EngineMetrics {
     // advance so the harness can interleave a concurrent record and prove it stays
     // outstanding. Always null in production.
     private var mergeSeam: (() -> Unit)? = null
+    // Host-regression seam for the fail-closed consent guard (review #1): when
+    // armed, throws on the next consent read to prove a prefs store / file-lock
+    // failure is swallowed and never breaks synthesis or initialization.
+    // Always null in production.
+    private var consentReadSeam: (() -> Unit)? = null
 
     // ----------------------------------------------------------------- lifecycle
 
@@ -134,20 +139,35 @@ object EngineMetrics {
 
     private fun flush(now: Boolean) {
         val ctx = appContext ?: return
-        // Consent is checked FIRST, before the hot-path throttle, so an opted-out
-        // session unconditionally drops its deltas (rolls the baseline) — even a
-        // record whose flush falls inside the throttle window must not stay
-        // "outstanding" and leak into the shared store when consent is re-enabled.
-        if (!TelemetryPrefs.isCrashEnabled(ctx)) {
-            synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
-            return
+        try {
+            // Consent is checked FIRST, before the hot-path throttle, so an opted-out
+            // session unconditionally drops its deltas (rolls the baseline) — even a
+            // record whose flush falls inside the throttle window must not stay
+            // "outstanding" and leak into the shared store when consent is re-enabled.
+            if (!crashEnabled(ctx)) {
+                synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+                return
+            }
+            val elapsed = SystemClock.elapsedRealtime()
+            if (!now && elapsed - lastPersistElapsed < PERSIST_INTERVAL_MS) return
+            lastPersistElapsed = elapsed
+            mergeDeltas(ctx)
+            attachCrashKeys(ctx)
+        } catch (t: Throwable) {
+            // Telemetry must never break the app: any persistence/consent failure here
+            // is swallowed so the record*() calls made from finally blocks (synthesis
+            // worker, initialize, shutdown) can never mask the real engine result.
         }
-        val elapsed = SystemClock.elapsedRealtime()
-        if (!now && elapsed - lastPersistElapsed < PERSIST_INTERVAL_MS) return
-        lastPersistElapsed = elapsed
-        mergeDeltas(ctx)
-        attachCrashKeys(ctx)
     }
+
+    /** Consent read with a fail-closed guard (review #1): if the prefs store or its
+     *  file lock cannot be read, treat crash reporting as OFF — drop deltas and never
+     *  attach keys — and above all never let a telemetry read throw into the speech,
+     *  shutdown, or initialization paths. */
+    private fun crashEnabled(context: Context): Boolean = try {
+        consentReadSeam?.invoke()
+        TelemetryPrefs.isCrashEnabled(context)
+    } catch (t: Throwable) { false }
 
     // ------------------------------------------------------------- record site
 
@@ -221,7 +241,28 @@ object EngineMetrics {
                 else -> Unit
             }
         }
+
         flush(now = false)
+    }
+
+    /** The SINGLE final disposition of a synthesis request (reviews #2, #3).
+     *
+     *  The TTS service calls this once when an utterance terminates and records
+     *  the returned code — and ONLY this code — so a request is counted exactly
+     *  once and never under two buckets (e.g. old code double-counted a watchdog
+     *  timeout as both RC_TIMEOUT from the engine and RC_FAIL from the service).
+     *  Priority: interrupted > timeout > fail > ok, and the result is fail-closed.
+     *
+     *  [ok] must be the request DID complete its framework completion callback;
+     *  it is only true when done() returned normally (a failing done() is a
+     *  failure, not a success — issue #3).
+     */
+    fun finalOutcome(interrupted: Boolean, timedOut: Boolean, failed: Boolean, ok: Boolean): Int = when {
+        interrupted -> RC_INTERRUPTED
+        timedOut -> RC_TIMEOUT
+        failed -> RC_FAIL
+        ok -> RC_OK
+        else -> RC_FAIL // no explicit success disposition => not a success
     }
 
     // ------------------------------------------------------------ crash attach
@@ -233,7 +274,7 @@ object EngineMetrics {
         // When the user has turned off crash reporting, do not populate any
         // Crashlytics keys this session (nothing would transmit, and keys should
         // never be populated on a session that opted out).
-        if (!TelemetryPrefs.isCrashEnabled(context)) return
+        if (!crashEnabled(context)) return
         val v = combined()
         CrashlyticsFx.setKey("m_init_n", v[I_INIT_N].toString())
         CrashlyticsFx.setKey("m_init_fail", v[I_INIT_FAIL].toString())

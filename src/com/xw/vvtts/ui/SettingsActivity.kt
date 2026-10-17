@@ -265,8 +265,12 @@ class SettingsActivity : Activity() {
         addSwitchRow(mainContainer, getString(R.string.crash_row),
             TelemetryPrefs.isCrashEnabled(this)) { on ->
             TelemetryPrefs.setCrashEnabled(this, on)
-            if (!on) EngineMetrics.clear(this)
+            // PRIVACY: disable the SDK's live collection BEFORE any slower
+            // diagnostic-store cleanup (review #4). If the main or :tts process
+            // dies during EngineMetrics.clear()'s lock+fsync, no report may be
+            // collected after the user switched reporting off.
             CrashlyticsFx.setCrashCollectionEnabled(on)
+            if (!on) EngineMetrics.clear(this)
         }
         addNoteRow(mainContainer, R.string.crash_note)
         addSwitchRow(mainContainer, getString(R.string.analytics_row),
@@ -420,9 +424,11 @@ maybeShowLaunchUpdateDialog()
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
                     toastOnUi(R.string.preview_in_english)
-            val pcmEn = eng.synthesizeCore("Hello, this is a speech synthesis test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, preset,
-                cfg.pitch, 100)
+            val pcmEn = try {
+                eng.synthesizeCore("Hello, this is a speech synthesis test.",
+                    EloquenceEngine.DIALECT_EN_US, cfg.volume, preset,
+                    cfg.pitch, 100)
+            } catch (t: Throwable) { null }  // watchdog timeout -> no audio, not a crash
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, eng.getCoreSampleRate())
                 toastOnUi(R.string.spoken_en)
@@ -431,9 +437,11 @@ maybeShowLaunchUpdateDialog()
             }
             return
         }
-        val pcm = eng.synthesizeCore(text, dialect,
-            cfg.volume, preset,
-            cfg.pitch, 100)
+        val pcm = try {
+            eng.synthesizeCore(text, dialect,
+                cfg.volume, preset,
+                cfg.pitch, 100)
+        } catch (t: Throwable) { null }  // watchdog timeout -> no audio, not a crash
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, eng.getCoreSampleRate())
             toastOnUi(R.string.synth_ok)
@@ -498,12 +506,9 @@ maybeShowLaunchUpdateDialog()
             val eng = engine ?: return@Thread
             val cfg = voiceConfig ?: return@Thread
             val t0 = System.currentTimeMillis()
-            val pcm1 = eng.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, 1)
-            val pcm2 = eng.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, 2)
-            val pcm3 = eng.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, 8)
+            val pcm1 = try { eng.synthesizeCore("Hello, this is a voice test.", EloquenceEngine.DIALECT_EN_US, cfg.volume, 1) } catch (t: Throwable) { null }
+            val pcm2 = try { eng.synthesizeCore("Hello, this is a voice test.", EloquenceEngine.DIALECT_EN_US, cfg.volume, 2) } catch (t: Throwable) { null }
+            val pcm3 = try { eng.synthesizeCore("Hello, this is a voice test.", EloquenceEngine.DIALECT_EN_US, cfg.volume, 8) } catch (t: Throwable) { null }
             val ms = System.currentTimeMillis() - t0
             val total = (pcm1?.size ?: 0) + (pcm2?.size ?: 0) + (pcm3?.size ?: 0)
             Log.e("RoleTest", "three roles total=$total shorts in $ms ms")
