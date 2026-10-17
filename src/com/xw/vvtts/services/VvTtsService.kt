@@ -22,6 +22,7 @@ import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.NgramScorer
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
+import com.xw.vvtts.utils.EngineMetrics
 import java.io.File
 import java.util.HashMap
 import java.util.Locale
@@ -447,6 +448,7 @@ class VvTtsService : TextToSpeechService() {
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
+        EngineMetrics.recordQueueWait(t0 - schedAt)
         synchronized(cancellationLock) {
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
@@ -697,7 +699,7 @@ synchronized(synthesisLock) {
                     // be invalid speech on a dead pipe.
 
 
-                    if (pipeEnded) return
+                    if (pipeEnded) { EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED); return }
 
 
         }
@@ -712,6 +714,7 @@ synchronized(synthesisLock) {
                             val verdict = callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
                             if (verdict != TextToSpeech.SUCCESS) {
                                 Log.w(TAG, "callback.start rejected the pipe (verdict=$verdict); no further calls")
+                                EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)
                                 return
                             }
                         } catch (e: Throwable) {
@@ -720,6 +723,7 @@ synchronized(synthesisLock) {
                                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
                             } catch (ignore: Throwable) {
                             }
+                            EngineMetrics.recordOutcome(EngineMetrics.RC_FAIL)
                             return
                         }
                     }
@@ -728,6 +732,7 @@ synchronized(synthesisLock) {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (ignore: Throwable) {
                         }
+                        EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)
                         return
                     }
                     if (synthFailedOrTruncated) {
@@ -738,12 +743,14 @@ synchronized(synthesisLock) {
 
 
                         Log.w(TAG, "synthesis failed or truncated; reporting error()")
+                        EngineMetrics.recordOutcome(EngineMetrics.RC_FAIL)
                         try {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (e: Throwable) {
                             Log.e(TAG, "callback.error failed", e)
                         }
                     } else {
+                        EngineMetrics.recordOutcome(EngineMetrics.RC_OK)
                         try {
                             callback.done()
                         } catch (e: Throwable) {

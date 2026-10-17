@@ -168,8 +168,11 @@ Tap to change the spoken language</string>
     <string name="update_notif_enable">Update notifications</string>
     <string name="update_notif_prereleases">Pre-release updates</string>
     <string name="update_notif_note">Receive a notification when a new release is available.</string>
-    <string name="telemetry_row">Share diagnostics</string>
-    <string name="telemetry_note">Help improve Eloquence with usage analytics and performance data. Anonymous. Disabled by default; no speech text is ever collected. Crash reports are sent automatically and cannot be disabled.</string>
+    <string name="analytics_row">Share usage analytics</string>
+    <string name="analytics_note">Off by default. Shares app usage information (screens opened, app version, device type) to help improve features. Eloquence never includes the text it reads aloud, dictionary entries, or synthesized audio in these reports.</string>
+    <string name="perf_row">Share performance data</string>
+    <string name="perf_note">Off by default. Shares app startup, response, and speech-engine synthesis timing as aggregate durations and counts (no content) to help find slowdowns and freezes. Engine timing is measured directly from the speech process.</string>
+    <string name="crash_note">Crash reports are sent automatically to fix failures, including crashes in the speech engine. They contain device and app information and timing, never the text being read aloud. Crash reporting cannot be turned off.</string>
     <string name="update_channel_name">Updates</string>
     <string name="update_channel_desc">Release notifications for Eloquence TTS</string>
     <string name="dict_import_failed">Dictionary import failed: %1$s. No entries were changed.</string>

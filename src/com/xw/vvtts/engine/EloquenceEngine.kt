@@ -22,6 +22,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import com.xw.vvtts.utils.CrashCodeDefender
+import com.xw.vvtts.utils.EngineMetrics
 
 internal class AppliedVoiceParams {
     private var dialect: Int? = null
@@ -103,8 +104,15 @@ class EloquenceEngine(context: Context) {
     }
 
     /** Prepare device storage and schedule warmup; return false if initialization fails. */
-    @Synchronized
     fun initialize(): Boolean {
+        val t0 = SystemClock.elapsedRealtime()
+        val ok = initializeImpl()
+        EngineMetrics.recordInit(SystemClock.elapsedRealtime() - t0, ok)
+        return ok
+    }
+
+    @Synchronized
+    private fun initializeImpl(): Boolean {
         if (initialized) return true
         if (retireExecutor.isShutdown) retireExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "elq-retire").apply { isDaemon = true }
@@ -440,6 +448,12 @@ class EloquenceEngine(context: Context) {
     /** Retire the worker and arrange handle cleanup after active native calls return. */
     @Synchronized
     fun shutdown() {
+        val t0 = SystemClock.elapsedRealtime()
+        shutdownImpl()
+        EngineMetrics.recordShutdown(SystemClock.elapsedRealtime() - t0)
+    }
+
+    private fun shutdownImpl() {
         engineEpoch.incrementAndGet()
         lifecycleEpoch.incrementAndGet()
         val worker = synthWorker
@@ -528,13 +542,13 @@ class EloquenceEngine(context: Context) {
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
         val libDirRaw = info.nativeLibraryDir
-        if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); return 0L }
+        if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); EngineMetrics.recordNativeLoadFail(); return 0L }
         val libDir = File(libDirRaw)
         val cfgDir = File(storageContext.filesDir, "eloquence")
         val epoch = lifecycleEpoch.get()
         val handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
         Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
-        if (handle ==  0L) return 0L
+        if (handle ==  0L) { EngineMetrics.recordJniOpenFail(); return 0L }
         // A handle born across a rotate/shutdown is retired, never cached —
         // the zombie worker that opened it may still be driving it. A stop does
         // not retire the owning worker, so a handle opened across a stop is kept.
@@ -694,6 +708,7 @@ class EloquenceEngine(context: Context) {
                     Log.w(TAG, "TTS_HANG: retired engine; dropping queued synthesis")
                     null
                 } else {
+                val tSynth = SystemClock.elapsedRealtime()
                 val r = try {
                     block(worker)
                 } finally {
@@ -707,6 +722,7 @@ class EloquenceEngine(context: Context) {
                         closeHandles(worker)
                     }
                 }
+                if (r != null) EngineMetrics.recordSynth(SystemClock.elapsedRealtime() - tSynth)
                 r
             }
         }
@@ -722,6 +738,7 @@ class EloquenceEngine(context: Context) {
             future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS).takeIf { requestEpoch == engineEpoch.get() }
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e)
+            EngineMetrics.recordSynthTimeout()
             var first = true
             for ((t, st)in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
@@ -747,6 +764,7 @@ class EloquenceEngine(context: Context) {
     // executor + fresh native handles so subsequent requests work again immediatel
     /** Replace the worker and invalidate its queued work while deferring active handle cleanup. */
     private fun rotateEngine() {
+        EngineMetrics.recordRotate()
         val worker = synthWorker
         worker.retired = true
         try {

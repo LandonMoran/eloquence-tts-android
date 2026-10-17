@@ -90,6 +90,13 @@ object CrashlyticsFx {
         } catch (t: Throwable) { /* never crash the app for telemetry */ }
     }
 
+    /** Attach a single numeric custom key (sparse, stable name). Used for the
+     *  aggregate engine-health metrics in [EngineMetrics]; never carries text. */
+    fun setKey(name: String, value: Long) {
+        val c = cs ?: return
+        try { c.setCustomKey(name, value) } catch (t: Throwable) { /* no-op */ }
+    }
+
     /** Report a caught-but-not-fatal exception with a short location tag. */
     fun record(tag: String, e: Throwable) {
         val c = cs ?: return

@@ -258,12 +258,19 @@ class SettingsActivity : Activity() {
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
         addNoteRow(mainContainer, R.string.extra_logging_note)
-        addSwitchRow(mainContainer, getString(R.string.telemetry_row),
-            TelemetryPrefs.isEnabled(this)) { on ->
-            TelemetryPrefs.setEnabled(this, on)
+        addSwitchRow(mainContainer, getString(R.string.analytics_row),
+            TelemetryPrefs.isAnalyticsEnabled(this)) { on ->
+            TelemetryPrefs.setAnalyticsEnabled(this, on)
             Telemetry.apply(this)
         }
-        addNoteRow(mainContainer, R.string.telemetry_note)
+        addNoteRow(mainContainer, R.string.analytics_note)
+        addSwitchRow(mainContainer, getString(R.string.perf_row),
+            TelemetryPrefs.isPerfEnabled(this)) { on ->
+            TelemetryPrefs.setPerfEnabled(this, on)
+            Telemetry.apply(this)
+        }
+        addNoteRow(mainContainer, R.string.perf_note)
+        addNoteRow(mainContainer, R.string.crash_note)
 
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)
