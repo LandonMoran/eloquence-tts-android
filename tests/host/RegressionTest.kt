@@ -638,6 +638,84 @@ private fun engineMetrics() {
     println("PASS engineMetrics: cross-process merge safe; failed work counted; clear-on-opt-out; opted-out window not uploaded")
 }
 
+/** #1-interleave: an increment that lands between the delta snapshot and the
+ *  baseline advance must stay outstanding for the next merge, not be dropped. */
+private fun engineMetricsMergeWindow() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    val rotate = 9 // EngineMetrics.I_ROTATE
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+
+    // The seam fires inside mergeDeltas right after the delta snapshot and before
+    // the baseline advances (the real race window is the disk I/O). Land a rotate
+    // event in that exact instant.
+    val startLocal = field(EngineMetrics, "local") as LongArray
+    set(EngineMetrics, "mergeSeam") { startLocal[rotate]++ }
+
+    try {
+        // This merge has a real delta (init_n) so it proceeds past the early
+        // return and reaches the seam, which bumps local[I_ROTATE] mid-merge.
+        EngineMetrics.recordInit(10, true)
+        val afterLocal = field(EngineMetrics, "local") as LongArray
+        val afterBase = field(EngineMetrics, "baseline") as LongArray
+        check(afterLocal[rotate] - afterBase[rotate] == 1L) { "mid-merge increment dropped (baseline advanced past it)" }
+        check(store.getLong("rotate", -1L) == 0L) { "mid-merge increment prematurely merged" }
+    } finally {
+        set(EngineMetrics, "mergeSeam", null)
+    }
+
+    // The outstanding increment survives into the next forced flush.
+    EngineMetrics.recordRotate()
+    check(store.getLong("rotate", -1L) == 2L) {
+        "mid-merge increment lost: expected 1 outstanding + 1 new = 2, got " + store.getLong("rotate", -1L)
+    }
+
+    EngineMetrics.clear(context)
+    println("PASS engineMetricsMergeWindow: increment landing during the merge window stays outstanding")
+}
+
+/** #2-cross-process: an idle process holding pre-opt-out deltas must discard them
+ *  when the sibling process clears on opt-out — never merge them after re-enable
+ *  into the fresh window. */
+private fun engineMetricsCrossProcessClear() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context) // cachedGeneration now reflects the cleared store
+
+    // Hold an UNMERGED pre-opt-out delta: synth is throttled (now=false), so a
+    // single record stays outstanding in this "process".
+    EngineMetrics.recordSynth(10) // local[synth_n]=1, baseline=0 -> outstanding 1, not merged
+    check(store.getLong("synth_n", -1L) == 0L) { "precondition: synth delta should still be outstanding/unmerged" }
+
+    // Simulate the MAIN process opting out: it clear()s the shared snapshot and
+    // bumps the generation. Model it directly on the store (NOT via
+    // EngineMetrics.clear, which would also zero OUR local — the main process's
+    // clear never touches the :tts process's in-memory counters).
+    val genBefore = store.getLong("metrics_generation", 0L)
+    store.update { map ->
+        map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max"] = 0L; map["rotate"] = 0L
+        map["metrics_generation"] = genBefore + 1L
+    }
+
+    // Re-enable: the :tts "process" records again, forcing an immediate flush.
+    // The generation bump must make it DISCARD the pre-opt-out synth delta.
+    EngineMetrics.recordRotate() // now=true -> immediate merge
+    check(store.getLong("synth_n", -1L) == 0L) {
+        "pre-opt-out delta leaked into the fresh window after re-enable: synth_n=" + store.getLong("synth_n", -1L)
+    }
+
+    // A subsequent record merges normally into the fresh, post-opt-out window.
+    EngineMetrics.recordRotate()
+    check(store.getLong("rotate", -1L) == 1L) { "fresh post-opt-out window failed to merge" }
+
+    EngineMetrics.clear(context)
+    println("PASS engineMetricsCrossProcessClear: idle process discards pre-opt-out deltas on sibling clear")
+}
+
 /** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */
 private fun crashInit() {
     val context = Context()
@@ -660,6 +738,6 @@ private fun crashInit() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear() }
     finally { Context.root.deleteRecursively() }
 }

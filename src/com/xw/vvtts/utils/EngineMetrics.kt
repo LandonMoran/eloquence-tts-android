@@ -36,6 +36,14 @@ import java.util.Arrays
  * diagnostics are NOT silently uploaded if the user later re-enables the
  * toggle. Timed/rotate/JNI-fail/shutdown checkpoints persist immediately; the
  * hot-path synthesis/queue records are throttled to bound disk writes.
+ *
+ * Cross-process clear
+ * -------------------
+ * Opt-out calls [clear], which zeroes the shared snapshot AND bumps a persisted
+ * generation token. Every process caches that generation and, at each merge,
+ * discards any pre-opt-out deltas it still holds if the token advanced (i.e. a
+ * clear happened while it was idle). This closes the gap where an opted-out
+ * window could otherwise be uploaded by the sibling process after re-enable.
  */
 object EngineMetrics {
     // Sparse, controlled outcome codes (no free-form/user-derived values).
@@ -49,6 +57,11 @@ object EngineMetrics {
     // chunked to bound disk writes (MirroredPreferences does an fsync + atomic
     // rename per write).
     private const val PERSIST_INTERVAL_MS = 2_000L
+    // Cross-process generation key (deliberately not one of the bounded counter
+    // KEYS): bumped whenever the retained snapshot is cleared on opt-out, so an
+    // idle process still holding pre-opt-out deltas can detect and discard them
+    // before they could merge after a later re-enable.
+    private const val GEN_KEY = "metrics_generation"
 
     // Indexes into the counter arrays; must stay aligned with [KEYS].
     private const val I_INIT_N = 0
@@ -94,6 +107,14 @@ object EngineMetrics {
     // processes). This is what the Crashlytics keys present (plus deltas that
     // have not yet reached disk).
     private val shared = LongArray(N_COUNTERS)
+    // Cross-process reset generation (review #2): bumped by [clear] on opt-out.
+    // An idle process that is still holding pre-opt-out deltas observes the bump
+    // at its next merge and discards them before they could merge after re-enable.
+    private var cachedGeneration = 0L
+    // Host-regression seam: invoked between the delta snapshot and the baseline
+    // advance so the harness can interleave a concurrent record and prove it stays
+    // outstanding. Always null in production.
+    private var mergeSeam: (() -> Unit)? = null
 
     // ----------------------------------------------------------------- lifecycle
 
@@ -253,18 +274,36 @@ object EngineMetrics {
      *  refresh [shared]. synth_max is merged by max, not sum. */
     private fun mergeDeltas(context: Context) {
         val deltas = LongArray(N_COUNTERS)
+        val mergedLocal = LongArray(N_COUNTERS)
         synchronized(lock) {
-            for (i in 0 until N_COUNTERS) deltas[i] = local[i] - baseline[i]
+            // Snapshot the WHOLE local state at delta-capture time. The baseline
+            // is advanced to THIS snapshot (never to the live [local]) after a
+            // successful write, so an increment that lands during the disk I/O
+            // stays outstanding for the next merge instead of being dropped (review #1).
+            System.arraycopy(local, 0, mergedLocal, 0, N_COUNTERS)
+            for (i in 0 until N_COUNTERS) deltas[i] = mergedLocal[i] - baseline[i]
+        }
+        // Cross-process clear (review #2): if another process cleared the retained
+        // snapshot (opt-out) since this process last synchronized, discard any
+        // pre-opt-out deltas we still hold before they could merge into a fresh,
+        // post-re-enable window.
+        if (generationChanged(context)) {
+            synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+            refreshShared()
+            return
         }
         var any = false
         for (d in deltas) if (d != 0L) { any = true; break }
         if (!any) return
+        // Host-regression seam: interleave a concurrent record here so the harness
+        // can prove an increment landing after the snapshot remains outstanding.
+        mergeSeam?.invoke()
         var ok = false
         try {
             ok = MirroredPreferences(context, PREFS_NAME).update { map ->
                 for (i in 0 until N_COUNTERS) {
                     if (i == I_SYNTH_MAX) {
-                        map[KEYS[i]] = maxOf(map[KEYS[i]] as? Long ?: 0L, local[I_SYNTH_MAX])
+                        map[KEYS[i]] = maxOf(map[KEYS[i]] as? Long ?: 0L, mergedLocal[I_SYNTH_MAX])
                     } else if (deltas[i] != 0L) {
                         map[KEYS[i]] = ((map[KEYS[i]] as? Long ?: 0L) + deltas[i])
                     }
@@ -272,20 +311,38 @@ object EngineMetrics {
             }
         } catch (t: Throwable) { return }
         if (!ok) return
-        synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+        // Advance the baseline to the delta-capture snapshot — never to the live
+        // counters. A record made after the snapshot is still outstanding here.
+        synchronized(lock) { System.arraycopy(mergedLocal, 0, baseline, 0, N_COUNTERS) }
         refreshShared()
     }
 
+    /** Detect whether another process cleared the retained aggregate (opt-out)
+     *  since this process last synchronized, and record that observation. */
+    private fun generationChanged(context: Context): Boolean {
+        val now = try {
+            MirroredPreferences(context, PREFS_NAME).getLong(GEN_KEY, 0L)
+        } catch (t: Throwable) { return false }
+        synchronized(lock) {
+            return if (now != cachedGeneration) { cachedGeneration = now; true } else false
+        }
+    }
+
     /** Reload [shared] to mirror the on-disk aggregate (picks up the other
-     *  process's merges). */
+     *  process's merges), and cache the current reset generation. */
     private fun refreshShared() {
         val ctx = appContext ?: return
         val fresh = LongArray(N_COUNTERS)
+        var generation = 0L
         try {
             val p = MirroredPreferences(ctx, PREFS_NAME)
             for (i in 0 until N_COUNTERS) fresh[i] = p.getLong(KEYS[i], 0)
+            generation = p.getLong(GEN_KEY, 0L)
         } catch (t: Throwable) { return }
-        synchronized(lock) { System.arraycopy(fresh, 0, shared, 0, N_COUNTERS) }
+        synchronized(lock) {
+            System.arraycopy(fresh, 0, shared, 0, N_COUNTERS)
+            cachedGeneration = generation
+        }
     }
 
     /** Clear every retained diagnostic snapshot (shared on-disk aggregate, local
@@ -298,10 +355,15 @@ object EngineMetrics {
             Arrays.fill(baseline, 0L)
             Arrays.fill(shared, 0L)
         }
+        // Bump the shared generation so any other process still holding
+        // pre-opt-out deltas in memory can detect and discard them before they
+        // could merge after a later re-enable (review #2). Zero the snapshot too.
         try {
-            MirroredPreferences(context, PREFS_NAME).edit { e ->
-                for (key in KEYS) e.putLong(key, 0L)
+            MirroredPreferences(context, PREFS_NAME).update { map ->
+                for (key in KEYS) map[key] = 0L
+                map[GEN_KEY] = ((map[GEN_KEY] as? Long ?: 0L) + 1L)
             }
         } catch (t: Throwable) { /* telemetry must never break the app */ }
+        refreshShared() // observe our own bump so cachedGeneration stays current
     }
 }
