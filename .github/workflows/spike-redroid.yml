@@ -1,0 +1,52 @@
+name: spike-redroid-arm
+on:
+  workflow_dispatch:
+jobs:
+  redroid:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load binder/ashmem modules + start redroid (arm64)
+        run: |
+          set -euxo pipefail
+          uname -a; uname -m
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq adb
+          # load the modules; not fatal if they can't load, we report which
+          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" && echo "BINDER_OK" || echo "BINDER_FAIL"
+          sudo modprobe ashmem_linux && echo "ASHMEM_OK" || echo "ASHMEM_FAIL"
+          ls -la /dev/binder* /dev/ashmem 2>&1 || true
+      - name: Run redroid (arm64 Android 15)
+        run: |
+          set -euxo pipefail
+          mkdir -p $HOME/rd-data
+          sudo docker run -itd --rm --privileged --pull always \
+            -v $HOME/rd-data:/data \
+            -p 127.0.0.1:5555:5555 \
+            redroid/redroid:15.0.0-latest
+          # wait for boot
+          for i in $(seq 1 30); do
+            if adb connect 127.0.0.1:5555 2>/dev/null | grep -q connected; then
+              echo "ADB_CONNECTED at loop $i"
+              break
+            fi
+            sleep 10
+          done
+          adb wait-for-device
+          # wait until sys.boot_completed
+          for i in $(seq 1 60); do
+            b=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            echo "boot_completed=$b (loop $i)"
+            [ "$b" = "1" ] && break
+            sleep 5
+          done
+          adb shell getprop ro.product.cpu.abi
+          adb shell cat /proc/cpuinfo | grep -m1 'model name' || true
+          echo "REDROID_UP"
+      - name: Report binders as artifact
+        if: always()
+        run: |
+          echo "kernel: $(uname -r)"
+          echo "arch: $(uname -m)"
+          echo "binder: $(ls /dev/binder* 2>/dev/null || echo none)"
+          echo "ashmem: $(ls /dev/ashmem 2>/dev/null || echo none)"
