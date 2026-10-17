@@ -533,6 +533,13 @@ synchronized(synthesisLock) {
 
             if (pd != 0L) {
                 LanguageDetector.setDefaultLanguage(pd.toInt())
+                // Keep englishDialect in lockstep with the pinned voice so detected
+                // English phrases (languageToDialect -> englishDialect) and short-run
+                // fallback (resolveDefaultLanguage) both resolve to the SAME variant.
+                // Otherwise picking EN-GB leaves englishDialect on EN-US and one
+                // utterance "fights" between the two dialects (short spans UK, full
+                // phrases US).
+                if (LanguageDetector.isEnglishDialect(pd.toInt())) LanguageDetector.setEnglishDialect(pd.toInt())
                 if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt())
             }
         }
