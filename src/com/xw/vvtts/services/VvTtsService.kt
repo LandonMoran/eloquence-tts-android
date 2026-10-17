@@ -16,6 +16,7 @@ import android.speech.tts.Voice
 import android.util.Log
 import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.engine.VoiceRegistry
+import com.xw.vvtts.utils.CrashlyticsFx
 import com.xw.vvtts.utils.MirroredPreferences
 import com.xw.vvtts.utils.EmojiExpander
 import com.xw.vvtts.utils.LanguageDetector
@@ -510,7 +511,7 @@ class VvTtsService : TextToSpeechService() {
         }
         Log.d("VvTtsService", "synth voice='" + request.voiceName + "' lang='" + request.language + "'")
                 if (voiceConfig?.extraLogging == true) {
-                    Log.i("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
+                    CrashlyticsFx.vLog("VvTtsX", "utterance voice=" + request.voiceName + " lang=" + request.language + " text_len=" + (request.charSequenceText?.length ?: 0))
                 }
 
         // The system TTS language picker passes the chosen voice in request.voiceName.
@@ -617,7 +618,7 @@ synchronized(synthesisLock) {
                 val segText = seg.text
                 Log.d("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " len=" + segText.length)
         if (voiceConfig?.extraLogging == true) {
-            Log.i("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
+            CrashlyticsFx.vLog("VvTtsService", "seg 0x" + Integer.toHexString(seg.dialect) + " '" + segText + "'")
         }
                 // CJK normalization (width + number + symbol readings) happens once,
                 // inside EloquenceEngine.preprocess for Japanese segments. Do not repeat it
@@ -641,12 +642,19 @@ synchronized(synthesisLock) {
                     if (expanded != null && expanded.isNotEmpty()) {
                         textToSynth = expanded
                     }
+                    // Bridge the text BEFORE the native call: a SIGSEGV inside
+                    // synthesizeCore kills the :tts process immediately, so only
+                    // lines already in Crashlytics' bounded session log survive. The
+                    // last chunk line emitted here is therefore the exact text being
+                    // synthesized the moment the engine crashed -- crash analytics
+                    // needs that string, not just its length.
+                    if (voiceConfig?.extraLogging == true) {
+                        val wordCount = if (chunkText.isBlank()) 0 else chunkText.trim().split(Regex("\s+")).size
+                        CrashlyticsFx.vLog("VvTtsX", "chunk chars=" + chunkText.length + " words=" + wordCount + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
+                    }
                     val t3 = SystemClock.elapsedRealtime()
                     val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
-                    if (voiceConfig?.extraLogging == true) {
-                        Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
-                    }
                     if (pcm != null && pcm.size > 0) {
                         val bytes = shortsToBytes(pcm)
                         val max = callback.maxBufferSize

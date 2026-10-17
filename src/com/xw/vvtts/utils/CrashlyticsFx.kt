@@ -2,6 +2,7 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 
@@ -113,6 +114,24 @@ object CrashlyticsFx {
         val marker = "ELQ_VERDICT autotest-crash " + (Thread.currentThread().name ?: "main")
         c.log(marker)
         throw RuntimeException("Intentional autotest crash (debug hook) [$marker]")
+    }
+
+    /**
+     * Verbose diagnostic line for the engine's synthesis path: writes to logcat
+     * (for on-device adb debugging) AND to the Crashlytics session log so the
+     * same line rides along in the next crash report from this process.
+     *
+     * The SDK keeps only the newest ~64 kB of log() per session and drops older
+     * entries past the cap, so a heavy verbose pipeline naturally leaves the most
+     * recent -- i.e. the lines just before a crash. This is deliberate: the last
+     * pre-synth chunk line is the exact text being synthesized when a native
+     * SIGSEGV in libvvtts_core.so kills the :tts process (Crashlytics NDK
+     * attaches these breadcrumbs to native reports).
+     */
+    fun vLog(tag: String, msg: String) {
+        android.util.Log.i(tag, msg)
+        val c = cs ?: return
+        try { c.log(tag + " " + msg) } catch (t: Throwable) { /* no-op */ }
     }
 
     /** Add a breadcrumb to the current session's crash timeline. */
