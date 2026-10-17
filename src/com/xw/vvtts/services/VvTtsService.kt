@@ -519,6 +519,7 @@ synchronized(synthesisLock) {
         synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedFixed = LanguageDetector.getFixedDialect()
+        val savedEnglishDialect = LanguageDetector.getEnglishDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
         // #159: no stale per-utterance language pin from a previous run may leak into
@@ -689,6 +690,7 @@ synchronized(synthesisLock) {
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
+                    LanguageDetector.setEnglishDialect(savedEnglishDialect)
                     // Once the framework itself killed the pipe (a start()/audioAvailable()
                     // verdict of STOPPED/ERROR), no further calls on the callback are<
                     // legal: it already knows the pipe died,and a done()/error() would

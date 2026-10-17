@@ -82,6 +82,15 @@ class VvttsApp : Application() {
         }
         try {
             registerReceiver(receiver, filter)
+            // Close the race where the user unlocks between the initial lock-state
+            // check in onCreate() and this registration: ACTION_USER_UNLOCKED is NOT
+            // sticky, so Android will not replay it for a late registration, and we'd
+            // otherwise miss the bootstrap entirely. Recheck now that we're registered.
+            if (isUserUnlocked()) {
+                try { unregisterReceiver(receiver) } catch (_: Throwable) {}
+                CrashlyticsFx.initProcess(this)
+                Telemetry.apply(this)
+            }
         } catch (t: Throwable) {
             // Registration failed (e.g. DOCT from a restricted context): run now
             // rather than never. Firebase init is guarded, so this cannot crash.
