@@ -1,18 +1,24 @@
 package com.xw.vvtts.ui
 import com.xw.vvtts.update.UpdateActions
+import com.xw.vvtts.update.UpdateNotifPrefs
+import com.xw.vvtts.update.syncFcmTopics
 
 import android.app.Activity
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.os.Build
 
 import android.media.AudioTrack
 import android.os.Bundle
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -30,13 +36,23 @@ import android.widget.Toast
 import com.xw.vvtts.R
 import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.update.UpdateNotificationScheduler
+import com.xw.vvtts.utils.CrashlyticsFx
 import com.xw.vvtts.utils.DictEntry
 import com.xw.vvtts.utils.LanguageDetector
+import com.xw.vvtts.utils.Telemetry
+import com.xw.vvtts.utils.TelemetryPrefs
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.util.HashSet
 
 class SettingsActivity : Activity() {
+    companion object {
+        const val EXTRA_OPEN_UPDATE_DIALOG = "com.xw.vvtts.EXTRA_OPEN_UPDATE_DIALOG"
+        private const val REQ_POST_NOTIF = 4073
+        private var processEngine: EloquenceEngine? = null
+        private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
+        private const val PREFS_NAME = "vvtts_lang_settings"
+    }
     private var voiceConfig: VoiceConfig? = null
     private var voiceProfile: VoiceProfile? = null
     private var engine: EloquenceEngine? = null
@@ -69,6 +85,9 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         voiceConfig = VoiceConfig(this)
         voiceProfile = VoiceProfile(this)
+        // Tag the main-process session so crashes from the UI process are
+        // distinguishable from engine (:tts) process native crashes.
+        CrashlyticsFx.setContext(if (Build.SUPPORTED_ABIS.isEmpty()) "unknown" else Build.SUPPORTED_ABIS[0])
         // Parse autotest hook before engine init (hook is only honored in debug builds).
         val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val autotest = if (debuggable) intent?.getStringExtra("autotest") else null  // #198: never honor external autotest hooks in non-debuggable (release( builds
@@ -80,6 +99,7 @@ class SettingsActivity : Activity() {
                 initOk = fresh.initialize() && fresh.isInitialized()
             } catch (t: Throwable) {
                 Log.e("SettingsActivity", "engine initialize() failed", t)
+                CrashlyticsFx.record("engine:initialize-failed", t)
             }
             if (initOk) {
                 e = fresh
@@ -88,6 +108,7 @@ class SettingsActivity : Activity() {
                 // Never FC the settings screen because the native engine is
                 // unhealthy: toast and continue; the test button surfaces the
                 // engine error for diagnosis.
+                CrashlyticsFx.record("engine:unhealthy", RuntimeException("EloquenceEngine init returned false"))
                 Toast.makeText(this, "TTS engine failed to initialize", Toast.LENGTH_LONG).show()
             }
         }
@@ -211,13 +232,24 @@ class SettingsActivity : Activity() {
         updateBtnLocal.setOnClickListener {
             UpdateActions.showCheckDialog(this)
         }
-        // Optional background update notifications (daily AlarmManager check).
+// Optional background update notifications. FCM push is the preferred transport
+        // when Google Play services is present; on devices without it, a once-per-day
+        // AlarmManager check posts the notification instead. One toggle arms whichever
+        // transport is available so the two coexist (FCM primary, local fallback).
+        addNoteRow(mainContainer, R.string.update_notif_note)
         var updateNotifySwitch: Switch? = null
         updateNotifySwitch = addSwitchRow(
             mainContainer,
             getString(R.string.update_notify_toggle),
-            UpdateNotificationScheduler.isEnabled(this)
+            UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
         ) { on -> onUpdateNotifyToggleChanged(on, updateNotifySwitch) }
+        addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
+            UpdateNotifPrefs.usesPrereleases(this)) { on ->
+            UpdateNotifPrefs.get(this).edit { e ->
+                e.putBoolean(UpdateNotifPrefs.USE_PRERELEASES, on)
+            }
+            syncFcmTopics(this)
+        }
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
@@ -226,6 +258,12 @@ class SettingsActivity : Activity() {
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
         addNoteRow(mainContainer, R.string.extra_logging_note)
+        addSwitchRow(mainContainer, getString(R.string.telemetry_row),
+            TelemetryPrefs.isEnabled(this)) { on ->
+            TelemetryPrefs.setEnabled(this, on)
+            Telemetry.apply(this)
+        }
+        addNoteRow(mainContainer, R.string.telemetry_note)
 
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)
@@ -239,7 +277,34 @@ class SettingsActivity : Activity() {
         scroll.addView(mainContainer)
         outer.addView(scroll)
         setContentView(outer)
-        maybeShowLaunchUpdateDialog()
+maybeShowLaunchUpdateDialog()
+
+        // #355: an FCM release notification tap reopens us with this extra;
+        // surface the same update dialog a manual check would (once per launch).
+        if (intent?.getBooleanExtra(EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
+            UpdateActions.showCheckDialog(this)
+        }
+
+        // Android 13+: notify() silently drops without this runtime grant. Ask
+        // once while notifications are enabled so FCM release pings can surface;
+        // harmless no-op on older versions where it is a normal-time grant.
+        maybeRequestNotifPermission()
+
+        // Keep FCM topic subscriptions in sync with stored toggle prefs on every
+        // open (covers first-run defaults and any prefs drifted from a cold boot).
+        syncFcmTopics(this)
+    }
+    private fun maybeRequestNotifPermission() {
+        // Only ask while the user has notifications enabled (i.e. they opted in),
+        // and only once, so we do not nag on every open after a denial.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            UpdateNotifPrefs.isEnabled(this) &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED &&
+            !UpdateNotifPrefs.hasAskedNotifPermission(this)) {
+            UpdateNotifPrefs.markNotifPermissionAsked(this)
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_POST_NOTIF)
+        }
     }
     private fun addSeekBar(root: LinearLayout, label: String, initial: Int, min: Int, max: Int, barOut: ((SeekBar) -> Unit)? = null, cb:(Int) -> Unit): TextView {
         val card = LinearLayout(this)
@@ -390,7 +455,11 @@ class SettingsActivity : Activity() {
                     Log.e("CRASHHOOK", "exception", t)
                     null
                 }
-                Log.i("CRASHHOOK", if (pcm2 != null && pcm2.size > 0) "done:" + pcm2.size else "fail")
+                Log.i("CRASHHOOK", "done:" + if (pcm2 != null && pcm2.size > 0) pcm2.size else "fail")
+                // Force a fatal crash so a real report reaches the dashboard —
+                // the whole point of the debug-only autotest crash hook
+                // (am start --es autotest crash).
+                CrashlyticsFx.crash()
             }
 
             /** Per-language sample texts */
@@ -520,6 +589,12 @@ class SettingsActivity : Activity() {
         tv.setPadding(0, dp(2), 0, dp(2))
         val sw = Switch(this)
         sw.isChecked = checked
+        // Associate the adjacent label with the switch so TalkBack announces
+        // which switch this is (labelFor links the TextView to the Switch), and
+        // keep a content description as a fallback for non-label scopes.
+        sw.id = View.generateViewId()
+        tv.labelFor = sw.id
+        sw.contentDescription = label
         sw.setOnCheckedChangeListener {  _,on -> onToggle(on) }
         row.addView(tv)
         row.addView(sw)
@@ -886,15 +961,50 @@ class SettingsActivity : Activity() {
 
     private fun finalizeUpdateNotify(on: Boolean, sw: Switch?) {
         try {
-            UpdateNotificationScheduler.setEnabled(this, on)
+            // FCM mirror is the master flag driving topic subscriptions.
+            UpdateNotifPrefs.get(this).edit { e ->
+                e.putBoolean(UpdateNotifPrefs.NOTIFICATIONS_ENABLED, on)
+            }
             if (on) {
-                UpdateNotificationScheduler.schedule(this)
+                maybeRequestNotifPermission()
+                if (hasGooglePlayServices()) {
+                    // Preferred transport: FCM push. No alarm needed (avoid double-notify).
+                    UpdateNotificationScheduler.setEnabled(this, false)
+                    UpdateNotificationScheduler.cancel(this)
+                    syncFcmTopics(this)
+                } else {
+                    // No Google Play services: local daily check is the fallback.
+                    UpdateNotificationScheduler.setEnabled(this, true)
+                    UpdateNotificationScheduler.schedule(this)
+                }
             } else {
+                // Disabled: drop both transports.
+                UpdateNotificationScheduler.setEnabled(this, false)
                 UpdateNotificationScheduler.cancel(this)
+                syncFcmTopics(this) // unsubscribes from all topics
             }
         } catch (t: Throwable) {
             Log.e("SettingsActivity", "failed to update background notifications", t)
             sw?.isChecked = !on
+        }
+    }
+
+    /**
+     * True when Google Play services is present and fresh enough for FCM to deliver,
+     * i.e. FCM can actually receive push on this device. Per Google's guidance this is
+     * checked with [GoogleApiAvailability.isGooglePlayServicesAvailable], which verifies
+     * GMS is installed, enabled, and no older than this client requires — not merely that
+     * a package named "com.google.android.gms" exists. Never throws: returns false whenever
+     * GMS is absent, disabled, or an older-than-required version, so the local AlarmManager
+     * fallback is armed instead.
+     */
+    @SuppressLint("ObsoleteSdkInt")
+    private fun hasGooglePlayServices(): Boolean {
+        return try {
+            val code: Int = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this)
+            code == ConnectionResult.SUCCESS
+        } catch (t: Throwable) {
+            false
         }
     }
 
@@ -1178,10 +1288,5 @@ class SettingsActivity : Activity() {
             .setMessage(getString(R.string.about_body_fmt, version))
             .setPositiveButton(getString(R.string.ok), null)
             .show()
-    }
-    companion object {
-    private var processEngine: EloquenceEngine? = null
-        private const val VOICE_CONFIG_PREFS = "vvtts_prefs"
-    private const val PREFS_NAME = "vvtts_lang_settings"
     }
 }

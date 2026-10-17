@@ -21,6 +21,16 @@ if [ ! -f "native/openevv/include/eci.h" ]; then
   exit 1
 fi
 
+# Host prebuilt dir: NDK names it linux-x86_64, darwin-x86_64 (macOS ships
+# x86_64 even on Apple Silicon; runs under Rosetta 2), or windows-x86_64.
+# Detect the host OS instead of assuming Linux.
+OS="$(uname -s)"
+case "$OS" in
+  Linux)   HOST_PREBUILT="linux-x86_64" ;;
+  Darwin)  HOST_PREBUILT="darwin-x86_64" ;;  # NDK has no darwin-aarch64 archive
+  MINGW*|MSYS*|CYGWIN*) HOST_PREBUILT="windows-x86_64" ;;
+  *) echo "ERROR: unsupported host OS '$OS' for NDK prebuilt" >&2; exit 1 ;;
+esac
 SDK="${ANDROID_SDK:-/usr/lib/android-sdk}"
 NDK="${ANDROID_NDK:-${ANDROID_NDK_HOME:-}}"
 # ABI selects the target: phones (arm64-v8a, default( or the emulator-test
@@ -34,10 +44,10 @@ if [ -z "$NDK" ] && [ -d "$SDK/ndk" ]; then
   # Prefer the pinned toolchain when present; else whatever the image ships.
   for cand in "$SDK/ndk/26.3.11579264" "$SDK"/ndk/*/; do
     [ -n "$NDK" ] && continue
-    [ -x "$cand/toolchains/llvm/prebuilt/linux-x86_64/bin/$CLANG_NAME" ] && NDK="$cand"
+    [ -x "$cand/toolchains/llvm/prebuilt/$HOST_PREBUILT/bin/$CLANG_NAME" ] && NDK="$cand"
   done
 fi
-TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+TC="$NDK/toolchains/llvm/prebuilt/$HOST_PREBUILT/bin"
 CLANG="$TC/$CLANG_NAME"
 if [ ! -x "$CLANG" ]; then
   echo "ERROR: no Android NDK found (looked for $CLANG(.  Set" >&2
@@ -90,9 +100,14 @@ fi
         "$LIBEVV" \
             -lm -llog
 
-# P1 re-baseline: symbol-strip（symtab/strtab ≈5.5 MB raw per ABI）— keeps
-# dynsym（JNI exports）so dlopen + the check below still work; ELF stays valid.
-"$TC/llvm-strip" --strip-unneeded "$OUT/libvvtts_core.so"
+# Native stack symbolication: NO strip. Keeping .symtab lets Crashlytics
+# resolve engine-internal frames (vvtts_core_*, eci_*, delta machine) to
+# function names in the dashboard, not bare addresses. Cost: ~5.5 MB/ABI of
+# symtab. Do not re-add --strip-unneeded or native locations regress to
+# "global offset/symbol + PC" and the crash dashboard loses the function name
+# for the crashing engine frame.
+# JNIEXPORT natives stay public via -fvisibility=hidden + JNIEXPORT, so dlopen
+# and nm -D still see the 8 Java_* exports even without stripping.
 
 echo "native bridge OK:"
 file "$OUT/libvvtts_core.so"

@@ -161,9 +161,16 @@ Tap to change the spoken language</string>
     <string name="update_failed_fmt">Update failed: %1$s</string>
     <string name="update_install_ok">Update installed</string>
     <string name="update_open_release">Open release page</string>
-    <string name="update_notify_toggle">Notify when updates available</string>
+<string name="update_notify_toggle">Notify when updates available</string>
     <string name="update_notification_channel">App updates</string>
     <string name="update_notification_title">New version available</string>
     <string name="update_notification_text_fmt">Eloquence TTS %1$s is ready to install</string>
+    <string name="update_notif_enable">Update notifications</string>
+    <string name="update_notif_prereleases">Pre-release updates</string>
+    <string name="update_notif_note">Receive a notification when a new release is available.</string>
+    <string name="telemetry_row">Share diagnostics</string>
+    <string name="telemetry_note">Help improve Eloquence with usage analytics and performance data. Anonymous. Disabled by default; no speech text is ever collected. Crash reports are sent automatically and cannot be disabled.</string>
+    <string name="update_channel_name">Updates</string>
+    <string name="update_channel_desc">Release notifications for Eloquence TTS</string>
     <string name="dict_import_failed">Dictionary import failed: %1$s. No entries were changed.</string>
 </resources>

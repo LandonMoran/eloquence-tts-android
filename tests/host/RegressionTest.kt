@@ -554,9 +554,44 @@ private fun talkbackDefaultVoiceDialect() {
     }
 }
 
+/** Verify telemetry consent defaults off, persists, and is a safe no-op to apply. */
+private fun telemetryConsent() {
+    val context = Context()
+    // Defaults OFF so nothing uploads until the user opts in.
+    check(!TelemetryPrefs.isEnabled(context)) { "telemetry must default OFF" }
+    // Applying consent in either state is a safe no-op on the host.
+    Telemetry.apply(context)
+    // Consent persists through the mirrored prefs store.
+    TelemetryPrefs.setEnabled(context, true)
+    check(TelemetryPrefs.isEnabled(context)) { "telemetry consent did not persist ON" }
+    Telemetry.apply(context)
+    TelemetryPrefs.setEnabled(context, false)
+    check(!TelemetryPrefs.isEnabled(context)) { "telemetry consent did not persist OFF" }
+    println("PASS telemetryConsent: default off, persists, apply() safe no-op")
+}
+
+/** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */
+private fun crashInit() {
+    val context = Context()
+    // The per-process bootstrap must be a safe no-op on the host (and never
+    // throw when Firebase is absent / the process is a test runner).
+    CrashlyticsFx.initProcess(context)
+    CrashlyticsFx.setContext("x86_64")
+    CrashlyticsFx.record("host:crashInit", RuntimeException("host-only"))
+    CrashlyticsFx.br("host:crashInit")
+    // The Application subclass must be registry-able and not crash on onCreate.
+    val app = com.xw.vvtts.VvttsApp()
+    app.onCreate()
+    // Manifest must reference the Application subclass so it runs in every process.
+    val manifest = File("AndroidManifest.xml").readText()
+    check(manifest.contains("android:name=\".VvttsApp\"")) { "Manifest missing Application subclass" }
+    check(manifest.contains(":tts")) { "Manifest missing :tts engine process" }
+    println("PASS crashInit: per-process init is a safe no-op; Application wired for every process")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-    try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent() }
     finally { Context.root.deleteRecursively() }
 }
