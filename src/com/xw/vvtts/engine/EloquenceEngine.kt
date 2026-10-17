@@ -739,6 +739,8 @@ class EloquenceEngine(context: Context) {
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e)
             EngineMetrics.recordSynthTimeout()
+            // A hang is also a failed request — count it in the outcome tally too.
+            EngineMetrics.recordOutcome(EngineMetrics.RC_TIMEOUT)
             var first = true
             for ((t, st)in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }

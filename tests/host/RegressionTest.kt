@@ -554,39 +554,32 @@ private fun talkbackDefaultVoiceDialect() {
     }
 }
 
-/** Verify telemetry consent defaults off (both independent flags), persists
- *  per-category, migrates the legacy combined flag, and apply() is a safe no-op. */
+/** Verify telemetry consent defaults off (analytics), persists, migrates the
+ *  legacy combined flag, and apply() is a safe no-op. (Performance Monitoring
+ *  was removed; the only opt-in flag is analytics.) */
 private fun telemetryConsent() {
     val context = Context()
-    // Analytics + perf default OFF (opt-in), independent; crash defaults ON (opt-out).
+    // Analytics default OFF (opt-in); crash defaults ON (opt-out).
     check(!TelemetryPrefs.isAnalyticsEnabled(context)) { "analytics telemetry must default OFF" }
-    check(!TelemetryPrefs.isPerfEnabled(context)) { "perf telemetry must default OFF" }
     check(TelemetryPrefs.isCrashEnabled(context)) { "crash reporting must default ON (opt-out)" }
     // Applying consent in either state is a safe no-op on the host.
     Telemetry.apply(context)
-    // Analytics on does not switch perf on (and vice-versa): truly independent.
     TelemetryPrefs.setAnalyticsEnabled(context, true)
     check(TelemetryPrefs.isAnalyticsEnabled(context)) { "analytics did not persist ON" }
-    check(!TelemetryPrefs.isPerfEnabled(context)) { "enabling analytics must not enable perf" }
     Telemetry.apply(context)
-    TelemetryPrefs.setPerfEnabled(context, true)
-    check(TelemetryPrefs.isPerfEnabled(context)) { "perf did not persist ON" }
     TelemetryPrefs.setAnalyticsEnabled(context, false)
-    TelemetryPrefs.setPerfEnabled(context, false)
     check(!TelemetryPrefs.isAnalyticsEnabled(context)) { "telemetry consent did not persist OFF (analytics)" }
-    check(!TelemetryPrefs.isPerfEnabled(context)) { "telemetry consent did not persist OFF (perf)" }
-    // Crash opt-out: independent of the opt-in pair, persists OFF, apply() for the
-    // current process is a safe no-op, and toggling it must not touch analytics/perf.
+    // Crash opt-out: independent of the analytics opt-in, persists OFF, apply()
+    // for the current process is a safe no-op, and toggling it must not touch
+    // the analytics flag.
     TelemetryPrefs.setCrashEnabled(context, false)
     check(!TelemetryPrefs.isCrashEnabled(context)) { "crash opt-out did not persist OFF" }
-    check(!TelemetryPrefs.isAnalyticsEnabled(context) && !TelemetryPrefs.isPerfEnabled(context)) {
-        "crash opt-out must be independent of analytics/perf"
-    }
+    check(!TelemetryPrefs.isAnalyticsEnabled(context)) { "crash opt-out must be independent of analytics" }
     CrashlyticsFx.setCrashCollectionEnabled(false)
     TelemetryPrefs.setCrashEnabled(context, true)
     check(TelemetryPrefs.isCrashEnabled(context)) { "crash opt-out did not re-enable" }
     Telemetry.apply(context)
-    println("PASS telemetryConsent: analytics+perf default off & independent; crash default on with functional opt-out; apply() safe no-op")
+    println("PASS telemetryConsent: analytics default off & persists; crash default on with functional opt-out; apply() safe no-op")
 }
 
 /** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */

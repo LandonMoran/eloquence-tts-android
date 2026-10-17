@@ -271,12 +271,6 @@ class SettingsActivity : Activity() {
             Telemetry.apply(this)
         }
         addNoteRow(mainContainer, R.string.analytics_note)
-        addSwitchRow(mainContainer, getString(R.string.perf_row),
-            TelemetryPrefs.isPerfEnabled(this)) { on ->
-            TelemetryPrefs.setPerfEnabled(this, on)
-            Telemetry.apply(this)
-        }
-        addNoteRow(mainContainer, R.string.perf_note)
 
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)

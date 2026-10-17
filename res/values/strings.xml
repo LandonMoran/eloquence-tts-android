@@ -170,8 +170,6 @@ Tap to change the spoken language</string>
     <string name="update_notif_note">Receive a notification when a new release is available.</string>
     <string name="analytics_row">Share usage analytics</string>
     <string name="analytics_note">Off by default. Shares app usage information (screens opened, app version, device type) to help improve features. Eloquence never includes the text it reads aloud, dictionary entries, or synthesized audio in these reports.</string>
-    <string name="perf_row">Share performance data</string>
-    <string name="perf_note">Off by default. Enables measurement of app startup and response speed to help find slowdowns. Contains no speech content and does not include what the app reads aloud. Speech-engine timing is reported only together with crash reports.</string>
     <string name="crash_row">Crash reporting</string>
     <string name="crash_note">On by default. Sends reports to fix failures, including crashes in the speech engine, with device and app information and timing — never the text being read aloud. Turning it off stops new crash reports, but reports already collected on your device may still be sent, and data already uploaded to the crash service cannot be deleted.</string>
     <string name="update_channel_name">Updates</string>

@@ -54,7 +54,7 @@ class VvttsApp : Application() {
         if (initDone) return
         initDone = true
         CrashlyticsFx.initProcess(this)
-        EngineMetrics.attachCrashKeys(this)
+        EngineMetrics.init(this)
         Telemetry.apply(this)
     }
 
