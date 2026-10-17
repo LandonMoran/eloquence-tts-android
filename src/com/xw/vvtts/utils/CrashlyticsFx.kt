@@ -2,6 +2,7 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 
@@ -101,6 +102,22 @@ object CrashlyticsFx {
     }
 
     /**
+     * Whether the SDK actually exposes the opt-out method on this runtime. The
+     * host-contract stub omits it (so this returns false under the host gate),
+     * while the shipped Firebase SDK on device exposes it (true). Used to
+     * surface a genuinely missing toggle method instead of letting an opt-out
+     * silently fail to take effect.
+     */
+    fun collectionToggleAvailable(): Boolean {
+        val c = cs ?: return false
+        return try {
+            c.javaClass.getMethod("setCrashlyticsCollectionEnabled", Boolean::class.javaPrimitiveType) != null
+        } catch (t: Throwable) { false }
+    }
+
+    private var toggleMissingWarned = false
+
+    /**
      * Call FirebaseCrashlytics.setCrashlyticsCollectionEnabled(boolean) via
      * reflection. The host-contract stub exposes a REDUCED FirebaseCrashlytics
      * API (no such method — it only mirrors the small surface the app touches),
@@ -114,7 +131,15 @@ object CrashlyticsFx {
         try {
             c.javaClass.getMethod("setCrashlyticsCollectionEnabled", Boolean::class.javaPrimitiveType)
                 .invoke(c, enabled)
-        } catch (t: Throwable) { /* no-op: stub/older SDK lacks the method */ }
+        } catch (e: NoSuchMethodException) {
+            // A real device running a newer Firebase SDK should never hit this.
+            // Warn visibly (once) rather than fail silently, so a drift that makes
+            // the opt-out a no-op cannot pass unnoticed.
+            if (!toggleMissingWarned) {
+                toggleMissingWarned = true
+                Log.w("CrashlyticsFx", "setCrashlyticsCollectionEnabled missing from this SDK — crash reporting opt-out is a NO-OP")
+            }
+        } catch (t: Throwable) { /* no-op: host stub/older SDK lacks the method */ }
     }
 
     /** Attach stable per-session tags so dashboard reports are filterable. */

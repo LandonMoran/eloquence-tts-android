@@ -2,6 +2,7 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.os.SystemClock
+import java.util.Arrays
 
 /**
  * Privacy-conscious, aggregate-only diagnostics for the Eloquence speech engine.
@@ -12,31 +13,29 @@ import android.os.SystemClock
  * useful for investigating slow, frozen, or failing synthesis without
  * exfiltrating what was being spoken.
  *
- * The aggregates are surfaced on crash reports: every process copies the
- * current aggregate window into Crashlytics as sparse numeric custom keys, so a
- * native or Java crash carries engine-health numbers (rotate count, longest
- * synth, timeouts, JNI-open failures, ...). This follows the always-on
- * crash-reporting policy and contains no content, so it is governed by
- * Crashlytics consent, not the opt-in analytics toggle. A deliberately no-op
- * fallback keeps every method safe even when the Crashlytics SDK is absent.
+ * Cross-process safe aggregation
+ * ------------------------------
+ * The main process and the isolated ":tts" engine process each keep their own
+ * [local] counters in memory (reset to zero at process start — nothing is
+ * folded *into* them from the shared aggregate). On each throttled checkpoint
+ * the process merges ONLY its own outstanding increments [local]-[baseline]
+ * into a shared on-disk aggregate via a single atomic read-modify-write
+ * ([MirroredPreferences.update], which carries the cross-process file lock).
+ * Two processes serializing their independent deltas never overwrite each
+ * other's numbers, so updates accumulate reliably rather than clobbering.
+ * [combined] = shared on-disk aggregate + this process's not-yet-merged deltas
+ * is what gets attached to Crashlytics keys, so a crash report carries the
+ * engine-health window across processes and process deaths.
  *
- * Delivery: a fatal crash in the isolated ":tts" engine process can kill the
- * process mid-synthesis, before any graceful shutdown callback. So raw init-time
- * keys alone are stale. Instead:
- *  - every process calls [init] once at Application.onCreate, which restores the
- *    last persisted aggregate window and attaches it to Crashlytics keys
- *    immediately (the keys are never a cleared/zero window for the current run);
- *  - the record call-sites also re-attach the keys and periodically persist a
- *    compact snapshot (bounded disk-write throttle on the hot path; sparse,
- *    important events like rotate / JNI-open-fail / timeout / shutdown persist
- *    immediately).
- *
- * The window therefore accumulates across process deaths and across the main +
- * :tts processes, so a crash report always carries engine-health numbers rather
- * than a cleared or stale zero window.
- *
- * Thread-safe via one internal lock; the hot-path calls are a single timing
- * read plus a bounded counter increment (persistence is throttled).
+ * Consent / retention
+ * -------------------
+ * Crash reporting is the primary diagnostics surface (default-on, opt-out).
+ * When it is opted out, nothing is merged or retained and this process's
+ * deltas are dropped; opting back in starts from a cleared window. Opting out
+ * (in Settings) also clears the already-retained shared snapshot, so older
+ * diagnostics are NOT silently uploaded if the user later re-enables the
+ * toggle. Timed/rotate/JNI-fail/shutdown checkpoints persist immediately; the
+ * hot-path synthesis/queue records are throttled to bound disk writes.
  */
 object EngineMetrics {
     // Sparse, controlled outcome codes (no free-form/user-derived values).
@@ -51,104 +50,137 @@ object EngineMetrics {
     // rename per write).
     private const val PERSIST_INTERVAL_MS = 2_000L
 
+    // Indexes into the counter arrays; must stay aligned with [KEYS].
+    private const val I_INIT_N = 0
+    private const val I_INIT_FAIL = 1
+    private const val I_INIT_MS = 2
+    private const val I_SHUT_N = 3
+    private const val I_SHUT_MS = 4
+    private const val I_SYNTH_N = 5
+    private const val I_SYNTH_MS = 6
+    private const val I_SYNTH_MAX = 7
+    private const val I_TIMEOUT = 8
+    private const val I_ROTATE = 9
+    private const val I_JNI = 10
+    private const val I_NATIVE = 11
+    private const val I_QUEUE_N = 12
+    private const val I_QUEUE_MS = 13
+    private const val I_OK = 14
+    private const val I_FAIL_OUT = 15
+    private const val I_TIMEOUT_OUT = 16
+    private const val I_INTR = 17
+    private const val N_COUNTERS = 18
+
+    // On-disk pref keys; index-aligned with the constants above.
+    private val KEYS = arrayOf(
+        "init_n", "init_fail", "init_ms", "shutdown_n", "shutdown_ms",
+        "synth_n", "synth_ms", "synth_max_ms", "timeout", "rotate",
+        "jni_open_fail", "native_load_fail", "queue_n", "queue_ms",
+        "ok", "fail", "timeout_req", "interrupted",
+    )
+
     private val lock = Any()
     private var appContext: Context? = null
     private var lastPersistElapsed = 0L
 
-    private var initCount = 0L
-    private var initFailCount = 0L
-    private var initTotalMs = 0L
-    private var shutdownCount = 0L
-    private var shutdownTotalMs = 0L
-    private var synthCount = 0L
-    private var synthTotalMs = 0L
-    private var synthMaxMs = 0L
-    private var synthTimeoutCount = 0L
-    private var rotateCount = 0L
-    private var jniOpenFailCount = 0L
-    private var nativeLoadFailCount = 0L
-    private var queueRequestCount = 0L
-    private var queueWaitTotalMs = 0L
-    private var outcomeOk = 0L
-    private var outcomeFail = 0L
-    private var outcomeTimeout = 0L
-    private var outcomeInterrupted = 0L
+    // This process's counters (reset to zero at process start; never folded
+    // from the shared aggregate, so a later merge cannot clobber the other
+    // process's already-merged numbers).
+    private val local = LongArray(N_COUNTERS)
+    // How much of [local] is already merged into the shared on-disk aggregate.
+    // outstanding = local[i] - baseline[i].
+    private val baseline = LongArray(N_COUNTERS)
+    // Mirror of the shared on-disk aggregate (merged across the main and :tts
+    // processes). This is what the Crashlytics keys present (plus deltas that
+    // have not yet reached disk).
+    private val shared = LongArray(N_COUNTERS)
 
     // ----------------------------------------------------------------- lifecycle
 
-    /** Called once per process at Application.onCreate (well before the first
-     *  synthesis). Restores the last persisted aggregate window, attaches it to
-     *  Crashlytics keys immediately, and re-persists so the restored state and
-     *  the keys stay in agreement. Safe to call more than once. */
+    /** Called once per process at Application.onCreate. Loads the shared,
+     *  cross-process aggregate into [shared] and attaches it to Crashlytics
+     *  keys immediately, so the keys are never a cleared/zero window for the
+     *  current run. Safe to call more than once. */
     fun init(context: Context) {
         appContext = context.applicationContext
-        restore()
+        refreshShared()
         flush(now = true)
     }
 
     private fun flush(now: Boolean) {
         val ctx = appContext ?: return
+        // Consent is checked FIRST, before the hot-path throttle, so an opted-out
+        // session unconditionally drops its deltas (rolls the baseline) — even a
+        // record whose flush falls inside the throttle window must not stay
+        // "outstanding" and leak into the shared store when consent is re-enabled.
+        if (!TelemetryPrefs.isCrashEnabled(ctx)) {
+            synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+            return
+        }
         val elapsed = SystemClock.elapsedRealtime()
         if (!now && elapsed - lastPersistElapsed < PERSIST_INTERVAL_MS) return
         lastPersistElapsed = elapsed
+        mergeDeltas(ctx)
         attachCrashKeys(ctx)
-        persist()
     }
 
-    // ------------------------------------------------------------------- record
+    // ------------------------------------------------------------- record site
 
     fun recordInit(ms: Long, ok: Boolean) {
         synchronized(lock) {
-            initCount++
-            initTotalMs += ms
-            if (!ok) initFailCount++
+            local[I_INIT_N]++
+            local[I_INIT_MS] += ms
+            if (!ok) local[I_INIT_FAIL]++
         }
         flush(now = true)
     }
 
     fun recordShutdown(ms: Long) {
         synchronized(lock) {
-            shutdownCount++
-            shutdownTotalMs += ms
+            local[I_SHUT_N]++
+            local[I_SHUT_MS] += ms
         }
         flush(now = true)
     }
 
-    /** Per synthesis request: wall-clock duration of the native synth body. */
+    /** Wall-clock duration of one native synthesis attempt, success or failure:
+     *  failed / null / timed-out attempts are recorded too, so latency totals
+     *  are not biased toward the requests that happened to succeed. Never
+     *  includes the utterance text — only the elapsed milliseconds. */
     fun recordSynth(ms: Long) {
         synchronized(lock) {
-            synthCount++
-            synthTotalMs += ms
-            if (ms > synthMaxMs) synthMaxMs = ms
+            local[I_SYNTH_N]++
+            local[I_SYNTH_MS] += ms
+            if (ms > local[I_SYNTH_MAX]) local[I_SYNTH_MAX] = ms
         }
         flush(now = false)
     }
 
     fun recordSynthTimeout() {
-        synchronized(lock) { synthTimeoutCount++ }
+        synchronized(lock) { local[I_TIMEOUT]++ }
         flush(now = true)
     }
 
     fun recordRotate() {
-        synchronized(lock) { rotateCount++ }
+        synchronized(lock) { local[I_ROTATE]++ }
         flush(now = true)
     }
 
     fun recordJniOpenFail() {
-        synchronized(lock) { jniOpenFailCount++ }
+        synchronized(lock) { local[I_JNI]++ }
         flush(now = true)
     }
 
     fun recordNativeLoadFail() {
-        synchronized(lock) { nativeLoadFailCount++ }
+        synchronized(lock) { local[I_NATIVE]++ }
         flush(now = true)
     }
 
     /** Time spent waiting in the speech queue before synthesis started. */
     fun recordQueueWait(ms: Long) {
         synchronized(lock) {
-            queueRequestCount++
-            queueWaitTotalMs += ms
+            local[I_QUEUE_N]++
+            local[I_QUEUE_MS] += ms
         }
         flush(now = false)
     }
@@ -157,10 +189,10 @@ object EngineMetrics {
     fun recordOutcome(code: Int) {
         synchronized(lock) {
             when (code) {
-                RC_OK -> outcomeOk++
-                RC_FAIL -> outcomeFail++
-                RC_TIMEOUT -> outcomeTimeout++
-                RC_INTERRUPTED -> outcomeInterrupted++
+                RC_OK -> local[I_OK]++
+                RC_FAIL -> local[I_FAIL_OUT]++
+                RC_TIMEOUT -> local[I_TIMEOUT_OUT]++
+                RC_INTERRUPTED -> local[I_INTR]++
                 else -> Unit
             }
         }
@@ -169,117 +201,107 @@ object EngineMetrics {
 
     // ------------------------------------------------------------ crash attach
 
-    /** Copy the current aggregate window into Crashlytics custom keys and, via
-     *  [flush], persist a durable snapshot. Callers are the record call-sites,
-     *  so the keys reflect fresh engine-health numbers at the moment a crash or
-     *  hang happens — not a stale process-init snapshot. Crashlytics has no
-     *  Long-key overload, so durations/counts are stored as decimal strings
-     *  (numeric, still machine-readable). */
+    /** Copy the combined cross-process window into Crashlytics custom keys so a
+     *  crash or hang carries fresh engine-health numbers (not a stale init
+     *  window). Kept to sparse numeric strings so the keys carry no content. */
     private fun attachCrashKeys(context: Context) {
         // When the user has turned off crash reporting, do not populate any
         // Crashlytics keys this session (nothing would transmit, and keys should
         // never be populated on a session that opted out).
         if (!TelemetryPrefs.isCrashEnabled(context)) return
-        val s = snapshot()
-        CrashlyticsFx.setKey("m_init_n", s.initCount.toString())
-        CrashlyticsFx.setKey("m_init_fail", s.initFailCount.toString())
-        CrashlyticsFx.setKey("m_init_ms", s.initTotalMs.toString())
-        CrashlyticsFx.setKey("m_shutdown_ms", s.shutdownTotalMs.toString())
-        CrashlyticsFx.setKey("m_synth_n", s.synthCount.toString())
-        CrashlyticsFx.setKey("m_synth_max_ms", s.synthMaxMs.toString())
-        CrashlyticsFx.setKey("m_synth_avg_ms", if (s.synthCount > 0) (s.synthTotalMs / s.synthCount).toString() else "0")
-        CrashlyticsFx.setKey("m_timeout", s.synthTimeoutCount.toString())
-        CrashlyticsFx.setKey("m_rotate", s.rotateCount.toString())
-        CrashlyticsFx.setKey("m_jni_open_fail", s.jniOpenFailCount.toString())
-        CrashlyticsFx.setKey("m_native_load_fail", s.nativeLoadFailCount.toString())
-        CrashlyticsFx.setKey("m_queue_wait_avg_ms", if (s.queueRequestCount > 0) (s.queueWaitTotalMs / s.queueRequestCount).toString() else "0")
-        CrashlyticsFx.setKey("m_ok", s.outcomeOk.toString())
-        CrashlyticsFx.setKey("m_fail", s.outcomeFail.toString())
-        CrashlyticsFx.setKey("m_timeout_req", s.outcomeTimeout.toString())
-        CrashlyticsFx.setKey("m_interrupted", s.outcomeInterrupted.toString())
+        val v = combined()
+        CrashlyticsFx.setKey("m_init_n", v[I_INIT_N].toString())
+        CrashlyticsFx.setKey("m_init_fail", v[I_INIT_FAIL].toString())
+        CrashlyticsFx.setKey("m_init_ms", v[I_INIT_MS].toString())
+        CrashlyticsFx.setKey("m_shutdown_ms", v[I_SHUT_MS].toString())
+        CrashlyticsFx.setKey("m_synth_n", v[I_SYNTH_N].toString())
+        CrashlyticsFx.setKey("m_synth_max_ms", v[I_SYNTH_MAX].toString())
+        CrashlyticsFx.setKey("m_synth_avg_ms", avgMs(v[I_SYNTH_MS], v[I_SYNTH_N]))
+        CrashlyticsFx.setKey("m_timeout", v[I_TIMEOUT].toString())
+        CrashlyticsFx.setKey("m_rotate", v[I_ROTATE].toString())
+        CrashlyticsFx.setKey("m_jni_open_fail", v[I_JNI].toString())
+        CrashlyticsFx.setKey("m_native_load_fail", v[I_NATIVE].toString())
+        CrashlyticsFx.setKey("m_queue_wait_avg_ms", avgMs(v[I_QUEUE_MS], v[I_QUEUE_N]))
+        CrashlyticsFx.setKey("m_ok", v[I_OK].toString())
+        CrashlyticsFx.setKey("m_fail", v[I_FAIL_OUT].toString())
+        CrashlyticsFx.setKey("m_timeout_req", v[I_TIMEOUT_OUT].toString())
+        CrashlyticsFx.setKey("m_interrupted", v[I_INTR].toString())
     }
 
-    // ------------------------------------------------------- durable snapshot
+    private fun avgMs(totalMs: Long, count: Long) = if (count > 0) (totalMs / count).toString() else "0"
 
-    /** Merge a previously persisted window into the live counters so the
-     *  aggregates survive a process death and accumulate across the main and
-     *  :tts processes. Runs once at [init]; also lets a run that was crash-opted
-     *  OUT recover its history if the user later re-enables crash reporting. */
-    private fun restore() {
+    // -------------------------------------------------- cross-process persistence
+
+    /** The window presented to Crashlytics = shared on-disk aggregate plus this
+     *  process's not-yet-merged deltas. synth_max is a max (not additive), so it
+     *  is taken as the larger of the two. */
+    private fun combined(): LongArray {
+        val out = LongArray(N_COUNTERS)
+        synchronized(lock) {
+            for (i in 0 until N_COUNTERS) {
+                out[i] = if (i == I_SYNTH_MAX)
+                    maxOf(shared[i], local[i])
+                else
+                    shared[i] + (local[i] - baseline[i])
+            }
+        }
+        return out
+    }
+
+    /** Merge THIS process's outstanding increments into the shared aggregate in
+     *  one atomic cross-process read-modify-write, then advance the baseline and
+     *  refresh [shared]. synth_max is merged by max, not sum. */
+    private fun mergeDeltas(context: Context) {
+        val deltas = LongArray(N_COUNTERS)
+        synchronized(lock) {
+            for (i in 0 until N_COUNTERS) deltas[i] = local[i] - baseline[i]
+        }
+        var any = false
+        for (d in deltas) if (d != 0L) { any = true; break }
+        if (!any) return
+        var ok = false
+        try {
+            ok = MirroredPreferences(context, PREFS_NAME).update { map ->
+                for (i in 0 until N_COUNTERS) {
+                    if (i == I_SYNTH_MAX) {
+                        map[KEYS[i]] = maxOf(map[KEYS[i]] as? Long ?: 0L, local[I_SYNTH_MAX])
+                    } else if (deltas[i] != 0L) {
+                        map[KEYS[i]] = ((map[KEYS[i]] as? Long ?: 0L) + deltas[i])
+                    }
+                }
+            }
+        } catch (t: Throwable) { return }
+        if (!ok) return
+        synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+        refreshShared()
+    }
+
+    /** Reload [shared] to mirror the on-disk aggregate (picks up the other
+     *  process's merges). */
+    private fun refreshShared() {
         val ctx = appContext ?: return
+        val fresh = LongArray(N_COUNTERS)
         try {
             val p = MirroredPreferences(ctx, PREFS_NAME)
-            synchronized(lock) {
-                initCount += p.getLong("init_n", 0)
-                initFailCount += p.getLong("init_fail", 0)
-                initTotalMs += p.getLong("init_ms", 0)
-                shutdownCount += p.getLong("shutdown_n", 0)
-                shutdownTotalMs += p.getLong("shutdown_ms", 0)
-                synthCount += p.getLong("synth_n", 0)
-                synthTotalMs += p.getLong("synth_ms", 0)
-                synthMaxMs = maxOf(synthMaxMs, p.getLong("synth_max_ms", 0))
-                synthTimeoutCount += p.getLong("timeout", 0)
-                rotateCount += p.getLong("rotate", 0)
-                jniOpenFailCount += p.getLong("jni_open_fail", 0)
-                nativeLoadFailCount += p.getLong("native_load_fail", 0)
-                queueRequestCount += p.getLong("queue_n", 0)
-                queueWaitTotalMs += p.getLong("queue_ms", 0)
-                outcomeOk += p.getLong("ok", 0)
-                outcomeFail += p.getLong("fail", 0)
-                outcomeTimeout += p.getLong("timeout_req", 0)
-                outcomeInterrupted += p.getLong("interrupted", 0)
-            }
-        } catch (t: Throwable) { /* ignore unreadable/corrupt snapshot */ }
+            for (i in 0 until N_COUNTERS) fresh[i] = p.getLong(KEYS[i], 0)
+        } catch (t: Throwable) { return }
+        synchronized(lock) { System.arraycopy(fresh, 0, shared, 0, N_COUNTERS) }
     }
 
-    /** Persist the current aggregate window to a compact, durable snapshot so a
-     *  fatal crash short of teardown still leaves real numbers to restore. */
-    private fun persist() {
-        val ctx = appContext ?: return
-        val s = snapshot()
+    /** Clear every retained diagnostic snapshot (shared on-disk aggregate, local
+     *  deltas and baselines). Called when the user turns crash reporting OFF in
+     *  Settings, so retained diagnostics are not silently uploaded if the toggle
+     *  is later re-enabled. */
+    fun clear(context: Context) {
+        synchronized(lock) {
+            Arrays.fill(local, 0L)
+            Arrays.fill(baseline, 0L)
+            Arrays.fill(shared, 0L)
+        }
         try {
-            MirroredPreferences(ctx, PREFS_NAME).edit { e ->
-                e.putLong("init_n", s.initCount)
-                e.putLong("init_fail", s.initFailCount)
-                e.putLong("init_ms", s.initTotalMs)
-                e.putLong("shutdown_n", s.shutdownCount)
-                e.putLong("shutdown_ms", s.shutdownTotalMs)
-                e.putLong("synth_n", s.synthCount)
-                e.putLong("synth_ms", s.synthTotalMs)
-                e.putLong("synth_max_ms", s.synthMaxMs)
-                e.putLong("timeout", s.synthTimeoutCount)
-                e.putLong("rotate", s.rotateCount)
-                e.putLong("jni_open_fail", s.jniOpenFailCount)
-                e.putLong("native_load_fail", s.nativeLoadFailCount)
-                e.putLong("queue_n", s.queueRequestCount)
-                e.putLong("queue_ms", s.queueWaitTotalMs)
-                e.putLong("ok", s.outcomeOk)
-                e.putLong("fail", s.outcomeFail)
-                e.putLong("timeout_req", s.outcomeTimeout)
-                e.putLong("interrupted", s.outcomeInterrupted)
+            MirroredPreferences(context, PREFS_NAME).edit { e ->
+                for (key in KEYS) e.putLong(key, 0L)
             }
         } catch (t: Throwable) { /* telemetry must never break the app */ }
     }
-
-    // ---------------------------------------------------------------- snapshot
-
-    private fun snapshot() = synchronized(lock) {
-        Snapshot(
-            initCount, initFailCount, initTotalMs, shutdownCount, shutdownTotalMs,
-            synthCount, synthTotalMs, synthMaxMs, synthTimeoutCount, rotateCount,
-            jniOpenFailCount, nativeLoadFailCount, queueRequestCount,
-            queueWaitTotalMs, outcomeOk, outcomeFail, outcomeTimeout, outcomeInterrupted,
-        )
-    }
-
-    private class Snapshot(
-        val initCount: Long, val initFailCount: Long, val initTotalMs: Long,
-        val shutdownCount: Long, val shutdownTotalMs: Long,
-        val synthCount: Long, val synthTotalMs: Long, val synthMaxMs: Long,
-        val synthTimeoutCount: Long, val rotateCount: Long,
-        val jniOpenFailCount: Long, val nativeLoadFailCount: Long,
-        val queueRequestCount: Long, val queueWaitTotalMs: Long,
-        val outcomeOk: Long, val outcomeFail: Long, val outcomeTimeout: Long,
-        val outcomeInterrupted: Long,
-    )
 }

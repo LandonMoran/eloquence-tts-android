@@ -579,7 +579,63 @@ private fun telemetryConsent() {
     TelemetryPrefs.setCrashEnabled(context, true)
     check(TelemetryPrefs.isCrashEnabled(context)) { "crash opt-out did not re-enable" }
     Telemetry.apply(context)
+    // Review finding #4: the host gate cannot see a real device SDK method, so it
+    // must surface the gap explicitly (queried + logged) rather than fail silently.
+    check(!CrashlyticsFx.collectionToggleAvailable()) { "host stub must not expose the real SDK opt-out method (documented host gap)" }
+    // Review finding #5: the removed FirePerf surface is fully gone — no manifest
+    // meta-data, no stale "Performance"/"Share diagnostics" wording, no perf dep.
+    val manifest = File("AndroidManifest.xml").readText()
+    check(!manifest.contains("firebase_performance_collection_enabled")) { "manifest still ships removed FirePerf meta-data" }
+    check(!manifest.contains("Share diagnostics")) { "manifest still uses legacy 'Share diagnostics' wording" }
+    check(!manifest.contains("Firebase Performance")) { "manifest still references the removed Performance surface" }
+    val gradle = File("build.gradle").readText()
+    check(!gradle.contains("firebase-perf")) { "build.gradle still depends on the removed FirePerf artifact" }
     println("PASS telemetryConsent: analytics default off & persists; crash default on with functional opt-out; apply() safe no-op")
+}
+
+/** Review findings #1/#2/#8: EngineMetrics aggregates across processes without
+ *  lost updates, records failed work, clears retained diagnostics on opt-out,
+ *  and never uploads the opted-out window. */
+private fun engineMetrics() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+
+    // #1 Cross-process-safe merge: seed the shared store as if ANOTHER process
+    // already merged its own count, then let THIS "process" record. The merged
+    // value must be 5+1 — proving a later flush does not clobber the other
+    // process's number (the pre-fix absolute-snapshot path would write 1).
+    store.edit { it.putLong("init_n", 5L) }
+    EngineMetrics.init(context)
+    EngineMetrics.recordInit(50, true)
+    check(store.getLong("init_n", -1L) == 6L) { "delta merge clobbered the other process's merged count" }
+    check(store.getLong("init_ms", -1L) >= 50L) { "init duration was not merged" }
+
+    // #8 Failed work is still recorded (caller passes ok=false).
+    EngineMetrics.recordInit(40, false)
+    check(store.getLong("init_fail", -1L) == 1L) { "failed init not counted in retained diagnostics" }
+
+    // #2 Clear-on-opt-out: coincides with Settings clearing the snapshot.
+    EngineMetrics.recordRotate()
+    check(store.getLong("rotate", -1L) == 1L)
+    EngineMetrics.clear(context)
+    check(store.getLong("init_n", -1L) == 0L) { "clear-on-opt-out did not wipe retained diagnostics" }
+
+    // #2 The opted-out window is never uploaded after re-enabling, even when later
+    // records force an immediate flush of every outstanding delta.
+    EngineMetrics.recordRotate()             // one event while opted IN
+    TelemetryPrefs.setCrashEnabled(context, false)
+    EngineMetrics.recordSynth(100)           // during the opted-out window -> must be dropped
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.recordSynth(200)           // re-enabled; hot-path record is throttled
+    EngineMetrics.recordRotate()             // now=true flush of all pending deltas
+    check(store.getLong("rotate", -1L) == 2L) { "rotate deltas (pre/post window) not merged" }
+    check(store.getLong("synth_n", -1L) == 1L) { "opted-out-window diagnostics surfaced after re-enable" }
+    check(store.getLong("synth_ms", -1L) >= 200L) { "re-enabled synthesis duration missing" }
+
+    EngineMetrics.clear(context)
+    println("PASS engineMetrics: cross-process merge safe; failed work counted; clear-on-opt-out; opted-out window not uploaded")
 }
 
 /** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */
@@ -604,6 +660,6 @@ private fun crashInit() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics() }
     finally { Context.root.deleteRecursively() }
 }

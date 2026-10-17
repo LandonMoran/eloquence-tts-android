@@ -103,11 +103,17 @@ class EloquenceEngine(context: Context) {
         this.voiceProfile = vp
     }
 
-    /** Prepare device storage and schedule warmup; return false if initialization fails. */
+    /** Prepare device storage and schedule warmup; return false if initialization fails.
+     *  Initialization duration and the failure are recorded even if [initializeImpl]
+     *  throws, so a diagnostic-failing init is never silently excluded from metrics. */
     fun initialize(): Boolean {
         val t0 = SystemClock.elapsedRealtime()
-        val ok = initializeImpl()
-        EngineMetrics.recordInit(SystemClock.elapsedRealtime() - t0, ok)
+        var ok = false
+        try {
+            ok = initializeImpl()
+        } finally {
+            EngineMetrics.recordInit(SystemClock.elapsedRealtime() - t0, ok)
+        }
         return ok
     }
 
@@ -712,17 +718,20 @@ class EloquenceEngine(context: Context) {
                 val r = try {
                     block(worker)
                 } finally {
-                    // A worker retired by rotateEngine (or shutdown()'s replacement( frees its
+                    // Record elapsed time for EVERY attempted synthesis block,
+                    // success or failure (null result, exception, or timeout), so
+                    // latency totals are not biased toward requests that happened
+                    // to succeed. Only the elapsed ms is recorded — never content.
+                    EngineMetrics.recordSynth(SystemClock.elapsedRealtime() - tSynth)
+                    // A worker retired by rotateEngine (or shutdown()'s replacement) frees its
                     // own cached handles here, on its own thread, AFTER the in-flight native call has
                     // returned -- nativeShutdown is not cross-thread-safe, so never free them from the
                     // replacement worker's thread. Idempotent: a queued shutdown cleanup (or an
                     // already-cleared cache) makes this a no-op.
-
                     if (worker.retired || synthWorker !== worker) {
                         closeHandles(worker)
                     }
                 }
-                if (r != null) EngineMetrics.recordSynth(SystemClock.elapsedRealtime() - tSynth)
                 r
             }
         }

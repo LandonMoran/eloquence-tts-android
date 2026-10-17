@@ -38,6 +38,7 @@ import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.update.UpdateNotificationScheduler
 import com.xw.vvtts.utils.CrashlyticsFx
 import com.xw.vvtts.utils.DictEntry
+import com.xw.vvtts.utils.EngineMetrics
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.Telemetry
 import com.xw.vvtts.utils.TelemetryPrefs
@@ -259,9 +260,12 @@ class SettingsActivity : Activity() {
         }
         addNoteRow(mainContainer, R.string.extra_logging_note)
         // Crash reporting: the primary diagnostics channel, ON by default (opt-out).
+        // Turning it OFF also clears the engine-health diagnostics retained on this
+        // device, so older numbers are not silently uploaded if it is re-enabled.
         addSwitchRow(mainContainer, getString(R.string.crash_row),
             TelemetryPrefs.isCrashEnabled(this)) { on ->
             TelemetryPrefs.setCrashEnabled(this, on)
+            if (!on) EngineMetrics.clear(this)
             CrashlyticsFx.setCrashCollectionEnabled(on)
         }
         addNoteRow(mainContainer, R.string.crash_note)

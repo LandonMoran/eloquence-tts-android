@@ -25,17 +25,12 @@
 
         <!-- Privacy: Crashlytics crash reporting is enabled (it is the app's primary
              diagnostics surface, incl. native engine crashes from the :tts
-             process) and never collects synthesized speech text. GA4 analytics
-             and Firebase Performance are OFF by default: nothing from either is
-             uploaded until a Settings > Share diagnostics opt-in enables them.
-             firebase_performance_collection_enabled is required because FirePerf
-             has no default suppression: without it the perf plugin would
-             auto-collect regardless of the analytics flag. -->
+             process) and never collects synthesized speech text. GA4 analytics is
+             OFF by default: nothing is uploaded from it until a Settings > Share
+             usage analytics opt-in enables it. The Perf monitor surface was removed
+             (see build.gradle) and ships no manifest meta-data. -->
         <meta-data
             android:name="firebase_analytics_collection_enabled"
-            android:value="false" />
-        <meta-data
-            android:name="firebase_performance_collection_enabled"
             android:value="false" />
 
         <!-- directBootAware: the engine can start and speak on the lock screen
