@@ -88,6 +88,7 @@ private fun preferences() {
     check(config.numberModePref==0) { "Negative number mode should clamp to the default choice" }
     config.setNumberModePref(2)
     check(config.numberModePref==2)
+    check(config.extraLogging) { "extra_logging must default ON" }
     config.setExtraLogging(false); check(!config.extraLogging)
     VoiceConfig(Context()).setExtraLogging(true); check(config.extraLogging)
     VoiceConfig(Context()).setExtraLogging(false); check(!config.extraLogging)

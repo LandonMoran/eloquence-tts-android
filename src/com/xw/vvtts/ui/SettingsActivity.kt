@@ -253,11 +253,6 @@ class SettingsActivity : Activity() {
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
-        addSwitchRow(mainContainer, getString(R.string.extra_logging_row), voiceConfig!!.extraLogging) { on ->
-            voiceConfig!!.setExtraLogging(on)
-            Log.i("VvTtsSettings", "extra_logging -> " + on)
-        }
-        addNoteRow(mainContainer, R.string.extra_logging_note)
         addSwitchRow(mainContainer, getString(R.string.telemetry_row),
             TelemetryPrefs.isEnabled(this)) { on ->
             TelemetryPrefs.setEnabled(this, on)

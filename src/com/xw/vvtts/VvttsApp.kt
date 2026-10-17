@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.UserManager
 import com.xw.vvtts.utils.CrashlyticsFx
 import com.xw.vvtts.utils.Telemetry
+import com.xw.vvtts.utils.VoiceConfig
 
 /**
  * Application entry point.
@@ -54,6 +55,20 @@ class VvttsApp : Application() {
         initDone = true
         CrashlyticsFx.initProcess(this)
         Telemetry.apply(this)
+        ensureExtraLogging()
+    }
+
+    /**
+     * Extra logging is always-on (its settings toggle was removed). Force-enable the
+     * persisted preference so any install that previously had it switched OFF migrates
+     * ON — keeping the verbose TTS diagnostics (logcat tag VvTtsX) available to enrich
+     * Crashlytics crash reports. Guarded: app init must never fail over a logging pref.
+     */
+    private fun ensureExtraLogging() {
+        try {
+            val vc = VoiceConfig(applicationContext)
+            if (!vc.extraLogging) vc.setExtraLogging(true)
+        } catch (_: Throwable) { /* never crash the app over a logging pref */ }
     }
 
     override fun onCreate() {

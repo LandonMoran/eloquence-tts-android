@@ -34,7 +34,7 @@ class VoiceConfig(private val context: Context) {
      *  save from a failed one (mirrored file not updated). */
     private fun writeBoth(block: (SharedPreferences.Editor) -> Unit): Boolean = store.edit(block)
 
-    val extraLogging: Boolean get() = store.getBoolean("extra_logging", false)
+    val extraLogging: Boolean get() = store.getBoolean("extra_logging", true)
     /** Persist whether extra engine logging is enabled; true on success. */
     fun setExtraLogging(enabled: Boolean): Boolean = writeBoth { it.putBoolean("extra_logging", enabled) }
 
