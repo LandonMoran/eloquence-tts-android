@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# tests/vendor-openevv-test.sh — regression tests for tools/vendor-openevv.sh.
+# tests/vendor-openevv-test.sh — regression tests for tools/vendor-openevv.sh,
+# which BUMPS the native/openevv git submodule to upstream main (it no longer
+# copies a flat tree or writes .openevv-pin; the submodule pointer is the pin).
 #
-# Exercises, with a throwaway git repo standing in for the OpenEVV fork:
-#   * a successful re-vendor mirrors fork main exactly, preserves the optional
-#     Android-local cli probes, and writes a pin resolved from the exact
-#     fetched commit (openevv#1, #333);
-#   * a required engine file missing from the source checkout aborts BEFORE
-#     anything is deleted (#331);
-#   * a failed remote fetch aborts instead of re-vendoring from a stale local
-#     main (openevv#1).
-#
-# The vendored engine is a pure mirror of fork main: languages and registration
-# wiring ship from the fork, so there is no Android-local language layer to
-# preserve anymore.
+# Each test builds a throwaway superproject holding the submodule at a known
+# pin and runs the real tools/vendor-openevv.sh against it:
+#   * preview (default) on an already-current submodule reports up to date,
+#     moves no pointer, stages nothing;
+#   * preview on an old pin lists the incoming commits and touches nothing;
+#   * --apply bumps an old pin to upstream main and stages the gitlink;
+#   * an uninitialized submodule aborts with a clear message.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,147 +18,82 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 failures=0
-pass()  { echo "ok  : $*"; }
-fail()  { echo "FAIL: $*"; failures=$((failures+1)); }
+pass() { echo "ok  : $*"; }
+fail() { echo "FAIL: $*"; failures=$((failures+1)); }
 
-# --- build a fake OpenEVV fork (bare remote + clone carrying engine files) ---
-FORK_REMOTE_DIR="$WORK/fork.git"
-git init -q --bare "$FORK_REMOTE_DIR"
-
-FORK="$WORK/fork"
-git clone -q "$FORK_REMOTE_DIR" "$FORK"
-git -C "$FORK" config user.name  "openevv vendor test"
-git -C "$FORK" config user.email "vendor-test@example.com"
-( cd "$FORK"
+# --- throwaway upstream openevv remote with two commit generations ---
+UP="$(mktemp -d "$WORK/up.XXXX")"; rmdir "$UP"
+git init -q --bare "$UP"
+SRC="$(mktemp -d "$WORK/src.XXXX")"; rmdir "$SRC"
+git clone -q "$UP" "$SRC"
+git -C "$SRC" config user.name  "openevv bump test"
+git -C "$SRC" config user.email "bump-test@example.com"
+( cd "$SRC"
   git checkout -q -b main
-  echo "engine-content" > EVV_ENGINE_MARKER
-  mkdir -p src/eci/lang src/port cli/bench_synth
-  echo "engine languageid" > src/eci/lang/eci_languageid.c
+  mkdir -p include src/port cli
+  echo "engine-content v1" > include/eci.h
   echo "engine port_ctors" > src/port/port_ctors.c
-  echo "fork-engine-probe"   > cli/bench_synth.c
-  git add -A && git commit -qm "engine commit"
+  git add -A && git commit -qm "engine commit one"
+  git push -q origin main
+  echo "engine-content v2" > include/eci.h
+  git add -A && git commit -qm "engine commit two"
   git push -q origin main
 )
-FORK_SHA=$(git -C "$FORK" rev-parse main)
+# default branch `main` (as GitHub-hosted openevv), not unborn `master`
+git --git-dir="$UP" symbolic-ref HEAD refs/heads/main
+OLD_SHA="$(git -C "$SRC" rev-parse HEAD~1)"
+NEW_SHA="$(git -C "$SRC" rev-parse main)"
 
-# the app checkout (DST side). Reuse the fork clone but add app-local optional
-# probes, as the repo under test has.
-APP="$WORK/app"
-mkdir -p "$APP/tools"
-cp "$REAL_SCRIPT" "$APP/tools/vendor-openevv.sh"
-SCRIPT="$APP/tools/vendor-openevv.sh"
-DST="$APP/native/openevv"
-mkdir -p "$DST/src/eci/lang" "$DST/src/port" "$DST/cli"
-echo "engine languageid" > "$DST/src/eci/lang/eci_languageid.c"
-echo "engine port_ctors" > "$DST/src/port/port_ctors.c"
-echo "probe"       > "$DST/cli/bench_synth.c"
-echo "local-probe" > "$DST/cli/probe.c"
-
-CORRECT_SHA="$FORK_SHA"
-
-run_success() {
-  local out
-  if out=$(bash "$SCRIPT" "$FORK" 2>&1); then
-    return 0
-  else
-    echo "  script output: $out" >&2
-    return 1
-  fi
+new_app() {  # fresh superproject set up with the submodule pinned to $1, clean index
+  local d
+  d="$(mktemp -d "$WORK/app.XXXX")"; rmdir "$d"
+  mkdir -p "$d/tools"
+  cp "$REAL_SCRIPT" "$d/tools/vendor-openevv.sh"
+  git -C "$d" init -q -b main
+  git -C "$d" config user.name  "openevv bump test"
+  git -C "$d" config user.email "bump-test@example.com"
+  git -C "$d" -c protocol.file.allow=always submodule add -q "$UP" native/openevv >/dev/null
+  git -C "$d/native/openevv" fetch -q origin
+  git -C "$d/native/openevv" checkout -q --detach "$1"
+  git -C "$d" add native/openevv
+  git -C "$d" commit -qm init   # clean index before running the script
+  APP="$d"
 }
+pin()         { git -C "$APP/native/openevv" rev-parse HEAD; }
+index_clean() { git -C "$APP" diff --cached --quiet; }
 
-# ---- Test 1: successful re-vendor mirrors engine files + preserves probes + pins exact SHA
-test1() {
-  cd "$APP" || { fail "test1: cannot cd $APP"; return; }
-  # a remote whose NAME looks like a fork/pr must not be picked as the source
-  git -C "$FORK" remote add pr-9-fork "$WORK/unrelated-fork.git"
-  if run_success; then pass "re-vendor succeeds (uses origin, ignores pr-* remote)"; else fail "re-vendor succeeds"; fi
-  [ -s native/openevv/src/eci/lang/eci_languageid.c ] && pass "engine languageid mirrored" || fail "engine languageid mirrored"
-  [ -s native/openevv/src/port/port_ctors.c ] && pass "engine port_ctors mirrored" || fail "engine port_ctors mirrored"
-  [ -f native/openevv/EVV_ENGINE_MARKER ] && pass "fork main mirrored" || fail "fork main mirrored"
-  grep -q '^engine languageid$' native/openevv/src/eci/lang/eci_languageid.c && pass "fork content won (not app-local copy)" || fail "fork content won (not app-local copy)"
-  [ -f native/openevv/cli/bench_synth.c ] && pass "optional probe present" || fail "optional probe present"
-  grep -q '^local-probe$' native/openevv/cli/probe.c && pass "app-local probe preserved" || fail "app-local probe preserved"
-  pin_sha=$(grep '^openevv_vendored=' native/openevv/.openevv-pin | cut -d= -f2)
-  if [ "$pin_sha" = "$CORRECT_SHA" ]; then
-    pass "pin == exact fetched commit ($CORRECT_SHA)"
-  else
-    fail "pin == exact fetched commit (got $pin_sha want $CORRECT_SHA)"
-  fi
-  cd "$ROOT"
-}
-test1
+# ---- Test 1: preview on a current submodule = up to date, no-op ----
+new_app "$NEW_SHA"
+out=$(bash "$APP/tools/vendor-openevv.sh" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && pass "preview on current submodule exits 0" || fail "preview on current submodule exits 0 (rc=$rc)"
+echo "$out" | grep -qi 'up to date' && pass "reports 'up to date'" || fail "reports 'up to date'"
+[ "$(pin)" = "$NEW_SHA" ] && pass "pointer unchanged" || fail "pointer unchanged"
+index_clean && pass "stages nothing" || fail "stages nothing"
 
-# ---- Test 2: missing required engine file in the source aborts before deleting
-cp -r "$DST" "$WORK/dst_backup"
-test2() {
-  cd "$APP" || { fail "test2: cannot cd $APP"; return; }
-  # drop a required engine file from the SOURCE checkout. If the script wrongly
-  # continued past the check it would rm -rf the whole DST and re-vendor; we
-  # assert it stops first and leaves the existing vendored tree untouched.
-  rm -f "$FORK/src/eci/lang/eci_languageid.c"
-  if bash "$SCRIPT" "$FORK" 2>/dev/null; then
-    fail "missing required source file aborts"
-  else
-    pass "missing required source file aborts"
-  fi
-  [ -f native/openevv/src/eci/lang/eci_languageid.c ] && pass "no destructive change (languageid intact)" \
-                                                    || fail "no destructive change (languageid intact)"
-  cd "$ROOT"
-}
-test2
+# ---- Test 2: preview on an old pin lists delta, touches nothing ----
+new_app "$OLD_SHA"
+out=$(bash "$APP/tools/vendor-openevv.sh" 2>&1)
+echo "$out" | grep -qi 'up to date' \
+  && fail "old pin not misreported as up to date" || pass "old pin not misreported as up to date"
+echo "$out" | grep -q 'incoming commits' \
+  && pass "lists incoming commits" || fail "lists incoming commits"
+[ "$(pin)" = "$OLD_SHA" ] && pass "leaves old pin untouched" || fail "leaves old pin untouched"
+index_clean && pass "stages nothing" || fail "stages nothing"
 
-# ---- Test 2b: a required registration file missing from source aborts before deleting
-test2b() {
-  cd "$APP" || { fail "test2b: cannot cd $APP"; return; }
-  rm -rf native/openevv
-  cp -r "$WORK/dst_backup" native/openevv
-  rm -f "$FORK/src/port/port_ctors.c"
-  if bash "$SCRIPT" "$FORK" 2>/dev/null; then
-    fail "missing registration source aborts"
-  else
-    pass "missing registration source aborts"
-  fi
-  [ -f native/openevv/src/port/port_ctors.c ] && pass "no destructive change (port_ctors intact)" || fail "no destructive change (port_ctors intact)"
-  cd "$ROOT"
-}
-test2b
+# ---- Test 3: --apply bumps to main and stages the gitlink ----
+out=$(bash "$APP/tools/vendor-openevv.sh" --apply 2>&1)
+[ "$(pin)" = "$NEW_SHA" ] && pass "--apply moves pin to main" || fail "--apply moves pin to main"
+echo "$out" | grep -qi 'applied' && pass "--apply reports applied" || fail "--apply reports applied"
+index_clean && fail "--apply stages the gitlink" || pass "--apply stages the gitlink"
+echo "$out" | grep -q 'chore(engine): bump' \
+  && pass "suggests pointer-bump PR body" || fail "suggests pointer-bump PR body"
 
-# ---- Test 3: failed fetch aborts (stale local main never used)
-test3() {
-  cd "$APP" || { fail "test3: cannot cd $APP"; return; }
-  rm -rf native/openevv
-  cp -r "$WORK/dst_backup" native/openevv
-  # point the fork's origin at an unreachable remote so the fetch fails; a
-  # stale local main may exist but must never be re-vendored.
-  git -C "$FORK" remote remove origin
-  git -C "$FORK" remote add origin "$WORK/nonexistent-remote.git"
-  if bash "$SCRIPT" "$FORK" 2>/dev/null; then
-    fail "failed fetch aborts"
-  else
-    pass "failed fetch aborts"
-  fi
-  [ -f native/openevv/src/eci/lang/eci_languageid.c ] && pass "DST intact after failed fetch" || fail "DST intact after failed fetch"
-  cd "$ROOT"
-}
-test3
-
-# ---- Test 4: failure propagation self-check (#10)
-# Intentionally fail an assertion and confirm the harness records it and would
-# exit nonzero. Gated behind VENDOR_TEST_SELFCHECK=1 so the normal run stays
-# green; CI-and-local verification flips it once to prove the harness detects
-# an injected failure.
-if [ "${VENDOR_TEST_SELFCHECK:-0}" = 1 ]; then
-  test4() {
-    local before=$failures
-    fail "intentional self-check failure (must be recorded)"
-    if [ "$failures" -gt "$before" ]; then
-      pass "intentional failure propagates to parent failures counter"
-    else
-      fail "intentional failure propagates to parent failures counter"
-    fi
-  }
-  test4
-fi
+# ---- Test 4: uninitialized submodule aborts ----
+rm -rf "$APP/native/openevv"
+t4out="$(bash "$APP/tools/vendor-openevv.sh" 2>&1)"
+{ echo "$t4out" | grep -q 'is not an initialized submodule'; } \
+  && pass "uninitialized submodule aborts with message" \
+  || fail "uninitialized submodule aborts with message"
 
 echo
 if [ "$failures" -gt 0 ]; then

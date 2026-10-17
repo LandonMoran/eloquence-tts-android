@@ -23,9 +23,10 @@ are statically linked into one `libvvtts_core.so` for each packaged ABI.
   retired rather than having its buffers reused.
 - Text input is limited to 16 KiB. Buffered engine audio is limited to
   60 seconds at the native sample rate.
-- The 13 shipped locales must match `VoiceRegistry.kt`; `tests/contracts.py`
-  checks parity. Korean is removed from this build (dispatch, detection, and
-  engine `lang/kor` sources).
+- The 10 shipped locales (12 once `es-US`, `pt-BR`, `fi-FI` are re-added on the
+  next engine resync) must match `VoiceRegistry.kt`; `tests/contracts.py`
+  checks parity. Korean is removed from this build (dispatch, detection,
+  language-model, and engine `lang/kor` sources).
 
 ## Build and verification
 

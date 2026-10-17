@@ -2,12 +2,41 @@
 
 ## Current release note
 
-**Chinese is removed.** Chinese (Simplified `zh-CN`) and Traditional (`zh-TW`)
-voices, the Chinese oracle audio synthesis path, and every Chinese voice,
-detection, emoji, documentation, and build reference have been dropped from
-this release. **Korean is removed as well** (engine dispatch, detection,
-`lang/kor` sources, and documentation). The app now advertises **13 locales**
-(was 14). Japanese (`ja-JP`) is unaffected.
+**⚠️ Warning — what changed in v1.0.10:**
+
+- **⚠️ Language support changed.** The app now advertises **10 locales**:
+  **en-US, en-GB, de-DE, fr-FR, fr-CA, es-ES, es-MX, it-IT, ja-JP, pl-PL.**
+  **Chinese (Simplified `zh-CN` and Traditional `zh-TW`) is removed.** Their
+  speech, detection, engine dispatch, language models, oracle data, and all
+  build/documentation references have been dropped. Devices set to a removed
+  locale fall back to the closest remaining voice rather than producing
+  Chinese speech.
+
+  The engine submodule carries **12 languages**; the native engine still holds
+  `es-US`, `pt-BR`, and `fi-FI`. Those are not yet in `VoiceRegistry.kt`, and
+  will be re-added — bringing the advertised count to **12** — when the engine
+  is resynced (the current submodule keeps them available, so nothing is lost
+  by this release).
+
+- **Engine moved to a pinned submodule.** The bundled speech engine at
+  `native/openevv` is now a **git submodule pinned to upstream
+  `Mudb0y/openevv` commit `d2bc0c6`** (verified-good: all 12 engine languages
+  and host synthesis passing), replacing the previously maintained fork and the
+  in-tree vendored copy. The app's JNI bridge was adapted to the upstream engine
+  API (`es_delete`); the only code touched is the app's own wrapper layers. The
+  submodule is the single source of truth for the engine pin — future engine
+  fresh uses `tools/vendor-openevv.sh` (preview) and is committed as its own
+  pointer bump ahead of a release gate. If you relied on any fork-specific
+  engine behavior, verify your dialect/pronunciation expectations against
+  upstream output.
+
+- **TalkBack voice fix.** The default voice reported to TalkBack now honors the
+  explicitly pinned in-app voice (registry-advertised only), so the system's
+  read-aloud uses your selected voice instead of overriding it. This changes
+  the reported default voice for TalkBack in all locales.
+
+- **Stability fix.** Fixed a startup failure (`dlopen`/undefined-engine-symbol)
+  that could crash on first launch after upgrade; verify a clean start.
 
 ## Version and publication
 
@@ -57,7 +86,8 @@ incompatible APK. See [`tools/audit_apk_abis.py`](tools/audit_apk_abis.py) and
 Before release, check the relevant CI results and, when hardware is available,
 verify:
 
-1. Short speech in each of the 14 advertised locales and the available voice
+1. Short speech in each of the 10 advertised locales (12 once the engine
+   resync re-adds `es-US`, `pt-BR`, `fi-FI`) and the available voice
    presets.
 2. Rapid TalkBack stop/restart, voice changes, and language changes without
    stale speech or a service failure.

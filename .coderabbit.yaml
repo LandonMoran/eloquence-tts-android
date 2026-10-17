@@ -15,6 +15,7 @@ reviews:
     - "!libs/**"
     - "!language-models/**"
     - "!native-libs/**"
+    - "!native/openevv/**"
     - "!**/build/**"
     - "!**/.gradle/**"
     - "!*.apk"

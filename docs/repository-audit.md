@@ -12,6 +12,13 @@ The consolidation branch contains the application fixes and the workflow changes
 
 ## Scope and limits
 
+> **Note (2026-10-14):** the engine storage changed after this pass — the
+> formerly vendored `native/openevv/` tree is now a git submodule pinned to
+> upstream openevv (`Mudb0y/openevv`), and the `docs/` guidance about keeping
+> generated C/packed assets in sync is current. This historical inventory of
+> base `7e20b6b` stands as a record; for the current engine layout see the root
+> README and the submodule pin.
+
 This pass inventoried 2,277 tracked paths at base `7e20b6b4c1084fd2b4a2b3a5d605ffaf1669ed63`. Review focused on the executable Android application, JNI/ECI boundary, native ownership, settings, update/install flow, build/release workflows and source generators. Model/resource data received format and regeneration checks. Historical `oracle/rom_lift` decompilation, Ghidra output, vendored binaries and language tables were inventoried and inspected by role; they were **not individually proven correct or all manually reviewed line by line**.
 
 The source scan parsed 85 valid Python files, 52 JSON files and 20 XML files, and checked 11 shell scripts; the only Python syntax failure was an obsolete, unused `wt228_splice.py` migration script, now removed. Native C syntax checks passed for 316 translation units; unshipped Traditional Chinese/Korean lack generated rule headers, and the Windows port is outside the Android target. Actual Android compilation and APK validation run in CI, as required by this repository.

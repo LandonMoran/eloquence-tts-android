@@ -27,6 +27,8 @@ jobs:
       TEST_MIN_API: ${{ inputs.test_min_api || '28' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - uses: actions/setup-java@v5
         with:
