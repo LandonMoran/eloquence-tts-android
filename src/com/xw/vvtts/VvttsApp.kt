@@ -39,12 +39,27 @@ import com.xw.vvtts.utils.Telemetry
 class VvttsApp : Application() {
     /** Guards against re-running the deferred init on a second broadcast. */
     private var deferScheduled = false
+    /** One-shot gate so the bootstrap runs at most once no matter how it's reached. */
+    private var initDone = false
+
+    /**
+     * Run the Firebase/Crashlytics/Telemetry bootstrap exactly once. Safe from
+     * any caller and on any thread: a second call is a no-op. Both the locked
+     * init (CrashlyticsFx/Telemetry) and the receiver + post-registration
+     * recheck paths funnel through here so the init can never be lost or
+     * double-fired.
+     */
+    private fun initOnce() {
+        if (initDone) return
+        initDone = true
+        CrashlyticsFx.initProcess(this)
+        Telemetry.apply(this)
+    }
 
     override fun onCreate() {
         super.onCreate()
         if (isUserUnlocked()) {
-            CrashlyticsFx.initProcess(this)
-            Telemetry.apply(this)
+            initOnce()
         } else {
             scheduleDeferredInit()
         }
@@ -74,10 +89,9 @@ class VvttsApp : Application() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != Intent.ACTION_USER_UNLOCKED) return
                 try { unregisterReceiver(this) } catch (_: Throwable) {}
-                // BroadcastReceiver scope ends after onReceive; do the heavy init on
-                // a fresh context that outlives this callback.
-                CrashlyticsFx.initProcess(context.applicationContext)
-                Telemetry.apply(context.applicationContext)
+                // BroadcastReceiver scope ends after onReceive; the one-shot
+                // guard uses the Application context that outlives this callback.
+                initOnce()
             }
         }
         try {
@@ -88,14 +102,12 @@ class VvttsApp : Application() {
             // otherwise miss the bootstrap entirely. Recheck now that we're registered.
             if (isUserUnlocked()) {
                 try { unregisterReceiver(receiver) } catch (_: Throwable) {}
-                CrashlyticsFx.initProcess(this)
-                Telemetry.apply(this)
+                initOnce()
             }
         } catch (t: Throwable) {
             // Registration failed (e.g. DOCT from a restricted context): run now
             // rather than never. Firebase init is guarded, so this cannot crash.
-            CrashlyticsFx.initProcess(this)
-            Telemetry.apply(this)
+            initOnce()
         }
     }
 }
