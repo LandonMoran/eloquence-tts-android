@@ -1,0 +1,62 @@
+name: spike-redroid-arm
+on:
+  workflow_dispatch:
+jobs:
+  redroid:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable PRIVILEGED docker + load binder/ashmem modules
+        run: |
+          set -euxo pipefail
+          uname -a; uname -m
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq adb
+          # load the modules; not fatal if they can't load, we report which
+          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" && echo "BINDER_OK" || echo "BINDER_FAIL"
+          sudo modprobe ashmem_linux && echo "ASHMEM_OK" || echo "ASHMEM_FAIL"
+          ls -la /dev/binder* /dev/ashmem 2>&1 || true
+      - name: Pull redroid image (explicit, so pull cost is visible)
+        run: |
+          set -euxo pipefail
+          time sudo docker pull redroid/redroid:15.0.0-latest
+      - name: Run redroid + wait for boot (fully time-bounded)
+        run: |
+          set -euxo pipefail
+          SERIAL=127.0.0.1:5555
+          adb kill-server 2>/dev/null || true
+          mkdir -p "$HOME/rd-data"
+          sudo docker run -itd --rm --privileged \
+            --mount type=bind,source="$HOME/rd-data",target=/data \
+            -p 127.0.0.1:5555:5555 \
+            redroid/redroid:15.0.0-latest
+          # NEVER wait-for-device (it blocks forever); poll with timeout instead.
+          ok=0
+          for i in $(seq 1 12); do
+            if timeout 8 adb devices 2>/dev/null | grep -q "$SERIAL.*device"; then
+              echo "ADB_DEVICE_UP at loop $i"; ok=1; break
+            fi
+            echo "loop $i devices: $(timeout 8 adb devices 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+            timeout 8 adb connect "$SERIAL" >/dev/null 2>&1 || true
+            sleep 5
+          done
+          [ "$ok" = "1" ] || { echo "REDROID_NO_DEVICE"; exit 2; }
+          boot=0
+          for i in $(seq 1 40); do
+            b=$(timeout 8 adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            echo "boot_completed=$b (loop $i)"
+            [ "$b" = "1" ] && { boot=1; break; }
+            sleep 5
+          done
+          [ "$boot" = "1" ] || { echo "REDROID_BOOT_TIMEOUT"; exit 3; }
+          echo "abi=$(timeout 8 adb -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"
+          timeout 8 adb -s "$SERIAL" shell cat /proc/cpuinfo | grep -m1 'model name' || true
+          echo "REDROID_UP"
+      - name: Report binders as artifact
+        if: always()
+        run: |
+          echo "kernel: $(uname -r)"
+          echo "arch: $(uname -m)"
+          echo "binder: $(ls /dev/binder* 2>/dev/null || echo none)"
+          echo "ashmem: $(ls /dev/ashmem 2>/dev/null || echo none)"
