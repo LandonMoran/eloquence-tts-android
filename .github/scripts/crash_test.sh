@@ -3,8 +3,12 @@ set -euo pipefail
 
 SDK="${ANDROID_SDK_ROOT:-$HOME/android-sdk}"
 ADB="$SDK/platform-tools/adb"
-PKG=$(grep -oE 'package="[^"]*"' AndroidManifest.xml | head -1 | sed -E 's/.*"([^"]*)".*/\1/')
-APK=$(ls *_signed.apk 2>/dev/null | head -1)
+# Gradle migration moved the app id from the manifest's package= to build.gradle
+# namespace; derive it there, falling back to the legacy manifest attr.
+PKG=$(grep -oE "namespace[[:space:]]+['\"][^'\"]+['\"]" build.gradle | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"].*/\1/")
+[ -n "$PKG" ] || PKG=$(grep -oE 'package="[^"]*"' AndroidManifest.xml | head -1 | sed -E 's/.*"([^"]*)".*/\1/')
+# Workflow lanes stage the built APK as ./vvtts_signed.apk (cp from build/outputs).
+APK=$(ls ./vvtts_signed.apk 2>/dev/null | head -1)
 echo "pkg=$PKG apk=$APK"
 
 "$ADB" install -r "$APK"

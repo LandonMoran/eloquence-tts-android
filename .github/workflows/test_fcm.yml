@@ -1,0 +1,47 @@
+name: Test FCM notification
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'FCM topic (blank = auto route via pre-release flag)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - eloquence_updates
+          - eloquence_updates_dev
+        default: ''
+      version:
+        description: 'Version string for the test notification'
+        required: false
+        default: '99.0.0-test'
+      prerelease:
+        description: 'Send to the *_dev topic (blank topic only)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  test-fcm:
+    name: Test FCM release notification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FCM dependency
+        run: pip install cryptography
+      - name: Send test FCM notification
+        env:
+          FCM_PROJECT_ID: ${{ secrets.FCM_PROJECT_ID }}
+          FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+          FCM_TOPIC: ${{ inputs.topic }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+          FCM_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          : "${FCM_PROJECT_ID:?FCM_PROJECT_ID secret required}"
+          : "${FCM_SERVICE_ACCOUNT_JSON:?FCM_SERVICE_ACCOUNT_JSON secret required}"
+          python3 .github/scripts/send_fcm.py

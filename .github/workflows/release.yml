@@ -73,3 +73,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 tools/publish_release.py "$RELEASE_TAG" signed "$ANDROID_HOME/build-tools/35.0.0/aapt"
+      - name: Send release notification via Firebase Cloud Messaging
+        if: ${{ !cancelled() && !failure() }}
+        env:
+          FCM_PROJECT_ID: ${{ secrets.FCM_PROJECT_ID }}
+          FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          # DEV_TOPIC pre-release routing; releases (v*) always hit the stable topic.
+          IS_PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          set -euo pipefail
+          : "${FCM_PROJECT_ID:?FCM_PROJECT_ID secret required}"
+          : "${FCM_SERVICE_ACCOUNT_JSON:?FCM_SERVICE_ACCOUNT_JSON secret required}"
+          pip install --quiet cryptography
+          python3 .github/scripts/send_fcm.py

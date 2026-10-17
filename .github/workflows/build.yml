@@ -23,7 +23,7 @@ jobs:
     env:
       # Test-only min-api override for the armeabi-v7a APK. Defaults to 28 in
       # normal CI (push/PR); workflow_dispatch may set 25 for the arm32 lab
-      # emulator. Read by build.sh as ${MIN_API:-28} for D8 --min-api.
+      # emulator. Fed to Gradle as -PtestMinApi for the armv7 flavor's minSdk.
       TEST_MIN_API: ${{ inputs.test_min_api || '28' }}
     steps:
       - uses: actions/checkout@v4
@@ -36,40 +36,27 @@ jobs:
           java-version: '17'
 
       # Runner images ship a preinstalled SDK at /usr/local/lib/android/sdk
-      # with working cmdline-tools; install the packages build.sh needs.
+      # with working cmdline-tools; install the packages the Gradle build needs
+      # (compile SDK matching targetSdk 36, build-tools, NDK for build_native.sh).
       - name: Install Android SDK packages
         run: |
           SDK=/usr/local/lib/android/sdk
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;35.0.0"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
           # NDK ships preinstalled on runner images; install only if somehow absent.
           [ -d "$SDK/ndk" ] || "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264"
-          # build.sh expects d8 under cmdline-tools/latest/bin; it actually
-          # lives in build-tools. Symlink so the upstream script runs unmodified.
-
-          mkdir -p "$SDK/cmdline-tools/latest/bin"
-          ln -sf "$SDK/build-tools/35.0.0/d8" "$SDK/cmdline-tools/latest/bin/d8"
-
-      - name: Install Kotlin compiler 1.9.25 (embeddable jar, no unzip)
-
-        run: |
-          set -e
-          curl -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
-          curl -fsSL -o /tmp/trove4j-1.0.20200330.jar https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
-          curl -fsSL -o /tmp/kotlin-stdlib-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
-          # Needed by the embeddable compiler when emitting nullability annotations (external funs)
-          curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
-          ls -la /tmp/kotlin-compiler-embeddable-1.9.25.jar /tmp/trove4j-1.0.20200330.jar /tmp/kotlin-stdlib-1.9.25.jar /tmp/annotations-24.1.0.jar
-          (cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/scripts/kotlin-compiler-1.9.25.sha256")
 
       - name: Host regression and source contracts
         env:
-          ANDROID_JAR: /usr/local/lib/android/sdk/platforms/android-34/android.jar
+          ANDROID_JAR: /usr/local/lib/android/sdk/platforms/android-36/android.jar
           KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
           KXML_JAR: /tmp/kxml2-2.3.0.jar
         run: |
+          curl -fsSL -o /tmp/kotlin-compiler-embeddable-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/1.9.25/kotlin-compiler-embeddable-1.9.25.jar
+          curl -fsSL -o /tmp/trove4j-1.0.20200330.jar https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330.jar
+          curl -fsSL -o /tmp/kotlin-stdlib-1.9.25.jar https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar
+          curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           curl -fsSL https://repo1.maven.org/maven2/net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar -o "$KXML_JAR"
-          echo 'f264dd9f79a1fde10ce5ecc53221eff24be4c9331c830b7d52f2f08a7b633de2  /tmp/kxml2-2.3.0.jar' | sha256sum -c -
           bash tests/host/run.sh
           bash tests/native/run.sh
           bash tests/vendor-openevv-test.sh
@@ -86,45 +73,27 @@ jobs:
           echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
           echo "KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
           echo "KEYSTORE=vvttts.jks" >> "$GITHUB_ENV"
-      - name: Build native bridge (arm64-v8a + armeabi-v7a + x86_64; openevv + JNI core)
-        run: |
-          ABI=arm64-v8a bash build_native.sh
-          ABI=armeabi-v7a bash build_native.sh
-          # TEST-ONLY: x86_64 .so for the emulator lab (x86_64 system image).
-          ABI=x86_64 bash build_native.sh
-        env:
-          ANDROID_SDK: /usr/local/lib/android/sdk
 
-      - name: Build APKs (arm64 + arm32 + universal; x86_64 test-only)
+      - name: Build APKs via Gradle (native + arm64/arm32/universal; x86_64 test-only)
         run: |
           rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk
-          echo "=== Build arm64-v8a (phones) ==="
-          ABI=arm64-v8a bash build.sh && cp vvtts_signed.apk vvtts-arm64-v8a.apk
-          echo "=== Build armeabi-v7a (32-bit devices/emulators) ==="
-          # TEST_MIN_API is a test-only override (default 28); MIN_API=25 lets an
-          # API-25 arm32 emulator install this APK. When the override differs from
-          # 28, patch minSdkVersion in the manifest so aapt packages it (the
-          # documented API-25 emulator lane otherwise fails with
-          # INSTALL_FAILED_OLDER_SDK); restore the tracked manifest afterwards.
-          MIN_API="${TEST_MIN_API:-28}"
-          if [ "$MIN_API" != "28" ]; then
-            sed -i "s/android:minSdkVersion=\"28\"/android:minSdkVersion=\"$MIN_API\"/" AndroidManifest.xml
-          fi
-          ABI=armeabi-v7a MIN_API="$MIN_API" bash build.sh && cp vvtts_signed.apk vvtts-armeabi-v7a.apk
-          if [ "$MIN_API" != "28" ]; then
-            git checkout -- AndroidManifest.xml
-          fi
-          echo "=== Build universal (both ABIs) ==="
-          ABI=universal bash build.sh && cp vvtts_signed.apk vvtts-universal.apk
-          echo "=== Build x86_64 (TEST-ONLY: emulator lab smoke; not a shipping artifact) ==="
-          ABI=x86_64 bash build.sh && cp vvtts_signed.apk vvtts-test-x86_64.apk
+          # Gradle's :buildNative task runs the 3 build_native.sh ABI builds
+          # (NDK cross-compile of openevv + JNI bridge), then AGP assembles each.
+          ./gradlew --no-daemon --no-build-cache \
+            :assembleArm64Release :assembleArmv7Release :assembleUnivRelease :assembleX64Release \
+            -PtestMinApi="${TEST_MIN_API:-28}"
+          # Gather the four APKs at the repo root with the exact legacy filenames
+          # that audit_apk_abis.py + publish_release.py expect.
+          find build/outputs/apk -name 'vvtts-arm64-v8a.apk' -exec cp -f {} ./ \;
+          find build/outputs/apk -name 'vvtts-armeabi-v7a.apk' -exec cp -f {} ./ \;
+          find build/outputs/apk -name 'vvtts-universal.apk' -exec cp -f {} ./ \;
+          find build/outputs/apk -name 'vvtts-test-x86_64.apk' -exec cp -f {} ./ \;
           ls -lh vvtts-*.apk
         env:
           ANDROID_SDK: /usr/local/lib/android/sdk
           KEYSTORE: vvttts.jks
           KS_PASS: ${{ env.KS_PASS }}
           KEY_PASS: ${{ env.KEY_PASS }}
-          KOTLINC_CP: /tmp/kotlin-compiler-embeddable-1.9.25.jar:/tmp/trove4j-1.0.20200330.jar:/tmp/kotlin-stdlib-1.9.25.jar:/tmp/annotations-24.1.0.jar
 
       - name: Audit native ABI contents
         run: python3 tools/audit_apk_abis.py

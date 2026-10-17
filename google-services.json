@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "658788570882",
+    "project_id": "project-e54ceafe-dd3c-4596-989",
+    "storage_bucket": "project-e54ceafe-dd3c-4596-989.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:658788570882:android:2d38ad868af70c124d541b",
+        "android_client_info": {
+          "package_name": "com.xw.vvtts"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBDQqO1HKWbgovPmn6ZY0dnJPpBdO6bN9c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
