@@ -884,9 +884,69 @@ private fun crashOptOutWritesNothingInvocationFailure() {
     println("PASS crashOptOutWritesNothingInvocationFailure: opted-out process emits nothing when disable toggle invocation fails")
 }
 
+/** Review #6: a FAILED persistent diagnostic wipe must be reported and must
+ *  never let pre-opt-out counts resurrect on a later re-enable. Deterministic
+ *  driver: clearWriteSeam returns false every attempt, so clear() reports
+ *  failure while the old aggregate remains on disk; the engine must then merge
+ *  new opt-in data onto a ZERO base (fail closed), not the stale retained
+ *  values. Fails on the old code: there the wipe result was ignored, clear()
+ *  reported a success it could not guarantee, and a re-enable resurrected the
+ *  old counts on top of fresh data. */
+private fun engineMetricsFailedClearNoResurrection() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true) // opt-in for this exercise
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+    // Build a retained aggregate (the user opted in and used the engine).
+    EngineMetrics.recordInit(10L, true) // coarse -> immediate merge (now=true)
+    EngineMetrics.recordInit(20L, true)
+    check(store.getLong("init_n", -1) == 2L) { "precondition: retained init_n=2 on disk" }
+
+    // Opt OUT; the wipe fails to persist on every attempt (deterministic seam).
+    TelemetryPrefs.setCrashEnabled(context, false)
+    set(EngineMetrics, "clearWriteSeam") { false }
+    val cleared = try { EngineMetrics.clear(context) } finally { set(EngineMetrics, "clearWriteSeam", null) }
+    check(!cleared) { "clear() must report a failed persistent wipe (review #6), not claim success" }
+    check(store.getLong("init_n", -1) == 2L) { "a failed wipe leaves the old retained aggregate on disk" }
+
+    // Re-enable. A fresh opt-in delta must merge onto a ZERO base — the old
+    // pre-opt-out count (2) must never be added on top (old code: 2+1=3).
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.recordInit(50L, true)
+    check(store.getLong("init_n", -1) == 1L) { "pre-opt-out count resurrected after failed clear (review #6): got ${store.getLong("init_n", -1)}" }
+    EngineMetrics.clear(context)
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS engineMetricsFailedClearNoResurrection: failed wipe reported; retained counts never resurrected on re-enable")
+}
+
+/** Review #7: a failed opt-out write must be reported (never claimed saved),
+ *  the durable value must be unchanged, and a healthy opt-out must survive a
+ *  process restart (fresh prefs re-read). Deterministic: the host's
+ *  Os.failRenameContaining stub makes the atomic rename fail. */
+private fun telemetryConsentFailedOptOutPersist() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, true) // default opt-out ON
+    check(TelemetryPrefs.isCrashEnabled(context)) { "crash reporting should default on (opt-out)" }
+    // Force the atomic rename for the telemetry prefs to fail (review #7).
+    android.system.Os.failRenameContaining = "vvtts_telemetry.xml"
+    val persisted = try {
+        TelemetryPrefs.setCrashEnabled(context, false) // opt-OUT write fails
+    } finally { android.system.Os.failRenameContaining = null }
+    check(!persisted) { "setCrashEnabled MUST report a failed opt-out write (false); caller fails closed (review #7)" }
+    // Durable value unchanged: a hypothetical restart reads the old (default ON)
+    // value, which is exactly why the in-process fail-closed path must hold.
+    check(TelemetryPrefs.isCrashEnabled(context)) { "durable crash consent must be unchanged when its write failed" }
+    // A healthy opt-out must survive a process restart (fresh prefs re-read).
+    check(TelemetryPrefs.setCrashEnabled(context, false)) { "a healthy opt-out write should succeed" }
+    check(!TelemetryPrefs.isCrashEnabled(context)) { "opted-out consent must survive a process restart (fresh read)" }
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS telemetryConsentFailedOptOutPersist: failed opt-out write reported; durable value unchanged; good write survives restart")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist() }
     finally { Context.root.deleteRecursively() }
 }

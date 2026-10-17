@@ -2,6 +2,7 @@ package com.xw.vvtts.utils
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import java.util.Arrays
 
 /**
@@ -124,6 +125,15 @@ object EngineMetrics {
     // failure is swallowed and never breaks synthesis or initialization.
     // Always null in production.
     private var consentReadSeam: (() -> Unit)? = null
+    // Set when the opt-out diagnostic wipe failed to persist (review #6): a
+    // failed clear leaves the previous on-disk aggregate unzeroed, so while
+    // this latch is up the engine treats the persisted base as zero and never
+    // resurrects pre-opt-out counts by merging on top of the stale values.
+    private var clearWriteFailed = false
+    // Host-regression seam for review #6: when armed, its return value replaces
+    // the MirroredPreferences.update() result (false/throw forces the failed-wipe
+    // outcome deterministically). Always null in production.
+    private var clearWriteSeam: (() -> Boolean)? = null
 
     // ----------------------------------------------------------------- lifecycle
 
@@ -363,9 +373,14 @@ object EngineMetrics {
                 if (storedGen != snapshotGen) { aborted = true; return@update }
                 for (i in 0 until N_COUNTERS) {
                     if (i == I_SYNTH_MAX) {
-                        map[KEYS[i]] = maxOf(map[KEYS[i]] as? Long ?: 0L, mergedLocal[I_SYNTH_MAX])
+                        // A failed opt-out wipe (review #6) must never resurrect the
+                        // previous max: treat the persisted base as zero while the
+                        // clear-write-failed latch is up.
+                        map[KEYS[i]] = if (clearWriteFailed) mergedLocal[I_SYNTH_MAX]
+                                       else maxOf(map[KEYS[i]] as? Long ?: 0L, mergedLocal[I_SYNTH_MAX])
                     } else if (deltas[i] != 0L) {
-                        map[KEYS[i]] = ((map[KEYS[i]] as? Long ?: 0L) + deltas[i])
+                        val base = if (clearWriteFailed) 0L else (map[KEYS[i]] as? Long ?: 0L)
+                        map[KEYS[i]] = base + deltas[i]
                     }
                 }
             }
@@ -416,8 +431,10 @@ object EngineMetrics {
     /** Clear every retained diagnostic snapshot (shared on-disk aggregate, local
      *  deltas and baselines). Called when the user turns crash reporting OFF in
      *  Settings, so retained diagnostics are not silently uploaded if the toggle
-     *  is later re-enabled. */
-    fun clear(context: Context) {
+     *  is later re-enabled. Returns the durable wipe result (review #6): a failed
+     *  persistent wipe is flagged locally and the engine refuses to resurrect the
+     *  old aggregate on a later re-enable. */
+    fun clear(context: Context): Boolean {
         synchronized(lock) {
             Arrays.fill(local, 0L)
             Arrays.fill(baseline, 0L)
@@ -426,12 +443,30 @@ object EngineMetrics {
         // Bump the shared generation so any other process still holding
         // pre-opt-out deltas in memory can detect and discard them before they
         // could merge after a later re-enable (review #2). Zero the snapshot too.
+        var ok = false
         try {
-            MirroredPreferences(context, PREFS_NAME).update { map ->
-                for (key in KEYS) map[key] = 0L
-                map[GEN_KEY] = ((map[GEN_KEY] as? Long ?: 0L) + 1L)
+            // A clear MUST land: retry the atomic wipe. A failed wipe is an
+            // incomplete privacy operation (review #6).
+            var attempt = 0
+            while (!ok && attempt++ < 3) {
+                ok = clearWriteSeam?.invoke()
+                    ?: MirroredPreferences(context, PREFS_NAME).update { map ->
+                        for (key in KEYS) map[key] = 0L
+                        map[GEN_KEY] = ((map[GEN_KEY] as? Long ?: 0L) + 1L)
+                    }
             }
-        } catch (t: Throwable) { /* telemetry must never break the app */ }
-        refreshShared() // observe our own bump so cachedGeneration stays current
+        } catch (t: Throwable) { ok = false }
+        if (ok) {
+            clearWriteFailed = false
+            refreshShared() // observe our own bump so cachedGeneration stays current
+        } else {
+            // Privacy wipe did not persist. Keep the in-memory snapshot zeroed,
+            // mark the failure so merges never resurrect the old aggregate, and
+            // surface it locally (never via telemetry). New reports are already
+            // halted because the caller disabled Crashlytics (review #4).
+            clearWriteFailed = true
+            Log.w("EngineMetrics", "clear: persistent diagnostic wipe FAILED; treating retained aggregate as zero (review #6)")
+        }
+        return ok
     }
 }

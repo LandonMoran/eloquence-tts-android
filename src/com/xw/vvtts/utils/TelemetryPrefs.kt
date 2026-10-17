@@ -29,9 +29,9 @@ object TelemetryPrefs {
         return MirroredPreferences(context, PREFS_NAME).getBoolean(ANALYTICS, false)
     }
 
-    fun setAnalyticsEnabled(context: Context, on: Boolean) {
+    fun setAnalyticsEnabled(context: Context, on: Boolean): Boolean {
         val p = MirroredPreferences(context, PREFS_NAME)
-        p.edit { e -> e.putBoolean(ANALYTICS, on).putBoolean(LEGACY_COMBINED, false) }
+        return p.edit { e -> e.putBoolean(ANALYTICS, on).putBoolean(LEGACY_COMBINED, false) }
     }
 
     /** Crash reporting is an OPT-OUT: default ON. Independent of analytics and
@@ -40,9 +40,13 @@ object TelemetryPrefs {
     fun isCrashEnabled(context: Context): Boolean =
         MirroredPreferences(context, PREFS_NAME).getBoolean(CRASH, true)
 
-    fun setCrashEnabled(context: Context, on: Boolean) {
+    /** Persist the crash (opt-out) consent. Returns the durable write result so
+     *  callers can fail closed (review #7): a false return means the choice did
+     *  NOT reach storage and a later process/launch would read the old value —
+     *  an opted-out user must never be told their opt-out was saved when it was
+     *  not, and the SDK must stay disabled for this session regardless. */
+    fun setCrashEnabled(context: Context, on: Boolean): Boolean =
         MirroredPreferences(context, PREFS_NAME).edit { e -> e.putBoolean(CRASH, on) }
-    }
 
     /** One-time migration: a user who opted into the pre-split single
      *  "Share diagnostics" toggle keeps that choice for analytics instead of

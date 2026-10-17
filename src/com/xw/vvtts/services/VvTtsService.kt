@@ -269,6 +269,9 @@ class VvTtsService : TextToSpeechService() {
      *  framework's utterance contract holds (start() before done()) for utterances
      *  superseded while still queued. Falls back to error() if even that fails. */
     private fun silentComplete(callback: SynthesisCallback) {
+        // Exactly one final outcome for a silently-completed (superseded/ignored)
+        // utterance (review #8): recorded once here, on every silent completion.
+        EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)
         try {
             callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
             callback.done()
@@ -436,6 +439,7 @@ class VvTtsService : TextToSpeechService() {
             // callback. runSynthesis never runs on this path, so no start()/done()
             // pair can fire — error() is the designated failure termination.
             callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)  // review #8: dropped before start is one terminal outcome
         }
     }
 
@@ -464,6 +468,7 @@ class VvTtsService : TextToSpeechService() {
                     callback.error(TextToSpeech.ERROR_SYNTHESIS)
                 } catch (ignore: Throwable) {
                 }
+                EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)  // review #8: exactly one final outcome
             } else {
                 // No stop: a newer utterance superseded this still-QUEUED one.
                 // Complete it silently (start+done, zero audio) so the
@@ -497,6 +502,7 @@ class VvTtsService : TextToSpeechService() {
                 try {
                     callback.error(TextToSpeech.ERROR_SYNTHESIS)
                 } catch (ignore: Throwable) {}
+                EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)  // review #8: exactly one final outcome
             } else {
                 // A newer utterance won the queue in this window: superseded,
                 // complete it silently without touching the stop flag.
@@ -555,8 +561,9 @@ synchronized(synthesisLock) {
         // as RC_FAIL); the final outcome is decided in the finally block below.
         var timedOut = false
         try {
-            var text: String? = request.charSequenceText?.toString()
+            val text: String? = request.charSequenceText?.toString()
             if (text == null || text.isEmpty()) {
+                synthFailedOrTruncated = true  // empty/null input is NOT a success (review #8): a single failure outcome, never RC_OK
                 return  // finally emits the start+error pair for an empty utterance
             }
 

@@ -264,13 +264,22 @@ class SettingsActivity : Activity() {
         // device, so older numbers are not silently uploaded if it is re-enabled.
         addSwitchRow(mainContainer, getString(R.string.crash_row),
             TelemetryPrefs.isCrashEnabled(this)) { on ->
-            TelemetryPrefs.setCrashEnabled(this, on)
-            // PRIVACY: disable the SDK's live collection BEFORE any slower
-            // diagnostic-store cleanup (review #4). If the main or :tts process
-            // dies during EngineMetrics.clear()'s lock+fsync, no report may be
-            // collected after the user switched reporting off.
-            CrashlyticsFx.setCrashCollectionEnabled(on)
-            if (!on) EngineMetrics.clear(this)
+            val persisted = TelemetryPrefs.setCrashEnabled(this, on)
+            if (persisted || on) {
+                // Write landed, or an enable that failed to persist is at worst the
+                // opt-out default (safe on next launch). Apply the SDK toggle.
+                CrashlyticsFx.setCrashCollectionEnabled(on)
+                if (!on) EngineMetrics.clear(this)
+            } else {
+                // OPT-OUT write FAILED (review #7): the choice is not durable and a
+                // later launch would read the old value and re-enable reporting.
+                // Fail closed: keep crash reporting off for THIS process and
+                // surface the failure so the user knows they must retry.
+                CrashlyticsFx.setCrashCollectionEnabled(false)
+                EngineMetrics.clear(this)
+                Log.w("SettingsActivity", "crash opt-out could not be persisted; keeping reporting off this session (review #7)")
+                Toast.makeText(this, getString(R.string.crash_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+            }
         }
         addNoteRow(mainContainer, R.string.crash_note)
         addSwitchRow(mainContainer, getString(R.string.analytics_row),
