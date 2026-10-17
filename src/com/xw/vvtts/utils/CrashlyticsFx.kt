@@ -112,7 +112,7 @@ object CrashlyticsFx {
      */
     private fun setCollectionEnabled(c: FirebaseCrashlytics, enabled: Boolean) {
         try {
-            c.javaClass.getMethod("setCrashlyticsCollectionEnabled", Boolean.TYPE)
+            c.javaClass.getMethod("setCrashlyticsCollectionEnabled", Boolean::class.javaPrimitiveType)
                 .invoke(c, enabled)
         } catch (t: Throwable) { /* no-op: stub/older SDK lacks the method */ }
     }
