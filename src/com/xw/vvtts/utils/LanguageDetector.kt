@@ -90,6 +90,9 @@ class LanguageDetector {
 
         fun setEnglishDialect(dialect: Int) { synchronized(stateLock) { englishDialect = dialect; invalidateLatinCache() } }
         fun getEnglishDialect() = englishDialect
+        /** Whether this dialect is one of the two English variants (EN-US or EN-GB). */
+        fun isEnglishDialect(dialect: Int): Boolean =
+            dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB
 
         fun setSpanishDialect(dialect: Int) { synchronized(stateLock) { spanishDialect = dialect; invalidateLatinCache() } }
         fun getSpanishDialect() = spanishDialect

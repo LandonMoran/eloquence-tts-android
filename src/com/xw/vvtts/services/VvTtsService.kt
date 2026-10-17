@@ -519,6 +519,7 @@ synchronized(synthesisLock) {
         synchronized(LanguageDetector.stateLock) {
         val savedDefault = LanguageDetector.getDefaultLanguage()
         val savedFixed = LanguageDetector.getFixedDialect()
+        val savedEnglishDialect = LanguageDetector.getEnglishDialect()
         val voiceName = request.voiceName
         val appVoice = voiceConfig?.voice
         // #159: no stale per-utterance language pin from a previous run may leak into
@@ -533,6 +534,13 @@ synchronized(synthesisLock) {
 
             if (pd != 0L) {
                 LanguageDetector.setDefaultLanguage(pd.toInt())
+                // Keep englishDialect in lockstep with the pinned voice so detected
+                // English phrases (languageToDialect -> englishDialect) and short-run
+                // fallback (resolveDefaultLanguage) both resolve to the SAME variant.
+                // Otherwise picking EN-GB leaves englishDialect on EN-US and one
+                // utterance "fights" between the two dialects (short spans UK, full
+                // phrases US).
+                if (LanguageDetector.isEnglishDialect(pd.toInt())) LanguageDetector.setEnglishDialect(pd.toInt())
                 if (!LanguageDetector.isDetectionEnabled()) LanguageDetector.setFixedDialect(pd.toInt())
             }
         }
@@ -682,6 +690,7 @@ synchronized(synthesisLock) {
                     LanguageDetector.setDefaultLanguage(savedDefault)
                     LanguageDetector.setTransientEnabledLangs(null)
                     LanguageDetector.setFixedDialect(savedFixed)
+                    LanguageDetector.setEnglishDialect(savedEnglishDialect)
                     // Once the framework itself killed the pipe (a start()/audioAvailable()
                     // verdict of STOPPED/ERROR), no further calls on the callback are<
                     // legal: it already knows the pipe died,and a done()/error() would
