@@ -92,7 +92,7 @@ object CrashlyticsFx {
 
     /** Attach a single numeric custom key (sparse, stable name). Used for the
      *  aggregate engine-health metrics in [EngineMetrics]; never carries text. */
-    fun setKey(name: String, value: Long) {
+    fun setKey(name: String, value: String) {
         val c = cs ?: return
         try { c.setCustomKey(name, value) } catch (t: Throwable) { /* no-op */ }
     }

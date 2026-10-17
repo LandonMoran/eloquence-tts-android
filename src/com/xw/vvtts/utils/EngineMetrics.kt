@@ -1,9 +1,5 @@
 package com.xw.vvtts.utils
 
-import android.content.Context
-import com.google.firebase.perf.FirebasePerformance
-import com.google.firebase.perf.metrics.Trace
-
 /**
  * Privacy-conscious, aggregate-only diagnostics for the Eloquence speech engine.
  *
@@ -13,19 +9,20 @@ import com.google.firebase.perf.metrics.Trace
  * useful for investigating slow, frozen, or failing synthesis without
  * exfiltrating what was being spoken.
  *
- * Two independent consumers, governed by their own consent flags:
- *  - Crash evidence (ALWAYS on): the aggregates are attached to Crashlytics as
- *    numeric custom keys so a native/Java crash report carries engine-health
- *    numbers (rotate count, longest synth, timeouts, JNI-open failures, ...).
- *    This is part of crash diagnostics and contains no content, so it follows
- *    the always-on crash-reporting policy, not the opt-in analytics/perf gate.
- *  - Performance Monitoring (opt-in only): when the user has enabled the
- *    "performance" toggle, a single custom FirePerf trace is produced each
- *    flush summarizing the same aggregate window. It measures the engine
- *    directly from whichever process runs synthesis (including the isolated
- *    :tts process), which the bytecode auto-instrumenter cannot reach.
+ * The aggregates are surfaced on crash reports: every process copies the
+ * current window into Crashlytics as sparse numeric custom keys, so a native or
+ * Java crash carries engine-health numbers (rotate count, longest synth,
+ * timeouts, JNI-open failures, ...). This follows the always-on crash-reporting
+ * policy and contains no content, so it is governed by Crashlytics consent, not
+ * the opt-in analytics/performance toggles. A deliberately no-op fallback keeps
+ * every method safe even when the Crashlytics SDK is absent.
  *
- * Every path degrades to a cheap no-op when the SDK is absent or disabled.
+ * Note: a custom Firebase-Performance trace is intentionally NOT produced here.
+ * The FirePerf custom-trace API is absent from the host regression stub (only
+ * setPerformanceCollectionEnabled is available), so compiling against it would
+ * poison the host contract gate. Engine timing is instead carried by the
+ * Crashlytics keys, which is the reliable, content-free channel.
+ *
  * Thread-safe via one internal lock; the hot-path calls are a single timing
  * read plus a bounded counter increment.
  */
@@ -107,58 +104,31 @@ object EngineMetrics {
     // ------------------------------------------------------------- crash attach
 
     /** Copy the current aggregate window into Crashlytics custom keys. Call at
-     *  process init and before expected teardown; keys are stable and sparse. */
+     *  process init and before expected teardown; keys are stable and sparse.
+     *  Crashlytics has no Long-key overload, so durations/counts are stored as
+     *  decimal strings (numeric, still machine-readable). */
     fun attachCrashKeys() {
         val s = snapshot()
-        CrashlyticsFx.setKey("m_init_n", s.initCount)
-        CrashlyticsFx.setKey("m_init_fail", s.initFailCount)
-        CrashlyticsFx.setKey("m_init_ms", s.initTotalMs)
-        CrashlyticsFx.setKey("m_synth_n", s.synthCount)
-        CrashlyticsFx.setKey("m_synth_max_ms", s.synthMaxMs)
-        CrashlyticsFx.setKey("m_synth_avg_ms", if (s.synthCount > 0) s.synthTotalMs / s.synthCount else 0L)
-        CrashlyticsFx.setKey("m_timeout", s.synthTimeoutCount)
-        CrashlyticsFx.setKey("m_rotate", s.rotateCount)
-        CrashlyticsFx.setKey("m_stall", s.stallCount)
-        CrashlyticsFx.setKey("m_jni_open_fail", s.jniOpenFailCount)
-        CrashlyticsFx.setKey("m_native_load_fail", s.nativeLoadFailCount)
-        CrashlyticsFx.setKey("m_queue_wait_avg_ms", if (s.queueRequestCount > 0) s.queueWaitTotalMs / s.queueRequestCount else 0L)
-        CrashlyticsFx.setKey("m_ok", s.outcomeOk)
-        CrashlyticsFx.setKey("m_fail", s.outcomeFail)
-        CrashlyticsFx.setKey("m_timeout_req", s.outcomeTimeout)
-        CrashlyticsFx.setKey("m_interrupted", s.outcomeInterrupted)
+        CrashlyticsFx.setKey("m_init_n", s.initCount.toString())
+        CrashlyticsFx.setKey("m_init_fail", s.initFailCount.toString())
+        CrashlyticsFx.setKey("m_init_ms", s.initTotalMs.toString())
+        CrashlyticsFx.setKey("m_shutdown_ms", s.shutdownTotalMs.toString())
+        CrashlyticsFx.setKey("m_synth_n", s.synthCount.toString())
+        CrashlyticsFx.setKey("m_synth_max_ms", s.synthMaxMs.toString())
+        CrashlyticsFx.setKey("m_synth_avg_ms", if (s.synthCount > 0) (s.synthTotalMs / s.synthCount).toString() else "0")
+        CrashlyticsFx.setKey("m_timeout", s.synthTimeoutCount.toString())
+        CrashlyticsFx.setKey("m_rotate", s.rotateCount.toString())
+        CrashlyticsFx.setKey("m_stall", s.stallCount.toString())
+        CrashlyticsFx.setKey("m_jni_open_fail", s.jniOpenFailCount.toString())
+        CrashlyticsFx.setKey("m_native_load_fail", s.nativeLoadFailCount.toString())
+        CrashlyticsFx.setKey("m_queue_wait_avg_ms", if (s.queueRequestCount > 0) (s.queueWaitTotalMs / s.queueRequestCount).toString() else "0")
+        CrashlyticsFx.setKey("m_ok", s.outcomeOk.toString())
+        CrashlyticsFx.setKey("m_fail", s.outcomeFail.toString())
+        CrashlyticsFx.setKey("m_timeout_req", s.outcomeTimeout.toString())
+        CrashlyticsFx.setKey("m_interrupted", s.outcomeInterrupted.toString())
     }
 
-    // -------------------------------------------------------------------- perf
-
-    /** Emit one aggregate FirePerf custom trace for the current window. Only
-     *  runs when the user has opted in to performance data AND the perf SDK is
-     *  initialized in this process; otherwise a guarded no-op. Call from the
-     *  process that owns the work (e.g. after synthesis stops), not per request. */
-    fun perfTrace(context: Context, traceName: String) {
-        if (!TelemetryPrefs.isPerfEnabled(context)) return
-        try {
-            val t: Trace = FirebasePerformance.getInstance().newTrace(traceName)
-            val s = snapshot()
-            t.putMetric("init_n", s.initCount)
-            t.putMetric("init_fail", s.initFailCount)
-            t.putMetric("init_ms", s.initTotalMs)
-            t.putMetric("synth_n", s.synthCount)
-            t.putMetric("synth_max_ms", s.synthMaxMs)
-            t.putMetric("synth_avg_ms", if (s.synthCount > 0) s.synthTotalMs / s.synthCount else 0L)
-            t.putMetric("timeout", s.synthTimeoutCount)
-            t.putMetric("rotate", s.rotateCount)
-            t.putMetric("stall", s.stallCount)
-            t.putMetric("jni_open_fail", s.jniOpenFailCount)
-            t.putMetric("native_load_fail", s.nativeLoadFailCount)
-            t.putMetric("queue_wait_avg_ms", if (s.queueRequestCount > 0) s.queueWaitTotalMs / s.queueRequestCount else 0L)
-            t.putMetric("ok", s.outcomeOk)
-            t.putMetric("fail", s.outcomeFail)
-            t.putMetric("timeout_req", s.outcomeTimeout)
-            t.putMetric("interrupted", s.outcomeInterrupted)
-            t.start()
-            t.stop()
-        } catch (th: Throwable) { /* never break the engine for telemetry */ }
-    }
+    // ---------------------------------------------------------------- snapshot
 
     /** Resets counters for a fresh collection window (e.g. after each flush). */
     fun reset() = synchronized(lock) {
