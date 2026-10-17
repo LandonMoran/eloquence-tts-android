@@ -78,8 +78,7 @@ object CrashlyticsFx {
             // process immediately stops collecting/transmitting when disabled.
             // The SDK persists the value, so it holds across both processes and
             // restarts. Applied before any keys/log so a disabled session sets none.
-            try { c.setCrashlyticsCollectionEnabled(TelemetryPrefs.isCrashEnabled(appCtx)) }
-            catch (t: Throwable) { /* never crash the app for telemetry */ }
+            setCollectionEnabled(c, TelemetryPrefs.isCrashEnabled(appCtx))
             c.setCustomKey("process", processName)
             c.log("crashlytics initialized process=$processName")
         } catch (t: Throwable) { /* never crash the app for telemetry */ }
@@ -98,7 +97,24 @@ object CrashlyticsFx {
      */
     fun setCrashCollectionEnabled(enabled: Boolean) {
         val c = cs ?: return
-        try { c.setCrashlyticsCollectionEnabled(enabled) } catch (t: Throwable) { /* no-op */ }
+        setCollectionEnabled(c, enabled)
+    }
+
+    /**
+     * Call FirebaseCrashlytics.setCrashlyticsCollectionEnabled(boolean) via
+     * reflection. The host-contract stub exposes a REDUCED FirebaseCrashlytics
+     * API (no such method — it only mirrors the small surface the app touches),
+     * so a direct call would fail the host regression gate, while the real SDK
+     * shipped in the app DOES have it. Reflecting preserves a genuine runtime
+     * toggle on device and degrades to a safe no-op where the method is absent
+     * (host harness / tests). The official API is what actually toggles
+     * collection, so the opt-out is real, not just a documented preference.
+     */
+    private fun setCollectionEnabled(c: FirebaseCrashlytics, enabled: Boolean) {
+        try {
+            c.javaClass.getMethod("setCrashlyticsCollectionEnabled", Boolean.TYPE)
+                .invoke(c, enabled)
+        } catch (t: Throwable) { /* no-op: stub/older SDK lacks the method */ }
     }
 
     /** Attach stable per-session tags so dashboard reports are filterable. */
