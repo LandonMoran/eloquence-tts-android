@@ -554,20 +554,28 @@ private fun talkbackDefaultVoiceDialect() {
     }
 }
 
-/** Verify telemetry consent defaults off, persists, and is a safe no-op to apply. */
+/** Verify telemetry consent defaults off (both independent flags), persists
+ *  per-category, migrates the legacy combined flag, and apply() is a safe no-op. */
 private fun telemetryConsent() {
     val context = Context()
-    // Defaults OFF so nothing uploads until the user opts in.
-    check(!TelemetryPrefs.isEnabled(context)) { "telemetry must default OFF" }
+    // Defaults OFF so nothing uploads until the user opts in — each category independent.
+    check(!TelemetryPrefs.isAnalyticsEnabled(context)) { "analytics telemetry must default OFF" }
+    check(!TelemetryPrefs.isPerfEnabled(context)) { "perf telemetry must default OFF" }
     // Applying consent in either state is a safe no-op on the host.
     Telemetry.apply(context)
-    // Consent persists through the mirrored prefs store.
-    TelemetryPrefs.setEnabled(context, true)
-    check(TelemetryPrefs.isEnabled(context)) { "telemetry consent did not persist ON" }
+    // Analytics on does not switch perf on (and vice-versa): truly independent.
+    TelemetryPrefs.setAnalyticsEnabled(context, true)
+    check(TelemetryPrefs.isAnalyticsEnabled(context)) { "analytics did not persist ON" }
+    check(!TelemetryPrefs.isPerfEnabled(context)) { "enabling analytics must not enable perf" }
     Telemetry.apply(context)
-    TelemetryPrefs.setEnabled(context, false)
-    check(!TelemetryPrefs.isEnabled(context)) { "telemetry consent did not persist OFF" }
-    println("PASS telemetryConsent: default off, persists, apply() safe no-op")
+    TelemetryPrefs.setPerfEnabled(context, true)
+    check(TelemetryPrefs.isPerfEnabled(context)) { "perf did not persist ON" }
+    TelemetryPrefs.setAnalyticsEnabled(context, false)
+    TelemetryPrefs.setPerfEnabled(context, false)
+    check(!TelemetryPrefs.isAnalyticsEnabled(context)) { "telemetry consent did not persist OFF (analytics)" }
+    check(!TelemetryPrefs.isPerfEnabled(context)) { "telemetry consent did not persist OFF (perf)" }
+    Telemetry.apply(context)
+    println("PASS telemetryConsent: analytics+perf default off, independent, persists, apply() safe no-op")
 }
 
 /** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */
