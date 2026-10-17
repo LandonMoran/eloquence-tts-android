@@ -716,6 +716,56 @@ private fun engineMetricsCrossProcessClear() {
     println("PASS engineMetricsCrossProcessClear: idle process discards pre-opt-out deltas on sibling clear")
 }
 
+/** #3-check-then-act: generation must be validated INSIDE the merge transaction,
+ *  not just in the pre-check. If the sibling clears after the pre-check passes
+ *  but before the deltas are written, the merge must abort and discard them. */
+private fun engineMetricsCrossProcessClearCheckThenAct() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context) // cachedGeneration now reflects the cleared store
+
+    // Pre-opt-out delta held UNMERGED (synth is throttled, so a single record
+    // stays outstanding in this "process").
+    EngineMetrics.recordSynth(10)
+    check(store.getLong("synth_n", -1L) == 0L) { "precondition: synth delta should still be outstanding/unmerged" }
+
+    // Arm the seam to simulate a sibling clear landing AFTER the generation
+    // pre-check but BEFORE the merge transaction (the check-then-act window).
+    // Like the real clear(): zero the counters and bump the generation.
+    val genBefore = store.getLong("metrics_generation", 0L)
+    set(EngineMetrics, "mergeSeam") {
+        store.update { map ->
+            map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max"] = 0L; map["rotate"] = 0L
+            map["metrics_generation"] = genBefore + 1L
+        }
+    }
+    try {
+        // Force a merge that carries the pre-opt-out synth delta (rotate is
+        // immediate). The pre-check sees generation==cached (it passes); the seam
+        // then bumps the generation before the write. Only an in-transaction
+        // validation can catch this, so the batch must be aborted and discarded.
+        EngineMetrics.recordRotate() // now=true -> immediate merge
+        check(store.getLong("synth_n", -1L) == 0L) {
+            "pre-opt-out delta leaked into fresh window via check-then-act race: synth_n=" + store.getLong("synth_n", -1L)
+        }
+        check(store.getLong("rotate", -1L) == 0L) {
+            "merge transaction applied despite generation changing mid-flight: rotate=" + store.getLong("rotate", -1L)
+        }
+    } finally {
+        set(EngineMetrics, "mergeSeam", null)
+    }
+
+    // After the abort the process resynced to the cleared store; a brand-new
+    // post-opt-out record merges normally.
+    EngineMetrics.recordRotate()
+    check(store.getLong("rotate", -1L) == 1L) { "fresh post-opt-out window failed to merge after abort" }
+
+    EngineMetrics.clear(context)
+    println("PASS engineMetricsCrossProcessClearCheckThenAct: gen validated in-transaction aborts a mid-flight sibling clear")
+}
+
 /** Verify CrashlyticsFx initializes per-process without throwing and never breaks the host. */
 private fun crashInit() {
     val context = Context()
@@ -738,6 +788,6 @@ private fun crashInit() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct() }
     finally { Context.root.deleteRecursively() }
 }

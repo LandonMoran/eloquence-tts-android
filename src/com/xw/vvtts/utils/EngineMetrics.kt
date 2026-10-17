@@ -44,6 +44,10 @@ import java.util.Arrays
  * discards any pre-opt-out deltas it still holds if the token advanced (i.e. a
  * clear happened while it was idle). This closes the gap where an opted-out
  * window could otherwise be uploaded by the sibling process after re-enable.
+ * The generation check is re-validated atomically INSIDE the same
+ * [MirroredPreferences.update] transaction that applies a merge, so a clear
+ * landing between the pre-check and the write is still caught and the entire
+ * pre-opt-out batch is discarded rather than smuggled into the fresh store.
  */
 object EngineMetrics {
     // Sparse, controlled outcome codes (no free-form/user-derived values).
@@ -275,6 +279,7 @@ object EngineMetrics {
     private fun mergeDeltas(context: Context) {
         val deltas = LongArray(N_COUNTERS)
         val mergedLocal = LongArray(N_COUNTERS)
+        var snapshotGen: Long
         synchronized(lock) {
             // Snapshot the WHOLE local state at delta-capture time. The baseline
             // is advanced to THIS snapshot (never to the live [local]) after a
@@ -282,6 +287,10 @@ object EngineMetrics {
             // stays outstanding for the next merge instead of being dropped (review #1).
             System.arraycopy(local, 0, mergedLocal, 0, N_COUNTERS)
             for (i in 0 until N_COUNTERS) deltas[i] = mergedLocal[i] - baseline[i]
+            // Remember which reset generation this delta batch was produced in, so
+            // the merge transaction can detect a sibling clear that lands between
+            // this snapshot and the write (review #3, check-then-act guard).
+            snapshotGen = cachedGeneration
         }
         // Cross-process clear (review #2): if another process cleared the retained
         // snapshot (opt-out) since this process last synchronized, discard any
@@ -299,8 +308,18 @@ object EngineMetrics {
         // can prove an increment landing after the snapshot remains outstanding.
         mergeSeam?.invoke()
         var ok = false
+        var aborted = false
         try {
             ok = MirroredPreferences(context, PREFS_NAME).update { map ->
+                // Check-then-act guard (review #3): validate the reset generation
+                // INSIDE the same cross-process transaction that applies deltas. The
+                // pre-check above already returned "unchanged", but a sibling clear
+                // could land between that check and this locked write; re-reading the
+                // generation here (under the file lock, so it cannot change again)
+                // detects it and discards the whole pre-opt-out batch without touching
+                // the freshly cleared counters.
+                val storedGen = map[GEN_KEY] as? Long ?: 0L
+                if (storedGen != snapshotGen) { aborted = true; return@update }
                 for (i in 0 until N_COUNTERS) {
                     if (i == I_SYNTH_MAX) {
                         map[KEYS[i]] = maxOf(map[KEYS[i]] as? Long ?: 0L, mergedLocal[I_SYNTH_MAX])
@@ -310,6 +329,14 @@ object EngineMetrics {
                 }
             }
         } catch (t: Throwable) { return }
+        if (aborted) {
+            // A sibling cleared between our snapshot and the merge transaction.
+            // Discard the pre-opt-out deltas (advance baseline so they never
+            // re-merge) and resync to the freshly cleared store.
+            synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+            refreshShared()
+            return
+        }
         if (!ok) return
         // Advance the baseline to the delta-capture snapshot — never to the live
         // counters. A record made after the snapshot is still outstanding here.
