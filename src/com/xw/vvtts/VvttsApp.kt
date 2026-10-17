@@ -42,7 +42,7 @@ class VvttsApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (isUserUnlocked) {
+        if (isUserUnlocked()) {
             CrashlyticsFx.initProcess(this)
             Telemetry.apply(this)
         } else {
