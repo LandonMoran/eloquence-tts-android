@@ -19,29 +19,33 @@ jobs:
       - name: Run redroid (arm64 Android 15)
         run: |
           set -euxo pipefail
+          # redroid listens on 127.0.0.1:5555; scope all adb to it (the runner
+          # often has a stray adb device that breaks unqualified calls).
+          SERIAL=127.0.0.1:5555
+          adb kill-server 2>/dev/null || true
           mkdir -p $HOME/rd-data
           sudo docker run -itd --rm --privileged --pull always \
             -v $HOME/rd-data:/data \
             -p 127.0.0.1:5555:5555 \
             redroid/redroid:15.0.0-latest
-          # wait for boot
+          # wait for adb device
           for i in $(seq 1 30); do
-            if adb connect 127.0.0.1:5555 2>/dev/null | grep -q connected; then
+            if adb connect "$SERIAL" 2>/dev/null | grep -q connected; then
               echo "ADB_CONNECTED at loop $i"
               break
             fi
             sleep 10
           done
-          adb wait-for-device
+          adb -s "$SERIAL" wait-for-device
           # wait until sys.boot_completed
           for i in $(seq 1 60); do
-            b=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            b=$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
             echo "boot_completed=$b (loop $i)"
             [ "$b" = "1" ] && break
             sleep 5
           done
-          adb shell getprop ro.product.cpu.abi
-          adb shell cat /proc/cpuinfo | grep -m1 'model name' || true
+          adb -s "$SERIAL" shell getprop ro.product.cpu.abi
+          adb -s "$SERIAL" shell cat /proc/cpuinfo | grep -m1 'model name' || true
           echo "REDROID_UP"
       - name: Report binders as artifact
         if: always()
