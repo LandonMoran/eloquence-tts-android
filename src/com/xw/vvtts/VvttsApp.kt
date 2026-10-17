@@ -59,30 +59,34 @@ class VvttsApp : Application() {
             true
         }
 
-    /** Defer Firebase init until the user unlocks, then do the full bootstrap. */
+    /**
+     * Defer Firebase init until the user unlocks, then do the full bootstrap.
+     * The receiver is built lazily here (not as a field initializer) so this
+     * class can be constructed on the host JVM regression test without an
+     * Android runtime — a field `BroadcastReceiver()` would throw `Stub!` in
+     * `<init>`, before [onCreate] even runs.
+     */
     private fun scheduleDeferredInit() {
         if (deferScheduled) return
         deferScheduled = true
         val filter = IntentFilter(Intent.ACTION_USER_UNLOCKED)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != Intent.ACTION_USER_UNLOCKED) return
+                try { unregisterReceiver(this) } catch (_: Throwable) {}
+                // BroadcastReceiver scope ends after onReceive; do the heavy init on
+                // a fresh context that outlives this callback.
+                CrashlyticsFx.initProcess(context.applicationContext)
+                Telemetry.apply(context.applicationContext)
+            }
+        }
         try {
-            registerReceiver(uploadReceiver, filter)
+            registerReceiver(receiver, filter)
         } catch (t: Throwable) {
             // Registration failed (e.g. DOCT from a restricted context): run now
             // rather than never. Firebase init is guarded, so this cannot crash.
             CrashlyticsFx.initProcess(this)
             Telemetry.apply(this)
-        }
-    }
-
-    private val uploadReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != Intent.ACTION_USER_UNLOCKED) return
-            try { unregisterReceiver(this) } catch (_: Throwable) {}
-            // BroadcastReceiver scope ends after onReceive; do the heavy init on
-            // a fresh context that outlives this callback.
-            val app = context.applicationContext
-            CrashlyticsFx.initProcess(app)
-            Telemetry.apply(app)
         }
     }
 }
