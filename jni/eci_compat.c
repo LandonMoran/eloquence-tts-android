@@ -34,7 +34,7 @@ extern int32_t api_delete(void *self);
 extern int32_t api_add_text(void *self, void *text, int32_t b, int32_t c, int32_t d, int32_t f);
 extern int32_t api_synthesize(void *self);
 
-extern int es_delete_checked(OldInst *h);
+extern int es_delete(OldInst *h);
 extern int vc_getVoiceParam(OldInst *h, int voiceno, int which);
 extern int vc_copyVoice(OldInst *h, int from, int to);
 
@@ -67,9 +67,12 @@ ECIAPI ECIHand ECICALL eciNewEx(int language)
 ECIAPI ECIHand ECICALL eciDelete(ECIHand handle)
 {
     if (!handle) return NULL;
-    // Destruction runs inside the engine so its arena allocator and owned
-    // queues/converted strings are all released by their actual owner.
-    return es_delete_checked((OldInst *)handle) ? NULL : handle;
+    // Upstream has no "checked" delete: es_delete always releases the instance
+    // (guarding reentry and arena/queue teardown internally), returning zero.
+    // The app's caller treats a NULL return as "deleted, handle is gone"; there
+    // is no fork-era refusal path anymore.
+    es_delete((OldInst *)handle);
+    return NULL;
 }
 
 ECIAPI int ECICALL eciSetOutputBuffer(ECIHand handle, int samples, short *buffer)

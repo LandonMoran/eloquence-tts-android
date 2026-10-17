@@ -40,11 +40,19 @@ class VoiceConfig(private val context: Context) {
 
     val voice: String
         get() = readMap()[KEY_VOICE] ?: "en-US"
+    /** The explicitly persisted voice code, or null when the preference is unset.
+     *  Distinct from {@link #voice}, which falls back to "en-US" for callers that
+     *  always need a value (e.g. synthesis). Pin-resolution logic must use this so
+     *  an unset preference is never mistaken for a deliberate en-US choice. */
+    val explicitVoice: String?
+        get() = readMap()[KEY_VOICE]
     val pitch: Int
         get() = readMap()[KEY_PITCH]?.toIntOrNull() ?: 50
     val volume: Int
         get() = readMap()[KEY_VOLUME]?.toIntOrNull() ?: 100
     fun setVoice(v: String): Boolean = writeBoth { it.putString(KEY_VOICE, v) }
+    /** Clear the persisted voice choice, restoring the implicit "en-US" default. */
+    fun removeVoice(): Boolean = writeBoth { it.remove(KEY_VOICE) }
     fun setPitch(p: Int): Boolean = writeBoth { it.putInt(KEY_PITCH, p) }
     /** Persist the requested output volume in mirrored settings; true on success. */
     fun setVolume(v: Int): Boolean = writeBoth { it.putInt(KEY_VOLUME, v) }

@@ -313,6 +313,25 @@ class VvTtsService : TextToSpeechService() {
         // #18: refuse to map languages with no shipped voice —the registry is the
         // single source of truth (default en-US matches the pre-existing fallback).
         if (CAPABLE_VOICES.none { it.locale.language.equals(lang, ignoreCase = true) }) return "en-US"
+        // TalkBack dialect fix: when the framework resolves its default voice for a
+        // language family that the user has explicitly pinned in-app, return that
+        // pinned voice instead of the country-based default. TalkBack requests the
+        // device's locale (e.g. eng/USA) rather than Eloquence's saved voice, so the
+        // old code returned the silent en-US default and every utterance was then
+        // pinned to en-US. Explicit system-picker voices bypass this method (they
+        // arrive as a real request.voiceName at synthesis), so honoring the app voice
+        // here cannot override a deliberate Android choice.
+        // Only an explicitly set preference counts as a pin (an unset "en-US" default
+        // must not override the country default), and only a name the registry
+        // advertises may be returned (setVoice does not validate; returning e.g. an
+        // unsupported stored name would make setLanguage report LANG_NOT_SUPPORTED).
+        val appVoice = voiceConfig?.explicitVoice
+        if (appVoice != null && CAPABLE_VOICES.any { it.voiceName == appVoice }) {
+            val appLang = appVoice.substringBefore('-').takeIf { it.isNotEmpty() } ?: ""
+            if (appLang.equals(lang, ignoreCase = true) && appVoice.substringAfter('-', "").isNotEmpty()) {
+                return appVoice
+            }
+        }
         if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
