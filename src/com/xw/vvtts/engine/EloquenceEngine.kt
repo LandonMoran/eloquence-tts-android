@@ -22,6 +22,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import com.xw.vvtts.utils.CrashCodeDefender
+import com.xw.vvtts.utils.EngineMetrics
 
 internal class AppliedVoiceParams {
     private var dialect: Int? = null
@@ -102,9 +103,22 @@ class EloquenceEngine(context: Context) {
         this.voiceProfile = vp
     }
 
-    /** Prepare device storage and schedule warmup; return false if initialization fails. */
-    @Synchronized
+    /** Prepare device storage and schedule warmup; return false if initialization fails.
+     *  Initialization duration and the failure are recorded even if [initializeImpl]
+     *  throws, so a diagnostic-failing init is never silently excluded from metrics. */
     fun initialize(): Boolean {
+        val t0 = SystemClock.elapsedRealtime()
+        var ok = false
+        try {
+            ok = initializeImpl()
+        } finally {
+            EngineMetrics.recordInit(SystemClock.elapsedRealtime() - t0, ok)
+        }
+        return ok
+    }
+
+    @Synchronized
+    private fun initializeImpl(): Boolean {
         if (initialized) return true
         if (retireExecutor.isShutdown) retireExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "elq-retire").apply { isDaemon = true }
@@ -440,6 +454,12 @@ class EloquenceEngine(context: Context) {
     /** Retire the worker and arrange handle cleanup after active native calls return. */
     @Synchronized
     fun shutdown() {
+        val t0 = SystemClock.elapsedRealtime()
+        shutdownImpl()
+        EngineMetrics.recordShutdown(SystemClock.elapsedRealtime() - t0)
+    }
+
+    private fun shutdownImpl() {
         engineEpoch.incrementAndGet()
         lifecycleEpoch.incrementAndGet()
         val worker = synthWorker
@@ -528,13 +548,13 @@ class EloquenceEngine(context: Context) {
         if (cached !=  0L) return cached
         val info: ApplicationInfo = appContext.applicationInfo
         val libDirRaw = info.nativeLibraryDir
-        if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); return 0L }
+        if (libDirRaw == null) { Log.e(TAG, "nativeLibraryDir null  cannot open engine"); EngineMetrics.recordNativeLoadFail(); return 0L }
         val libDir = File(libDirRaw)
         val cfgDir = File(storageContext.filesDir, "eloquence")
         val epoch = lifecycleEpoch.get()
         val handle = VvttsCore.openEngine(cfgDir.absolutePath, libDir.absolutePath, dialect)
         Log.e(TAG, "core init dialect=" + Integer.toHexString(dialect) + " handle=" + handle)
-        if (handle ==  0L) return 0L
+        if (handle ==  0L) { EngineMetrics.recordJniOpenFail(); return 0L }
         // A handle born across a rotate/shutdown is retired, never cached —
         // the zombie worker that opened it may still be driving it. A stop does
         // not retire the owning worker, so a handle opened across a stop is kept.
@@ -694,15 +714,20 @@ class EloquenceEngine(context: Context) {
                     Log.w(TAG, "TTS_HANG: retired engine; dropping queued synthesis")
                     null
                 } else {
+                val tSynth = SystemClock.elapsedRealtime()
                 val r = try {
                     block(worker)
                 } finally {
-                    // A worker retired by rotateEngine (or shutdown()'s replacement( frees its
+                    // Record elapsed time for EVERY attempted synthesis block,
+                    // success or failure (null result, exception, or timeout), so
+                    // latency totals are not biased toward requests that happened
+                    // to succeed. Only the elapsed ms is recorded — never content.
+                    EngineMetrics.recordSynth(SystemClock.elapsedRealtime() - tSynth)
+                    // A worker retired by rotateEngine (or shutdown()'s replacement) frees its
                     // own cached handles here, on its own thread, AFTER the in-flight native call has
                     // returned -- nativeShutdown is not cross-thread-safe, so never free them from the
                     // replacement worker's thread. Idempotent: a queued shutdown cleanup (or an
                     // already-cleared cache) makes this a no-op.
-
                     if (worker.retired || synthWorker !== worker) {
                         closeHandles(worker)
                     }
@@ -722,6 +747,10 @@ class EloquenceEngine(context: Context) {
             future.get(HANG_TIMEOUT_S, TimeUnit.SECONDS).takeIf { requestEpoch == engineEpoch.get() }
         } catch (e: TimeoutException) {
             Log.e(TAG, "TTS_HANG: synthesis ran >" + HANG_TIMEOUT_S + "s — rotating engine", e)
+            // Hang diagnostic is distinct from the request's final outcome: the
+            // single outcome (RC_TIMEOUT) is decided by the top-level caller (the
+            // TTS service), so this watchdog is NOT double-counted as a failure.
+            EngineMetrics.recordSynthTimeout()
             var first = true
             for ((t, st)in Thread.getAllStackTraces()) {
                 if (first) { Log.e(TAG, "  in-flight threads:"); first = false }
@@ -729,7 +758,9 @@ class EloquenceEngine(context: Context) {
             }
             rotateEngine()
             retireUntilMs = SystemClock.elapsedRealtime() + ZOMBIE_GRACE_MS
-            null
+            // Rethrow so the caller can tell a watchdog timeout apart from a
+            // genuine synthesis failure (both would otherwise surface as null).
+            throw e
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             null
@@ -747,6 +778,7 @@ class EloquenceEngine(context: Context) {
     // executor + fresh native handles so subsequent requests work again immediatel
     /** Replace the worker and invalidate its queued work while deferring active handle cleanup. */
     private fun rotateEngine() {
+        EngineMetrics.recordRotate()
         val worker = synthWorker
         worker.retired = true
         try {

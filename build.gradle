@@ -17,10 +17,6 @@ plugins {
     // upload is enabled; keeping the .so unstripped ships exactly what the
     // uploadSymbolsFile task needs.)
     id 'com.google.firebase.crashlytics' version '3.0.8'
-    // Firebase Performance Monitoring Gradle plugin: bytecode-instruments network
-    // requests and app-start automatically, and supports custom metric traces for
-    // the TTS engine's synth latency / cold-start. Free on Spark (no billing).
-    id 'com.google.firebase.firebase-perf' version '2.0.2'
 }
 
 android {
@@ -166,25 +162,15 @@ dependencies {
     // Client-side FCM: receives release notifications pushed by release.yml's
     // send_fcm.py (topics eloquence_updates[_dev]) and posts an update dialog.
     implementation 'com.google.firebase:firebase-messaging'
-    // Google Analytics (GA4): required for FirePerf's auto app-start/network
-    // collection to reach the console, and it feeds Crashlytics version/audience
-    // context and FCM campaign reporting. NOTE: GA4 collects by default unless
-    // explicitly gated — see firebase_analytics_collection_enabled in the
-    // manifest, which should tie to the user's telemetry preference.
+    // Google Analytics (GA4): feeds Crashlytics version/audience context and
+    // FCM campaign reporting. NOTE: GA4 collects by default unless explicitly
+    // gated — see firebase_analytics_collection_enabled in the manifest, which
+    // ties to the user's "Share usage analytics" telemetry preference (see
+    // Telemetry.apply; opt-in, off by default). Firebase Performance Monitoring
+    // is intentionally absent: its auto-instrumentation only reaches the main
+    // process (not the isolated :tts engine process) and the host contract
+    // has no custom-trace API, so engine timing is carried by Crashlytics keys.
     implementation 'com.google.firebase:firebase-analytics'
-    // Performance Monitoring: app-start + network auto-collected by the perf
-    // Gradle plugin only once GA4 is enabled in the Firebase project (label
-    // firebase-core must be enabled); custom synth-latency traces work without.
-    // NOTE: auto-instrumentation attaches to the main process; the isolated
-    // :tts engine process is not bytecode-instrumented.
-    implementation ('com.google.firebase:firebase-perf') {
-        // The repo vendors its own okio (libs/okio.jar = 2.10.0) that Moshi
-        // depends on. firebase-perf pulls a transitive okio 1.15.0, which
-        // collides at :check*ReleaseDuplicateClasses -> duplicate okio.*
-        // classes across two jars. Vendored 2.10.0 is a strict superset
-        // (backward compat), so exclude the transitive copy and rely on it.
-        exclude group: 'com.squareup.okio'
-    }
 }
 
 // ---------------------------------------------------------------------------

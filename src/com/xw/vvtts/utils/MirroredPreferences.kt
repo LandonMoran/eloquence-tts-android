@@ -87,6 +87,8 @@ class MirroredPreferences(context: Context, private val name: String) {
     fun getBoolean(key: String, default: Boolean) = read()[key] as? Boolean ?: default
     /** Read an Int value, using the default for missing or differently typed values. */
     fun getInt(key: String, default: Int) = read()[key] as? Int ?: default
+    /** Read a Long value, using the default for missing or differently typed values. */
+    fun getLong(key: String, default: Long) = read()[key] as? Long ?: default
     /** Read a string set, falling back to the supplied default when absent or incompatible. */
     @Suppress("UNCHECKED_CAST")
     fun getStringSet(key: String, default: Set<String>?) = read()[key] as? Set<String> ?: default

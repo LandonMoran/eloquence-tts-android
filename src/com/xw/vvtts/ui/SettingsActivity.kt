@@ -38,6 +38,7 @@ import com.xw.vvtts.engine.EloquenceEngine
 import com.xw.vvtts.update.UpdateNotificationScheduler
 import com.xw.vvtts.utils.CrashlyticsFx
 import com.xw.vvtts.utils.DictEntry
+import com.xw.vvtts.utils.EngineMetrics
 import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.Telemetry
 import com.xw.vvtts.utils.TelemetryPrefs
@@ -258,12 +259,51 @@ class SettingsActivity : Activity() {
             Log.i("VvTtsSettings", "extra_logging -> " + on)
         }
         addNoteRow(mainContainer, R.string.extra_logging_note)
-        addSwitchRow(mainContainer, getString(R.string.telemetry_row),
-            TelemetryPrefs.isEnabled(this)) { on ->
-            TelemetryPrefs.setEnabled(this, on)
-            Telemetry.apply(this)
+        // Crash reporting: the primary diagnostics channel, ON by default (opt-out).
+        // Turning it OFF also clears the engine-health diagnostics retained on this
+        // device, so older numbers are not silently uploaded if it is re-enabled.
+        addSwitchRow(mainContainer, getString(R.string.crash_row),
+            TelemetryPrefs.isCrashEnabled(this)) { on ->
+            val persisted = TelemetryPrefs.setCrashEnabled(this, on)
+            if (persisted || on) {
+                // Write landed, or an enable that failed to persist is at worst the
+                // opt-out default (safe on next launch). Apply the SDK toggle; it
+                // reports whether the SDK actually toggled (review #11) so a switch
+                // can never read one state while the SDK is in the other.
+                val toggled = CrashlyticsFx.setCrashCollectionEnabled(on)
+                if (!on) clearEngineDiagnostics()
+                if (!toggled) {
+                    // Review #11: the SDK's collection toggle did not take effect
+                    // (reflection missing/invocation failed on the real SDK). The
+                    // app-side write gate still fail-closes for an opt-out, but the
+                    // underlying SDK state may not match the switch — tell the user
+                    // and log it instead of letting the toggle silently no-op.
+                    Log.w("SettingsActivity", "Crashlytics collection toggle could not be applied (SDK drift); reporting may not match the switch")
+                    Toast.makeText(this, getString(R.string.crash_toggle_not_applied), Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                // OPT-OUT write FAILED (review #7): the choice is not durable and a
+                // later launch would read the old value and re-enable reporting.
+                // Fail closed: keep crash reporting off for THIS process and
+                // surface the failure so the user knows they must retry.
+                CrashlyticsFx.setCrashCollectionEnabled(false)
+                clearEngineDiagnostics()
+                Log.w("SettingsActivity", "crash opt-out could not be persisted; keeping reporting off this session (review #7)")
+                Toast.makeText(this, getString(R.string.crash_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+            }
         }
-        addNoteRow(mainContainer, R.string.telemetry_note)
+        addNoteRow(mainContainer, R.string.crash_note)
+        addSwitchRow(mainContainer, getString(R.string.analytics_row),
+            TelemetryPrefs.isAnalyticsEnabled(this)) { on ->
+            // setConsent persists the choice AND applies it to the live GA4 SDK,
+            // failing closed if an opt-out write could not be hardened to disk
+            // (review #12). It returns false only when the choice is not durable.
+            if (!Telemetry.setConsent(this, on)) {
+                Log.w("SettingsActivity", "analytics opt-out could not be persisted; keeping GA4 off this session (review #12)")
+                Toast.makeText(this, getString(R.string.analytics_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+            }
+        }
+        addNoteRow(mainContainer, R.string.analytics_note)
 
         // ===== MAINTENANCE SECTION =====
         addSectionHeader(mainContainer, R.string.sec_maintenance)
@@ -293,6 +333,22 @@ maybeShowLaunchUpdateDialog()
         // Keep FCM topic subscriptions in sync with stored toggle prefs on every
         // open (covers first-run defaults and any prefs drifted from a cold boot).
         syncFcmTopics(this)
+    }
+    /** Clear retained engine-health diagnostics, surfacing a failed purge instead
+     *  of implying success (reviews #4/#13). Called on crash-reporting opt-out.
+     *  Returns nothing; surfaces only local UI + logs, never telemetry. */
+    private fun clearEngineDiagnostics() {
+        if (!EngineMetrics.clear(this)) {
+            val unhealthy = EngineMetrics.clearStoreUnhealthy()
+            Log.w("SettingsActivity",
+                if (unhealthy)
+                    "engine diagnostics purge failed durably (review #13); retained data may reappear on re-enable"
+                else
+                    "engine diagnostics purge failed (review #4); retained data treated as zero this session")
+            Toast.makeText(this,
+                getString(if (unhealthy) R.string.metrics_purge_failed_unhealthy else R.string.metrics_purge_failed),
+                Toast.LENGTH_LONG).show()
+        }
     }
     private fun maybeRequestNotifPermission() {
         // Only ask while the user has notifications enabled (i.e. they opted in),
@@ -409,9 +465,11 @@ maybeShowLaunchUpdateDialog()
                 // without the module — the test button once crashed).
         if (!EloquenceEngine.isShippedDialect(dialect)) {
                     toastOnUi(R.string.preview_in_english)
-            val pcmEn = eng.synthesizeCore("Hello, this is a speech synthesis test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, preset,
-                cfg.pitch, 100)
+            val pcmEn = try {
+                eng.synthesizeCore("Hello, this is a speech synthesis test.",
+                    EloquenceEngine.DIALECT_EN_US, cfg.volume, preset,
+                    cfg.pitch, 100)
+            } catch (t: Throwable) { null }  // watchdog timeout -> no audio, not a crash
             if (pcmEn != null && pcmEn.size > 0) {
                 playPcm(pcmEn, eng.getCoreSampleRate())
                 toastOnUi(R.string.spoken_en)
@@ -420,9 +478,11 @@ maybeShowLaunchUpdateDialog()
             }
             return
         }
-        val pcm = eng.synthesizeCore(text, dialect,
-            cfg.volume, preset,
-            cfg.pitch, 100)
+        val pcm = try {
+            eng.synthesizeCore(text, dialect,
+                cfg.volume, preset,
+                cfg.pitch, 100)
+        } catch (t: Throwable) { null }  // watchdog timeout -> no audio, not a crash
         if (pcm != null && pcm.size > 0) {
             playPcm(pcm, eng.getCoreSampleRate())
             toastOnUi(R.string.synth_ok)
@@ -487,12 +547,9 @@ maybeShowLaunchUpdateDialog()
             val eng = engine ?: return@Thread
             val cfg = voiceConfig ?: return@Thread
             val t0 = System.currentTimeMillis()
-            val pcm1 = eng.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, 1)
-            val pcm2 = eng.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, 2)
-            val pcm3 = eng.synthesizeCore("Hello, this is a voice test.",
-                EloquenceEngine.DIALECT_EN_US, cfg.volume, 8)
+            val pcm1 = try { eng.synthesizeCore("Hello, this is a voice test.", EloquenceEngine.DIALECT_EN_US, cfg.volume, 1) } catch (t: Throwable) { null }
+            val pcm2 = try { eng.synthesizeCore("Hello, this is a voice test.", EloquenceEngine.DIALECT_EN_US, cfg.volume, 2) } catch (t: Throwable) { null }
+            val pcm3 = try { eng.synthesizeCore("Hello, this is a voice test.", EloquenceEngine.DIALECT_EN_US, cfg.volume, 8) } catch (t: Throwable) { null }
             val ms = System.currentTimeMillis() - t0
             val total = (pcm1?.size ?: 0) + (pcm2?.size ?: 0) + (pcm3?.size ?: 0)
             Log.e("RoleTest", "three roles total=$total shorts in $ms ms")
