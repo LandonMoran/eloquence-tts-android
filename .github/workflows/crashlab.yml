@@ -1,0 +1,24 @@
+name: crashlab
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-debug-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ARM64 debug APK
+        run: |
+          ./gradlew --no-daemon --no-build-cache \
+            :buildNative :assembleArm64Debug \
+            -PtestMinApi="${TEST_MIN_API:-28}"
+          echo "--- produced apks ---"
+          find build/outputs/apk -name '*.apk' -exec ls -l {} \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vvtts-arm64-debug
+          path: build/outputs/apk/**/*.apk
+          if-no-files-found: error
