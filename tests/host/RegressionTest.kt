@@ -1124,6 +1124,48 @@ private fun telemetryAnalyticsFailedOptOutFailClosed() {
     println("PASS telemetryAnalyticsFailedOptOutFailClosed: failed analytics opt-out disables GA4 in-process and is reported")
 }
 
+/** Review round 6: a consent toggle must report success ONLY when BOTH the
+ *  durable preference AND the live SDK actually applied it. The #12 fix proved
+ *  only the call was attempted (sdkProbe); this closes the remaining gap where
+ *  an OFF preference can save while the live GA4 toggle fails/throws — silently
+ *  claiming the opt-out is effective while GA4 stays live. Old code returned
+ *  Unit from setEnabled and had setConsent return true whenever the preference
+ *  write succeeded, so this gap was invisible. Deterministic driver: sdkApplyProbe
+ *  replaces the real SDK outcome (either refusing, or throwing like an SDK init
+ *  failure); asserts setConsent returns false, the durable OFF is saved, the
+ *  non-effective state is exported for surfacing, and a retry now that the SDK
+ *  accepts reapplies OFF and succeeds. */
+private fun telemetryAnalyticsSdkApplyFailureFailClosed() {
+    val context = Context()
+    TelemetryPrefs.setAnalyticsEnabled(context, true)
+    check(TelemetryPrefs.isAnalyticsEnabled(context)) { "analytics should start on" }
+    val seen = mutableListOf<Boolean>()
+    set(Telemetry, "sdkProbe") { on: Boolean -> seen.add(on) }
+    try {
+        // (a) SDK refuses OFF (e.g. init failed, toggle no-op): durable OFF saves
+        //     but live is not confirmed off -> must NOT be reported as effective.
+        set(Telemetry, "sdkApplyProbe") { on: Boolean -> on } // accepts ON, refuses OFF
+        val effective = Telemetry.setConsent(context, false)
+        check(!effective) { "round 6: OFF with a failed live SDK apply must return false (got $effective)" }
+        check(!TelemetryPrefs.isAnalyticsEnabled(context)) { "round 6: durable OFF must still be saved" }
+        check(seen.contains(false)) { "round 6: the OFF intent must reach the SDK path" }
+        // Saved-but-not-applied: caller surfaces "not effective this session", retry-able.
+        // (b) Retry as soon as the SDK accepts: reapply OFF and confirm effective.
+        set(Telemetry, "sdkApplyProbe", null) // real SDK path (host stub accepts)
+        check(Telemetry.setConsent(context, false)) { "round 6: retry must reapply OFF and be reported effective" }
+        // (c) SDK init throws: the throw is contained (never breaks the app) and
+        //     everything follows the fail-closed path.
+        set(Telemetry, "sdkApplyProbe") { _: Boolean -> throw RuntimeException("sdk init failed") }
+        check(!Telemetry.setEnabled(context, false)) { "round 6: a throwing SDK apply must return false, not propagate" }
+        check(!Telemetry.setConsent(context, false)) { "round 6: OFF with an SDK init throw must not claim success" }
+    } finally {
+        set(Telemetry, "sdkProbe", null)
+        set(Telemetry, "sdkApplyProbe", null)
+    }
+    TelemetryPrefs.setAnalyticsEnabled(context, true)
+    println("PASS telemetryAnalyticsSdkApplyFailureFailClosed: setConsent succeeds only when durable + live both land; SDK apply/init failure is contained and surfaced")
+}
+
 /** Review #13: the worst-case failed clear — BOTH the atomic wipe and the
  *  durable failure-marker write fail — must be reported (clear() returns false
  *  AND flags the store unhealthy via clearStoreUnhealthy()) so Settings never
@@ -1220,6 +1262,6 @@ private fun crashlyticsColdStartFailClosed() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

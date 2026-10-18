@@ -296,11 +296,19 @@ class SettingsActivity : Activity() {
         addSwitchRow(mainContainer, getString(R.string.analytics_row),
             TelemetryPrefs.isAnalyticsEnabled(this)) { on ->
             // setConsent persists the choice AND applies it to the live GA4 SDK,
-            // failing closed if an opt-out write could not be hardened to disk
-            // (review #12). It returns false only when the choice is not durable.
+            // succeeding only when BOTH land (reviews #12 & round 6). When it
+            // returns false, distinguish WHICH side failed so the user is told the
+            // truth: a not-saved choice → retry; a saved-but-not-applied choice →
+            // durable, but this session is not protected yet.
             if (!Telemetry.setConsent(this, on)) {
-                Log.w("SettingsActivity", "analytics opt-out could not be persisted; keeping GA4 off this session (review #12)")
-                Toast.makeText(this, getString(R.string.analytics_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+                val durableSaved = try { TelemetryPrefs.isAnalyticsEnabled(this) == on } catch (t: Throwable) { false }
+                if (!on && !durableSaved) {
+                    Log.w("SettingsActivity", "analytics opt-out could not be persisted (review #12); keeping GA4 off this session")
+                    Toast.makeText(this, getString(R.string.analytics_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+                } else {
+                    Log.w("SettingsActivity", "analytics ${if (on) "enable" else "opt-out"} not fully applied to the live SDK (review round 6); durable=${durableSaved}")
+                    Toast.makeText(this, getString(if (on) R.string.analytics_enable_failed else R.string.analytics_opt_out_not_effective), Toast.LENGTH_SHORT).show()
+                }
             }
         }
         addNoteRow(mainContainer, R.string.analytics_note)
