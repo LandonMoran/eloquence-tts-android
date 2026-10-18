@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.UserManager
 import com.xw.vvtts.utils.CrashlyticsFx
+import com.xw.vvtts.utils.EngineMetrics
 import com.xw.vvtts.utils.Telemetry
 
 /**
@@ -53,6 +54,7 @@ class VvttsApp : Application() {
         if (initDone) return
         initDone = true
         CrashlyticsFx.initProcess(this)
+        EngineMetrics.init(this)
         Telemetry.apply(this)
     }
 

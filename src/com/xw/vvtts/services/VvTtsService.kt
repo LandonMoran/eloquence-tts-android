@@ -22,6 +22,7 @@ import com.xw.vvtts.utils.LanguageDetector
 import com.xw.vvtts.utils.NgramScorer
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
+import com.xw.vvtts.utils.EngineMetrics
 import java.io.File
 import java.util.HashMap
 import java.util.Locale
@@ -268,6 +269,9 @@ class VvTtsService : TextToSpeechService() {
      *  framework's utterance contract holds (start() before done()) for utterances
      *  superseded while still queued. Falls back to error() if even that fails. */
     private fun silentComplete(callback: SynthesisCallback) {
+        // Exactly one final outcome for a silently-completed (superseded/ignored)
+        // utterance (review #8): recorded once here, on every silent completion.
+        EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)
         try {
             callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
             callback.done()
@@ -435,6 +439,7 @@ class VvTtsService : TextToSpeechService() {
             // callback. runSynthesis never runs on this path, so no start()/done()
             // pair can fire — error() is the designated failure termination.
             callback.error(TextToSpeech.ERROR_SYNTHESIS)
+            EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)  // review #8: dropped before start is one terminal outcome
         }
     }
 
@@ -447,6 +452,7 @@ class VvTtsService : TextToSpeechService() {
     private fun runSynthesis(request: SynthesisRequest, callback: SynthesisCallback, gen: Long, schedAt: Long) {
         val t0 = SystemClock.elapsedRealtime()
         Log.i("SPD", "dequeued dt=" + (t0 - schedAt) + "ms gen=" + gen)
+        EngineMetrics.recordQueueWait(t0 - schedAt)
         synchronized(cancellationLock) {
         // A stop() bumped the generation: this utterance was queued before the
         // stop, the framework already canceled it, so it must not speak (ghost
@@ -462,6 +468,7 @@ class VvTtsService : TextToSpeechService() {
                     callback.error(TextToSpeech.ERROR_SYNTHESIS)
                 } catch (ignore: Throwable) {
                 }
+                EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)  // review #8: exactly one final outcome
             } else {
                 // No stop: a newer utterance superseded this still-QUEUED one.
                 // Complete it silently (start+done, zero audio) so the
@@ -495,6 +502,7 @@ class VvTtsService : TextToSpeechService() {
                 try {
                     callback.error(TextToSpeech.ERROR_SYNTHESIS)
                 } catch (ignore: Throwable) {}
+                EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)  // review #8: exactly one final outcome
             } else {
                 // A newer utterance won the queue in this window: superseded,
                 // complete it silently without touching the stop flag.
@@ -548,9 +556,14 @@ synchronized(synthesisLock) {
         var started = false
         var pipeEnded = false
         var synthFailedOrTruncated = false
+        // A synthesis chunk exceeded the engine watchdog. Tracked separately so
+        // a timeout is counted exactly once as RC_TIMEOUT (never double-counted
+        // as RC_FAIL); the final outcome is decided in the finally block below.
+        var timedOut = false
         try {
-            var text: String? = request.charSequenceText?.toString()
+            val text: String? = request.charSequenceText?.toString()
             if (text == null || text.isEmpty()) {
+                synthFailedOrTruncated = true  // empty/null input is NOT a success (review #8): a single failure outcome, never RC_OK
                 return  // finally emits the start+error pair for an empty utterance
             }
 
@@ -642,7 +655,16 @@ synchronized(synthesisLock) {
                         textToSynth = expanded
                     }
                     val t3 = SystemClock.elapsedRealtime()
-                    val pcm = currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    val pcm = try {
+                        currentEngine()?.synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)
+                    } catch (e: java.util.concurrent.TimeoutException) {
+                        // Engine watchdog fired. NOT counted as RC_FAIL here — the
+                        // finally block records exactly one final outcome (RC_TIMEOUT).
+                        Log.e(TAG, "synthesis chunk timed out (engine watchdog); single timeout outcome", e)
+                        timedOut = true
+                        synthFailedOrTruncated = true  // pipeline must hear error(), not done()
+                        null
+                    }
                     Log.i("SPD", "seg len=" + chunkText.length + " synth_ms=" + (SystemClock.elapsedRealtime() - t3) + " pcm=" + (pcm?.size ?: 0))
                     if (voiceConfig?.extraLogging == true) {
                         Log.i("VvTtsX", "chunk chars=" + chunkText.length + " text='" + chunkText + "' rate=" + rate + " pitch=" + pitch + " vol=" + volume + " preset=" + preset)
@@ -697,7 +719,7 @@ synchronized(synthesisLock) {
                     // be invalid speech on a dead pipe.
 
 
-                    if (pipeEnded) return
+                    if (pipeEnded) { EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED); return }
 
 
         }
@@ -712,6 +734,7 @@ synchronized(synthesisLock) {
                             val verdict = callback.start(EloquenceEngine.SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
                             if (verdict != TextToSpeech.SUCCESS) {
                                 Log.w(TAG, "callback.start rejected the pipe (verdict=$verdict); no further calls")
+                                EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)
                                 return
                             }
                         } catch (e: Throwable) {
@@ -720,6 +743,7 @@ synchronized(synthesisLock) {
                                 callback.error(TextToSpeech.ERROR_SYNTHESIS)
                             } catch (ignore: Throwable) {
                             }
+                            EngineMetrics.recordOutcome(EngineMetrics.RC_FAIL)
                             return
                         }
                     }
@@ -728,6 +752,7 @@ synchronized(synthesisLock) {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (ignore: Throwable) {
                         }
+                        EngineMetrics.recordOutcome(EngineMetrics.RC_INTERRUPTED)
                         return
                     }
                     if (synthFailedOrTruncated) {
@@ -738,15 +763,23 @@ synchronized(synthesisLock) {
 
 
                         Log.w(TAG, "synthesis failed or truncated; reporting error()")
+                        // Exactly one final outcome (issue #2): a watchdog timeout is
+                        // RC_TIMEOUT, anything else is RC_FAIL — never both.
+                        EngineMetrics.recordOutcome(EngineMetrics.finalOutcome(interrupted = false, timedOut = timedOut, failed = true, ok = false))
                         try {
                             callback.error(TextToSpeech.ERROR_SYNTHESIS)
                         } catch (e: Throwable) {
                             Log.e(TAG, "callback.error failed", e)
                         }
                     } else {
+                        // Record success only AFTER the framework completion callback
+                        // returns (issue #3): if done() throws and the fallback error
+                        // path is used, this request is a failure, not a success.
+                        var doneFailed = false
                         try {
                             callback.done()
                         } catch (e: Throwable) {
+                            doneFailed = true
                             // done() after a successful start must not leave a dangling
                             // utterance: error() is the fallback termination.
                             Log.e(TAG, "callback.done failed; terminating with error()", e)
@@ -755,6 +788,7 @@ synchronized(synthesisLock) {
                             } catch (ignore: Throwable) {
                             }
                         }
+                        EngineMetrics.recordOutcome(EngineMetrics.finalOutcome(interrupted = false, timedOut = false, failed = doneFailed, ok = !doneFailed))
                     }
                 }
         }
