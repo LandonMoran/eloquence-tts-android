@@ -1094,9 +1094,86 @@ private fun engineMetricsFailedClearCrossProcessNoResurrection() {
     println("PASS engineMetricsFailedClearCrossProcessNoResurrection: sibling honors durable failed-clear marker — drops pre-opt-out delta, masks/zero-bases the retained aggregate, and never resurrects it")
 }
 
+/** Review #12: a failed analytics opt-out must not be silently ignored. The
+ *  consent toggle is persisted AND applied to the live GA4 SDK, failing closed —
+ *  an OFF write that cannot be hardened to disk still disables GA4 for this
+ *  process, the non-durable state is reported to the caller, and the durable
+ *  consent is left unchanged so a relaunch is honest. Old code discarded the
+ *  durable result and re-read the stale value, leaving GA4 live while the switch
+ *  read OFF. Deterministic driver: Os.failRenameContaining on the telemetry
+ *  prefs forces the OFF write to fail; Telemetry.sdkProbe observes every GA4
+ *  collection-change it is asked to apply. */
+private fun telemetryAnalyticsFailedOptOutFailClosed() {
+    val context = Context()
+    TelemetryPrefs.setAnalyticsEnabled(context, true)
+    check(TelemetryPrefs.isAnalyticsEnabled(context)) { "analytics should start on" }
+    val seen = mutableListOf<Boolean>()
+    set(Telemetry, "sdkProbe") { on: Boolean -> seen.add(on) }
+    try {
+        android.system.Os.failRenameContaining = "vvtts_telemetry.xml"
+        val durable = try { Telemetry.setConsent(context, false) }
+            finally { android.system.Os.failRenameContaining = null }
+        check(!durable) { "review #12: failed OFF write must be reported (not claimed saved)" }
+        check(TelemetryPrefs.isAnalyticsEnabled(context)) { "review #12: durable analytics consent unchanged when OFF write failed" }
+        check(seen.contains(false)) { "review #12: GA4 must be disabled in-process after a failed analytics opt-out (fail closed)" }
+        // A healthy toggle on a relaunch applies the durable value (parity check).
+        check(Telemetry.setConsent(context, true))
+        check(seen.last() == true) { "review #12: re-enable must re-enable the live SDK" }
+    } finally { set(Telemetry, "sdkProbe", null) }
+    TelemetryPrefs.setAnalyticsEnabled(context, true)
+    println("PASS telemetryAnalyticsFailedOptOutFailClosed: failed analytics opt-out disables GA4 in-process and is reported")
+}
+
+/** Review #13: the worst-case failed clear — BOTH the atomic wipe and the
+ *  durable failure-marker write fail — must be reported (clear() returns false
+ *  AND flags the store unhealthy via clearStoreUnhealthy()) so Settings never
+ *  claims the purge succeeded, and the flag must reset on the next successful
+ *  clear. Old code ignored persistClearFailed's outcome, so the double failure
+ *  was indistinguishable and the user (and Settings handler) were told nothing.
+ *  Deterministic driver: clearWriteSeam returns false (wipe can't land) plus
+ *  Os.failRenameContaining on the engine-metrics store (marker write can't land). */
+private fun engineMetricsFailedClearDoubleFailure() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    check(EngineMetrics.clear(context)) { "review #13: healthy baseline clear should succeed" }
+    check(!EngineMetrics.clearStoreUnhealthy()) { "review #13: healthy baseline must not flag the store unhealthy" }
+    EngineMetrics.init(context)
+    store.update { map -> map["init_n"] = 9L } // retained pre-opt-out count
+    TelemetryPrefs.setCrashEnabled(context, false)
+    set(EngineMetrics, "clearWriteSeam") { false } // wipe can't land
+    android.system.Os.failRenameContaining = "vvtts_engine_metrics.xml" // marker can't land
+    val cleared = try { EngineMetrics.clear(context) }
+        finally { set(EngineMetrics, "clearWriteSeam", null); android.system.Os.failRenameContaining = null }
+    check(!cleared) { "review #13: clear() must report failure when the wipe cannot land" }
+    check(EngineMetrics.clearStoreUnhealthy()) { "review #13: double failure (wipe+marker) must flag the store unhealthy" }
+    check(store.getLong("init_n", -1L) == 9L) { "review #13: a failed wipe leaves the stale aggregate" }
+    // The next successful clear must reset the unhealthy flag.
+    check(EngineMetrics.clear(context))
+    check(!EngineMetrics.clearStoreUnhealthy()) { "review #13: a successful clear must reset the unhealthy flag" }
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS engineMetricsFailedClearDoubleFailure: wipe+marker failure is reported and flags the store unhealthy; reset on success")
+}
+
+/** Review #14: crash reporting must be fail-closed at cold start. The manifest
+ *  must set firebase_crashlytics_collection_enabled=false so the SDK does not
+ *  capture anything during the pre-create window — before Application.onCreate /
+ *  CrashlyticsFx.initProcess() reads and applies the stored consent. Fails on
+ *  the old manifest, which carried no such metadata: there the SDK's own
+ *  (enabled) default governed that window, so an opted-out launch could be
+ *  captured. Also guards the analytics default stays disabled alongside it. */
+private fun crashlyticsColdStartFailClosed() {
+    val m = File("AndroidManifest.xml").readText()
+    check(m.contains("firebase_crashlytics_collection_enabled")) { "review #14: manifest must declare firebase_crashlytics_collection_enabled" }
+    val crash = m.substringAfter("firebase_crashlytics_collection_enabled")
+    check(crash.contains("value=\"false\"")) { "review #14: cold-start Crashlytics collection default must be false" }
+    check(m.contains("firebase_analytics_collection_enabled") && m.substringAfter("firebase_analytics_collection_enabled").contains("value=\"false\"")) { "review #14: analytics cold-start default must remain disabled" }
+    println("PASS crashlyticsColdStartFailClosed: manifest disables Crashlytics collection at cold start until consent is applied")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); engineMetricsFailedClearDoubleFailure(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

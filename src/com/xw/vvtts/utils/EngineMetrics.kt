@@ -136,6 +136,12 @@ object EngineMetrics {
     // this latch is up the engine treats the persisted base as zero and never
     // resurrects pre-opt-out counts by merging on top of the stale values.
     private var clearWriteFailed = false
+    // Review #13: true only when a clear failed BOTH the atomic wipe AND the
+    // durable failure-marker write — persistence was unavailable, so no durable
+    // record of the consent change exists and old diagnostics MAY reappear after
+    // a re-enable. Surfaced (never via telemetry) instead of claiming the purge
+    // succeeded; cleared on any subsequently successful clear.
+    private var clearStoreUnhealthy = false
     // Host-regression seam for review #6: when armed, its return value replaces
     // the MirroredPreferences.update() result (false/throw forces the failed-wipe
     // outcome deterministically). Always null in production.
@@ -487,6 +493,7 @@ object EngineMetrics {
         } catch (t: Throwable) { ok = false }
         if (ok) {
             clearWriteFailed = false
+            clearStoreUnhealthy = false
             refreshShared() // observe our own bump so cachedGeneration stays current
         } else {
             // Privacy wipe did not persist. Keep the in-memory snapshot zeroed,
@@ -494,11 +501,28 @@ object EngineMetrics {
             // surface it locally (never via telemetry). New reports are already
             // halted because the caller disabled Crashlytics (review #4).
             clearWriteFailed = true
-            persistClearFailed(context)
-            Log.w("EngineMetrics", "clear: persistent diagnostic wipe FAILED; treating retained aggregate as zero (review #6) and marking the failure durably (review #10)")
+            val marked = persistClearFailed(context)
+            if (!marked) {
+                // Review #13 worst case: neither the wipe nor the durable
+                // failure-marker could be persisted — no durable record of the
+                // consent change exists, so a sibling could later re-enable and
+                // merge pre-opt-out deltas onto the stale aggregate. Flag it and
+                // never imply the purge succeeded (the caller surfaces this).
+                clearStoreUnhealthy = true
+                Log.w("EngineMetrics", "clear: persistent wipe AND durable failure-marker both FAILED (review #13); store unhealthy, retained aggregate may reappear on re-enable")
+            } else {
+                Log.w("EngineMetrics", "clear: persistent diagnostic wipe FAILED; treating retained aggregate as zero (review #6) and marking the failure durably (review #10)")
+            }
         }
         return ok
     }
+
+    /** True when the last clear failed BOTH the atomic wipe and the durable
+     *  failure-marker write (review #13) — persistence was unavailable, so no
+     *  durable record exists and old diagnostics may reappear after a re-enable.
+     *  Cleared on any subsequently successful clear. Purely local truth for the
+     *  UI to surface; never emitted via telemetry. */
+    fun clearStoreUnhealthy(): Boolean = clearStoreUnhealthy
 
     /** Durably record a failed clear so sibling processes see the consent change
      *  even though the atomic wipe could not land (review #10). A failed wipe
@@ -509,10 +533,15 @@ object EngineMetrics {
      *  separate, marker-only update — distinct from the aggregate purge that just
      *  failed — makes the failure visible to every process reading the shared
      *  store, which then discards pre-clear deltas and treats the retained
-     *  aggregate as zero (see [refreshShared] and [mergeDeltas]). This guard is
-     *  best-effort: if the marker write itself fails the store is unrecoverably
-     *  unhealthy, and telemetry must never break the app. */
-    private fun persistClearFailed(context: Context) {
+     *  aggregate as zero (see [refreshShared] and [mergeDeltas]).
+     *
+     *  Returns whether the durable marker actually landed. The caller of [clear]
+     *  must distinguish a wipe-failure that is still durably masked (marker
+     *  written) from the review #13 worst case where even this write fails and no
+     *  durable record exists, so the user is never told the purge succeeded when
+     *  it could not be guaranteed. Best-effort and guarded — telemetry must never
+     *  break the app, even when persistence is entirely unavailable. */
+    private fun persistClearFailed(context: Context): Boolean {
         var ok = false
         var attempt = 0
         while (!ok && attempt++ < 3) {
@@ -524,5 +553,6 @@ object EngineMetrics {
             } catch (t: Throwable) { ok = false }
         }
         if (ok) refreshShared() // mirror the durable marker into this process's guard too
+        return ok
     }
 }

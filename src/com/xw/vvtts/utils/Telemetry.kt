@@ -27,10 +27,50 @@ import com.google.firebase.analytics.FirebaseAnalytics
  * initialized, matching the "never break the app for telemetry" rule.
  */
 object Telemetry {
+    // Host-regression seam (always null in production): observe the GA4
+    // collection-change every SDK call is asked to apply, so the harness can
+    // assert a failed analytics opt-out still disables collection in-process
+    // (review #12). Never used by shipped code.
+    private var sdkProbe: ((Boolean) -> Unit)? = null
+
+    /** Start-up application of the user's stored analytics consent to the GA4
+     *  surface (reads the durable preference). Called from
+     *  [com.xw.vvtts.VvttsApp.onCreate] in both the main and :tts processes.
+     *  Safe no-op if the SDK is absent or the read fails. */
     fun apply(context: Context) {
         val analyticsOn = try { TelemetryPrefs.isAnalyticsEnabled(context) } catch (t: Throwable) { false }
+        setEnabled(context, analyticsOn)
+    }
+
+    /** Apply analytics consent to the live GA4 SDK NOW, for this process, without
+     *  re-reading the durable preference. This is the atomic fail-closed
+     *  primitive for a consent toggle (review #12): the SDK state must follow the
+     *  user's just-made choice immediately, even when persistence is unavailable.
+     *  Guarded no-op if the SDK is absent — never break the app for telemetry. */
+    fun setEnabled(context: Context, on: Boolean) {
+        sdkProbe?.invoke(on)
         try {
-            FirebaseAnalytics.getInstance(context).setAnalyticsCollectionEnabled(analyticsOn)
+            FirebaseAnalytics.getInstance(context).setAnalyticsCollectionEnabled(on)
         } catch (t: Throwable) { /* no-op */ }
+    }
+
+    /** Persist and apply an analytics-consent toggle from Settings, failing
+     *  closed (review #12) the same way the crash surface does. The change is
+     *  applied to the live SDK immediately; an opt-out that could NOT be hardened
+     *  to disk still disables GA4 for this session, so the switch never reads OFF
+     *  while analytics stay live, and the caller is told the choice is not
+     *  durable so the user can retry.
+     *
+     *  Returns true when the change was durable (nothing to surface); false when
+     *  an OFF write failed to persist (GA4 is disabled for this session, but a
+     *  later launch would re-read the old enabled value). */
+    fun setConsent(context: Context, on: Boolean): Boolean {
+        val persisted = try { TelemetryPrefs.setAnalyticsEnabled(context, on) } catch (t: Throwable) { false }
+        if (persisted || on) { setEnabled(context, on); return true }
+        // OFF write FAILED: the choice is not durable. Fail closed — disable GA4
+        // for this session and surface the failure so the user knows they must
+        // toggle again.
+        setEnabled(context, false)
+        return false
     }
 }

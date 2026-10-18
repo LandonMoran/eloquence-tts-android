@@ -271,7 +271,7 @@ class SettingsActivity : Activity() {
                 // reports whether the SDK actually toggled (review #11) so a switch
                 // can never read one state while the SDK is in the other.
                 val toggled = CrashlyticsFx.setCrashCollectionEnabled(on)
-                if (!on) EngineMetrics.clear(this)
+                if (!on) clearEngineDiagnostics()
                 if (!toggled) {
                     // Review #11: the SDK's collection toggle did not take effect
                     // (reflection missing/invocation failed on the real SDK). The
@@ -287,7 +287,7 @@ class SettingsActivity : Activity() {
                 // Fail closed: keep crash reporting off for THIS process and
                 // surface the failure so the user knows they must retry.
                 CrashlyticsFx.setCrashCollectionEnabled(false)
-                EngineMetrics.clear(this)
+                clearEngineDiagnostics()
                 Log.w("SettingsActivity", "crash opt-out could not be persisted; keeping reporting off this session (review #7)")
                 Toast.makeText(this, getString(R.string.crash_opt_out_not_saved), Toast.LENGTH_SHORT).show()
             }
@@ -295,8 +295,13 @@ class SettingsActivity : Activity() {
         addNoteRow(mainContainer, R.string.crash_note)
         addSwitchRow(mainContainer, getString(R.string.analytics_row),
             TelemetryPrefs.isAnalyticsEnabled(this)) { on ->
-            TelemetryPrefs.setAnalyticsEnabled(this, on)
-            Telemetry.apply(this)
+            // setConsent persists the choice AND applies it to the live GA4 SDK,
+            // failing closed if an opt-out write could not be hardened to disk
+            // (review #12). It returns false only when the choice is not durable.
+            if (!Telemetry.setConsent(this, on)) {
+                Log.w("SettingsActivity", "analytics opt-out could not be persisted; keeping GA4 off this session (review #12)")
+                Toast.makeText(this, getString(R.string.analytics_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+            }
         }
         addNoteRow(mainContainer, R.string.analytics_note)
 
@@ -328,6 +333,22 @@ maybeShowLaunchUpdateDialog()
         // Keep FCM topic subscriptions in sync with stored toggle prefs on every
         // open (covers first-run defaults and any prefs drifted from a cold boot).
         syncFcmTopics(this)
+    }
+    /** Clear retained engine-health diagnostics, surfacing a failed purge instead
+     *  of implying success (reviews #4/#13). Called on crash-reporting opt-out.
+     *  Returns nothing; surfaces only local UI + logs, never telemetry. */
+    private fun clearEngineDiagnostics() {
+        if (!EngineMetrics.clear(this)) {
+            val unhealthy = EngineMetrics.clearStoreUnhealthy()
+            Log.w("SettingsActivity",
+                if (unhealthy)
+                    "engine diagnostics purge failed durably (review #13); retained data may reappear on re-enable"
+                else
+                    "engine diagnostics purge failed (review #4); retained data treated as zero this session")
+            Toast.makeText(this,
+                getString(if (unhealthy) R.string.metrics_purge_failed_unhealthy else R.string.metrics_purge_failed),
+                Toast.LENGTH_LONG).show()
+        }
     }
     private fun maybeRequestNotifPermission() {
         // Only ask while the user has notifications enabled (i.e. they opted in),

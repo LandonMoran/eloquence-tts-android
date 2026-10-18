@@ -33,6 +33,20 @@
             android:name="firebase_analytics_collection_enabled"
             android:value="false" />
 
+        <!-- Privacy: crash reporting defaults ON (the primary diagnostics surface),
+             but the SDK must never capture the cold-start window BEFORE
+             Application.onCreate applies the stored consent (review #14): the
+             Crashlytics auto-init provider and any early startup crash happen
+             before CrashlyticsFx.initProcess() reads the preference. This
+             metadata makes the SDK's cold-start collection default DISABLED; the
+             runtime API re-enables it only after consent is read & applied. An
+             opted-out launch is therefore never captured, at the cost that a
+             crash within the pre-create window is dropped (the fail-closed
+             choice). -->
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+
         <!-- directBootAware: the engine can start and speak on the lock screen
              ( before first unlock(. Settings are mirrored to device-protected storage
              by the service each time it starts unlocked; the first-ever locked start
