@@ -24,15 +24,24 @@ object TelemetryPrefs {
     const val CRASH = "crash_enabled"
     private const val LEGACY_COMBINED = "telemetry_enabled"
 
+    // Host-regression seam (always null in production): armed to throw, it
+    // simulates MirroredPreferences.locked() failing on file-lock/read
+    // acquisition BEFORE any write happens — the storage-failure path issue #6
+    // flagged as able to escape the pre-write catch. Every consent persist
+    // below is wrapped so such a failure returns false (fail closed) instead of
+    // throwing into a UI or engine callback.
+    @JvmStatic var lockReadSeam: (() -> Unit)? = null
+
     fun isAnalyticsEnabled(context: Context): Boolean {
         migrateLegacy(context)
         return MirroredPreferences(context, PREFS_NAME).getBoolean(ANALYTICS, false)
     }
 
-    fun setAnalyticsEnabled(context: Context, on: Boolean): Boolean {
+    fun setAnalyticsEnabled(context: Context, on: Boolean): Boolean = try {
+        lockReadSeam?.invoke()
         val p = MirroredPreferences(context, PREFS_NAME)
-        return p.edit { e -> e.putBoolean(ANALYTICS, on).putBoolean(LEGACY_COMBINED, false) }
-    }
+        p.edit { e -> e.putBoolean(ANALYTICS, on).putBoolean(LEGACY_COMBINED, false) }
+    } catch (t: Throwable) { false }
 
     /** Crash reporting is an OPT-OUT: default ON. Independent of analytics and
      *  deliberately excluded from [migrateLegacy] (the old combined flag never
@@ -44,9 +53,13 @@ object TelemetryPrefs {
      *  callers can fail closed (review #7): a false return means the choice did
      *  NOT reach storage and a later process/launch would read the old value —
      *  an opted-out user must never be told their opt-out was saved when it was
-     *  not, and the SDK must stay disabled for this session regardless. */
-    fun setCrashEnabled(context: Context, on: Boolean): Boolean =
+     *  not, and the SDK must stay disabled for this session regardless. Never
+     *  throws: a file-lock/read acquisition failure (MirroredPreferences.locked)
+     *  returns false rather than escaping into the Settings UI handler (issue #6). */
+    fun setCrashEnabled(context: Context, on: Boolean): Boolean = try {
+        lockReadSeam?.invoke()
         MirroredPreferences(context, PREFS_NAME).edit { e -> e.putBoolean(CRASH, on) }
+    } catch (t: Throwable) { false }
 
     /** One-time migration: a user who opted into the pre-split single
      *  "Share diagnostics" toggle keeps that choice for analytics instead of

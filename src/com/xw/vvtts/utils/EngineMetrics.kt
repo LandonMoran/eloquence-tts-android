@@ -371,7 +371,15 @@ object EngineMetrics {
         // pre-opt-out deltas we still hold before they could merge into a fresh,
         // post-re-enable window.
         if (generationChanged(context)) {
-            synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+            synchronized(lock) {
+                System.arraycopy(local, 0, baseline, 0, N_COUNTERS)
+                // Round review (issue #4): discarding pre-opt-out deltas must ALSO
+                // reset the local peak, not just roll the count/sum baseline.
+                // combined() reads I_SYNTH_MAX as max(shared, local), so a stale
+                // local max would resurface the old maximum as a crash key after the
+                // sibling clear even though the ordinary counters were discarded.
+                local[I_SYNTH_MAX] = 0L
+            }
             refreshShared()
             return
         }
@@ -411,8 +419,13 @@ object EngineMetrics {
         if (aborted) {
             // A sibling cleared between our snapshot and the merge transaction.
             // Discard the pre-opt-out deltas (advance baseline so they never
-            // re-merge) and resync to the freshly cleared store.
-            synchronized(lock) { System.arraycopy(local, 0, baseline, 0, N_COUNTERS) }
+            // re-merge) and resync to the freshly cleared store. Also reset the
+            // local peak so combined()'s max(shared, local) can't resurface the
+            // old maximum (round review issue #4).
+            synchronized(lock) {
+                System.arraycopy(local, 0, baseline, 0, N_COUNTERS)
+                local[I_SYNTH_MAX] = 0L
+            }
             refreshShared()
             return
         }

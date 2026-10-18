@@ -697,7 +697,7 @@ private fun engineMetricsCrossProcessClear() {
     // clear never touches the :tts process's in-memory counters).
     val genBefore = store.getLong("metrics_generation", 0L)
     store.update { map ->
-        map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max"] = 0L; map["rotate"] = 0L
+        map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max_ms"] = 0L; map["rotate"] = 0L
         map["metrics_generation"] = genBefore + 1L
     }
 
@@ -714,6 +714,84 @@ private fun engineMetricsCrossProcessClear() {
 
     EngineMetrics.clear(context)
     println("PASS engineMetricsCrossProcessClear: idle process discards pre-opt-out deltas on sibling clear")
+}
+
+/** Round review (issue #4): discarding pre-opt-out deltas on a sibling clear must
+ *  ALSO reset the local peak counter (combined() reads synth max as
+ *  max(shared, local)), so an old maximum can never resurface as a crash key
+ *  (m_synth_max_ms) after the opt-out clear. The OLD cross-process tests zeroed
+ *  the store key "synth_max" — which EngineMetrics never reads (the real key is
+ *  "synth_max_ms") — so the phantom max went undetected. This test drives the
+ *  crash-key attach path and fails on code that only rolls the count/sum
+ *  baseline. */
+private fun engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true) // crash keys enabled so combined() is attached
+    // Self-contained host state: the CrashlyticsFx singleton may have been left
+    // gated by an earlier test's writesAllowed/appContext; pin the gate open for
+    // this isolation.
+    set(CrashlyticsFx, "writesAllowed", true)
+    set(CrashlyticsFx, "appContext", context)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+
+    // Establish a max that becomes STALE once the sibling clears.
+    EngineMetrics.recordSynth(4000) // local max = 4000; throttled, outstanding
+    EngineMetrics.recordRotate()    // now=true -> merge; synth_max_ms=4000 on disk
+    check(store.getLong("synth_max_ms", -1L) == 4000L) { "precondition: max persisted to the shared store" }
+
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "writeProbe") { l: String -> seen.add(l) }
+    try {
+        // Main process opts out: zero the real shared keys + bump the generation
+        // (the pre-opt-out 4000 is still in THIS process's local peak).
+        val genBefore = store.getLong("metrics_generation", 0L)
+        store.update { map ->
+            map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max_ms"] = 0L; map["rotate"] = 0L
+            map["metrics_generation"] = genBefore + 1L
+        }
+
+        // The :tts child records again and forces a flush; the generation bump
+        // discards its pre-opt-out deltas and (with the round fix) the local peak.
+        EngineMetrics.recordSynth(100)
+        seen.clear()
+        EngineMetrics.recordRotate() // now=true -> discard path, then attachCrashKeys
+        check(store.getLong("synth_max_ms", -1L) == 0L) { "round review: shared store must not retain the pre-opt-out max" }
+        check(seen.any { it == "key:m_synth_max_ms=0" }) { "round review: combined() must report synth max 0 after the sibling clear; phantom max resurrected: $seen" }
+        check(seen.none { it.startsWith("key:m_synth_max_ms=") && it != "key:m_synth_max_ms=0" }) { "round review: stale pre-opt-out max attached as a crash key: $seen" }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        set(CrashlyticsFx, "appContext", null)
+    }
+    EngineMetrics.clear(context)
+    println("PASS engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear: local synth max reset on sibling clear; no phantom max attached")
+}
+
+/** Review round (issue #6): a crash-consent write that fails on file-lock/read
+ *  ACQUISITION (not just on the write) must return false fail-closed instead of
+ *  throwing into a UI or engine callback. Old setCrashEnabled only caught the
+ *  inner write; MirroredPreferences.locked() can throw before a Boolean is ever
+ *  produced, escaping uncaught. The lockReadSeam forces exactly that path. */
+private fun crashConsentLockReadAcquisitionFailClosed() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, true)
+    try {
+        set(TelemetryPrefs, "lockReadSeam") { throw RuntimeException("file lock unavailable") }
+        var threw = false
+        try {
+            val persisted = TelemetryPrefs.setCrashEnabled(context, false)
+            check(!persisted) { "round review: crash-consent write must report false (fail closed) on a lock/read acquisition failure" }
+        } catch (t: Throwable) { threw = true }
+        check(!threw) { "round review: crash-consent write must NOT throw on a lock/read acquisition failure" }
+        // The durable value is unchanged and still the pre-write state.
+        check(TelemetryPrefs.isCrashEnabled(context)) { "round review: durable crash consent must not change after a failed acquire" }
+    } finally {
+        set(TelemetryPrefs, "lockReadSeam", null)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashConsentLockReadAcquisitionFailClosed: consent write fails closed (returns false) instead of throwing on lock/read acquire")
 }
 
 /** #3-check-then-act: generation must be validated INSIDE the merge transaction,
@@ -737,7 +815,7 @@ private fun engineMetricsCrossProcessClearCheckThenAct() {
     val genBefore = store.getLong("metrics_generation", 0L)
     set(EngineMetrics, "mergeSeam") {
         store.update { map ->
-            map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max"] = 0L; map["rotate"] = 0L
+            map["synth_n"] = 0L; map["synth_ms"] = 0L; map["synth_max_ms"] = 0L; map["rotate"] = 0L
             map["metrics_generation"] = genBefore + 1L
         }
     }
@@ -986,6 +1064,150 @@ private fun crashRuntimeToggleSyncsWriteGateAndReportsResult() {
         TelemetryPrefs.setCrashEnabled(context, true)
     }
     println("PASS crashRuntimeToggleSyncsWriteGateAndReportsResult: runtime consent change flips the write gate and reports the SDK-toggle result")
+}
+
+/** Review round: the Crashlytics WRITE gate must consult CURRENT durable
+ *  consent, not just the process-local Boolean set at init. Android runs an
+ *  isolated ":tts" engine process with its own CrashlyticsFx whose local gate
+ *  never hears a MAIN-process opt-out; consulting the SHARED consent snapshot
+ *  (MirroredPreferences re-reads disk, stamp-invalidated) silences a still-alive
+ *  :tts process the moment main persists, and an unreadable consent read fails
+ *  closed (emits nothing) instead of assuming consent. This is a deterministic
+ *  two-process scenario driven entirely in one JVM: the durable preference is
+ *  the shared channel. Old/naive code gated only on writesAllowed, so the
+ *  stale-true :tts gate kept emitting after the cross-process opt-out — fails
+ *  here. */
+private fun crashConsentCrossProcessBlocksWrites() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, true) // :tts process initializes opted-in
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "writeProbe") { label: String -> seen.add(label) }
+    try {
+        CrashlyticsFx.initProcess(context) // appContext set, writesAllowed=true (consent ON)
+        CrashlyticsFx.setKey("probe", "v")
+        check(seen.isNotEmpty()) { "precondition: an opted-in process can write" }
+        seen.clear()
+
+        // MAIN process opts OUT and PERSISTS while THIS (:tts) process is alive —
+        // its process-local gate stays true (it never heard the toggle).
+        TelemetryPrefs.setCrashEnabled(context, false)
+        check(field(CrashlyticsFx, "writesAllowed") == true) { "precondition: :tts local gate is stale true (it never heard the main opt-out)" }
+        CrashlyticsFx.setContext("x86_64")
+        CrashlyticsFx.setKey("probe2", "v")
+        CrashlyticsFx.record("p", RuntimeException("x"))
+        CrashlyticsFx.br("p")
+        check(seen.isEmpty()) { "round review: :tts write helpers must consult CURRENT durable consent after a cross-process opt-out; emitted: $seen" }
+
+        // Main re-enables -> :tts resumes without a restart (durable is the source).
+        TelemetryPrefs.setCrashEnabled(context, true)
+        CrashlyticsFx.setKey("probe3", "v")
+        check(seen.size == 1) { "round review: cross-process opt-in should resume writes without restart; emitted: $seen" }
+
+        // Fail-closed on an UNREADABLE consent read (corrupt/missing storage):
+        seen.clear()
+        set(CrashlyticsFx, "consentSeam") { throw RuntimeException("prefs unreadable") }
+        try {
+            CrashlyticsFx.setKey("probe4", "v")
+            CrashlyticsFx.record("p", RuntimeException("y"))
+            check(seen.isEmpty()) { "round review: an unreadable consent read must fail closed (emit nothing); emitted: $seen" }
+        } finally {
+            set(CrashlyticsFx, "consentSeam", null)
+        }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "consentSeam", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashConsentCrossProcessBlocksWrites: write gate consults current durable consent (cross-process opt-out) and fails closed on unreadable consent")
+}
+
+/** Review round: the crash-consent ENABLE write failure must be surfaced (not
+ *  swallowed by the old "persisted || on" branch, which treated a failed enable
+ *  as at-worst-opt-out and reported success). Old code applied the SDK toggle
+ *  and showed no error when an ON write failed to persist, so Settings silently
+ *  read "on" while a relaunch reverted. Deterministic driver:
+ *  android.system.Os.failRenameContaining on "vvtts_telemetry.xml" forces the
+ *  ON write to fail; asserts the durable failure is reported (persisted=false)
+ *  and the durable value never claims ON. */
+private fun crashConsentEnableWriteFailureReported() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, false) // currently opted out
+    android.system.Os.failRenameContaining = "vvtts_telemetry.xml"
+    val persisted = try { TelemetryPrefs.setCrashEnabled(context, true) } finally { android.system.Os.failRenameContaining = null }
+    check(!persisted) { "round review: forced ENABLE crash-consent write failure must reach the caller (so Settings surfaces crash_enable_not_saved)" }
+    check(!TelemetryPrefs.isCrashEnabled(context)) { "round review: durable crash consent must NOT claim ON after a failed enable write (reverts on restart)" }
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS crashConsentEnableWriteFailureReported: a failed crash-consent ENABLE write is surfaced, not silently reported as success")
+}
+
+/** Review round: when an opt-out CANNOT be persisted AND the SDK disable also
+ *  fails to take effect, the caller must learn BOTH failures so Settings
+ *  surfaces the distinct "crash_opt_out_both_failed" outcome rather than the
+ *  weaker "not saved". The app write gate still closes (fail closed: nothing
+ *  new is emitted by our code even though the SDK may still collect). Old code
+ *  ignored the SDK-disable result inside the opt-out-failure branch and always
+ *  showed crash_opt_out_not_saved, overstating protection. */
+private fun crashOptOutBothFailSurfaceable() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, true) // opted in
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "writeProbe") { label: String -> seen.add(label) }
+    try {
+        CrashlyticsFx.initProcess(context) // opted-in, appContext set
+        // Force BOTH failures: opt-out pref write + SDK disable toggle.
+        set(CrashlyticsFx, "toggleSeam") { throw Throwable("SDK toggle missing") }
+        android.system.Os.failRenameContaining = "vvtts_telemetry.xml"
+        val persisted = try { TelemetryPrefs.setCrashEnabled(context, false) } finally { android.system.Os.failRenameContaining = null }
+        val sdkDisabled = try { CrashlyticsFx.setCrashCollectionEnabled(false) } finally { set(CrashlyticsFx, "toggleSeam", null) }
+        check(!persisted) { "round review: opt-out pref write must report failure" }
+        check(!sdkDisabled) { "round review: failed SDK disable must report false (review #11 contract)" }
+        // App write gate still closes: nothing new emitted by our code afterwards.
+        seen.clear()
+        CrashlyticsFx.setKey("probe", "v")
+        CrashlyticsFx.record("p", RuntimeException("x"))
+        check(seen.isEmpty()) { "round review: app write gate must close even when the SDK disable failed; emitted: $seen" }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashOptOutBothFailSurfaceable: a both-failed opt-out reports BOTH the pref and SDK-disable failures; app write gate still closes")
+}
+
+/** Round review (issue #5): the DEBUG-ONLY autotest hook crash() must honor the
+ *  opt-out write gate — an opted-out process must not get an intentional crash
+ *  report through it. Old crash() called c.log and threw unconditionally. The
+ *  hook now emits to writeProbe only when the gate is open, so a host test can
+ *  observe the decision; a throttled/opted-out process emits nothing and does
+ *  not throw. */
+private fun crashDebugHookHonorsGate() {
+    val context = Context()
+    val seen = mutableListOf<String>()
+    try {
+        set(CrashlyticsFx, "writeProbe") { l: String -> seen.add(l) }
+        // OPTED OUT: the gate must block the debug hook — no emit, no throw.
+        set(CrashlyticsFx, "writesAllowed", false)
+        TelemetryPrefs.setCrashEnabled(context, false)
+        seen.clear()
+        var threw = false
+        try { CrashlyticsFx.crash() } catch (t: Throwable) { threw = true }
+        check(!threw) { "round review: debug crash() must not throw when opted out" }
+        check(seen.isEmpty()) { "round review: debug crash() emitted its marker despite opt-out (issue #5): $seen" }
+        // OPTED IN: the hook fires the marker and throws its intentional Runtime.
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+        seen.clear()
+        var threw2 = false
+        try { CrashlyticsFx.crash() } catch (t: Throwable) { threw2 = true }
+        check(threw2) { "round review: debug crash() must throw its intentional Runtime when opted in" }
+        check(seen.any { it == "crash-hook" }) { "round review: debug crash() did not emit its hook marker when opted in: $seen" }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashDebugHookHonorsGate: debug crash() honors the opt-out write gate (emits nothing, does not throw) and flips open on opt-in")
 }
 
 /** Review #10 (producer side): when a clear's atomic wipe FAILS, the engine must
@@ -1262,6 +1484,6 @@ private fun crashlyticsColdStartFailClosed() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

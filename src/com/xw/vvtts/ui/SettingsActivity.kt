@@ -264,12 +264,39 @@ class SettingsActivity : Activity() {
         // device, so older numbers are not silently uploaded if it is re-enabled.
         addSwitchRow(mainContainer, getString(R.string.crash_row),
             TelemetryPrefs.isCrashEnabled(this)) { on ->
-            val persisted = TelemetryPrefs.setCrashEnabled(this, on)
-            if (persisted || on) {
-                // Write landed, or an enable that failed to persist is at worst the
-                // opt-out default (safe on next launch). Apply the SDK toggle; it
-                // reports whether the SDK actually toggled (review #11) so a switch
-                // can never read one state while the SDK is in the other.
+            // Issue #6: the consent persist must never throw into the UI handler
+            // (MirroredPreferences.locked can fail on lock/read acquisition, not
+            // only on a write). setCrashEnabled is itself fail-closed, and the
+            // defensive try/catch here is the caller-boundary guard.
+            val persisted = try { TelemetryPrefs.setCrashEnabled(this, on) } catch (t: Throwable) { false }
+            if (!persisted && !on) {
+                // OPT-OUT write FAILED (review #7): the choice is not durable and a
+                // later launch would read the old value and re-enable reporting.
+                // Fail closed: keep crash reporting off for THIS process and surface
+                // the failure. If the SDK's disable ALSO failed to take effect, that
+                // is a distinct, worse outcome — the app write gate is closed but the
+                // SDK may still collect — so surface it separately (round review).
+                val sdkDisabled = CrashlyticsFx.setCrashCollectionEnabled(false)
+                clearEngineDiagnostics()
+                if (!sdkDisabled) {
+                    Log.w("SettingsActivity", "crash opt-out could NOT be persisted AND the SDK disable did not take effect (round review); app write gate still closed")
+                    Toast.makeText(this, getString(R.string.crash_opt_out_both_failed), Toast.LENGTH_LONG).show()
+                } else {
+                    Log.w("SettingsActivity", "crash opt-out could not be persisted; keeping reporting off this session (review #7)")
+                    Toast.makeText(this, getString(R.string.crash_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+                }
+            } else if (!persisted) {
+                // ENABLE write FAILED (round review): the choice will not survive a
+                // relaunch. Apply the live SDK toggle so the switch and behaviour
+                // agree THIS session, but tell the user it is not durable — mirrors
+                // the opt-out path's honesty for the ON side.
+                CrashlyticsFx.setCrashCollectionEnabled(true)
+                Log.w("SettingsActivity", "crash reporting enable could not be persisted; reverts after restart (round review)")
+                Toast.makeText(this, getString(R.string.crash_enable_not_saved), Toast.LENGTH_LONG).show()
+            } else {
+                // Write landed (either direction): apply the SDK toggle; it reports
+                // whether the SDK actually toggled (review #11) so a switch can
+                // never read one state while the SDK is in the other.
                 val toggled = CrashlyticsFx.setCrashCollectionEnabled(on)
                 if (!on) clearEngineDiagnostics()
                 if (!toggled) {
@@ -281,15 +308,6 @@ class SettingsActivity : Activity() {
                     Log.w("SettingsActivity", "Crashlytics collection toggle could not be applied (SDK drift); reporting may not match the switch")
                     Toast.makeText(this, getString(R.string.crash_toggle_not_applied), Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                // OPT-OUT write FAILED (review #7): the choice is not durable and a
-                // later launch would read the old value and re-enable reporting.
-                // Fail closed: keep crash reporting off for THIS process and
-                // surface the failure so the user knows they must retry.
-                CrashlyticsFx.setCrashCollectionEnabled(false)
-                clearEngineDiagnostics()
-                Log.w("SettingsActivity", "crash opt-out could not be persisted; keeping reporting off this session (review #7)")
-                Toast.makeText(this, getString(R.string.crash_opt_out_not_saved), Toast.LENGTH_SHORT).show()
             }
         }
         addNoteRow(mainContainer, R.string.crash_note)
@@ -297,17 +315,29 @@ class SettingsActivity : Activity() {
             TelemetryPrefs.isAnalyticsEnabled(this)) { on ->
             // setConsent persists the choice AND applies it to the live GA4 SDK,
             // succeeding only when BOTH land (reviews #12 & round 6). When it
-            // returns false, distinguish WHICH side failed so the user is told the
-            // truth: a not-saved choice → retry; a saved-but-not-applied choice →
-            // durable, but this session is not protected yet.
+            // returns false, distinguish the durable side from the live side so
+            // every failure is truthfully surfaced: a not-saved choice is
+            // retry-able; a saved-but-not-applied choice is durable but not
+            // effective this session.
             if (!Telemetry.setConsent(this, on)) {
                 val durableSaved = try { TelemetryPrefs.isAnalyticsEnabled(this) == on } catch (t: Throwable) { false }
-                if (!on && !durableSaved) {
-                    Log.w("SettingsActivity", "analytics opt-out could not be persisted (review #12); keeping GA4 off this session")
-                    Toast.makeText(this, getString(R.string.analytics_opt_out_not_saved), Toast.LENGTH_SHORT).show()
-                } else {
-                    Log.w("SettingsActivity", "analytics ${if (on) "enable" else "opt-out"} not fully applied to the live SDK (review round 6); durable=${durableSaved}")
-                    Toast.makeText(this, getString(if (on) R.string.analytics_enable_failed else R.string.analytics_opt_out_not_effective), Toast.LENGTH_SHORT).show()
+                when {
+                    !on && !durableSaved -> {
+                        Log.w("SettingsActivity", "analytics opt-out could not be persisted (review #12); keeping GA4 off this session")
+                        Toast.makeText(this, getString(R.string.analytics_opt_out_not_saved), Toast.LENGTH_SHORT).show()
+                    }
+                    !on -> {
+                        Log.w("SettingsActivity", "analytics opt-out saved but not applied to live GA4 this session (review round 6); durable=$durableSaved")
+                        Toast.makeText(this, getString(R.string.analytics_opt_out_not_effective), Toast.LENGTH_SHORT).show()
+                    }
+                    durableSaved -> {
+                        Log.w("SettingsActivity", "analytics enable saved for future launches but not applied this session (review round 6); durable=$durableSaved")
+                        Toast.makeText(this, getString(R.string.analytics_enable_failed), Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        Log.w("SettingsActivity", "analytics enable applied this session but NOT saved; reverts on restart (review round 6)")
+                        Toast.makeText(this, getString(R.string.analytics_enable_not_saved), Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
