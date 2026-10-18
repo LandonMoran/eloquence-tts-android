@@ -1155,6 +1155,52 @@ private fun engineMetricsFailedClearDoubleFailure() {
     println("PASS engineMetricsFailedClearDoubleFailure: wipe+marker failure is reported and flags the store unhealthy; reset on success")
 }
 
+/** Review #13 sibling / re-enable side: when BOTH the aggregate wipe and the
+ *  durable failure-marker write fail, NOTHING lands on the shared store — no
+ *  marker and no generation bump. A re-enabled sibling therefore has no signal to
+ *  drop its still-held pre-opt-out deltas, so it DOES fold them onto the stale
+ *  aggregate: resurrection is possible whenever persistence is unavailable. This
+ *  is the honest, narrowed promise (review #13, option "narrow the promise"): the
+ *  system must NEVER claim old diagnostics can't reappear in that case — instead
+ *  the clearing process flags the store unhealthy (engineMetricsFailedClearDoubleFailure)
+ *  and Settings surfaces it. This test pins that we do NOT rely on (or promise) a
+ *  durable protection that does not exist under a double failure. Deterministic:
+ *  simulate the durable outcome a real double-failed clear leaves — nothing — then
+ *  drive this process as the sibling re-enabling. */
+private fun engineMetricsFailedClearDoubleFailureSibling() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+    // Sibling (B) merged a retained aggregate (opted-in usage) -> init_n=2.
+    EngineMetrics.recordInit(10L, true)
+    EngineMetrics.recordInit(20L, true)
+    // B still holds a pre-opt-out synth delta UNMERGED (synth is throttle-gated).
+    EngineMetrics.recordSynth(10)
+    check(store.getLong("init_n", -1L) == 2L) { "precondition: retained init_n=2 on disk" }
+    check(store.getLong("synth_n", -1L) == 0L) { "precondition: synth delta should be outstanding/unmerged" }
+    // A's double-failed clear leaves NO durable artifacts (that IS the honest
+    // outcome — nothing landed), so we write nothing here.
+    check(!store.getBoolean("metrics_clear_failed", false)) { "review #13: double failure must leave NO durable marker on the shared store" }
+
+    // Re-enable reporting in the sibling.
+    TelemetryPrefs.setCrashEnabled(context, true)
+
+    // Sibling rotates and re-measures: with no marker and no gen bump, its
+    // pre-opt-out synth delta folds onto the fresh window and a fresh init merges
+    // onto the stale 2 (=> 3). Persistence-unavailable resurrection is real and is
+    // surfaced (unhealthy flag + Settings), never silently claimed prevented.
+    EngineMetrics.recordRotate()
+    check(store.getLong("synth_n", -1L) == 1L) { "review #13: without a durable marker a re-enabled sibling folds its pre-opt-out delta (resurrection when persistence is unavailable)" }
+    EngineMetrics.recordInit(100L, true)
+    check(store.getLong("init_n", -1L) == 3L) { "review #13: without a durable marker a fresh init merges onto the stale retained aggregate (got ${store.getLong("init_n", -1L)})" }
+
+    EngineMetrics.clear(context)
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS engineMetricsFailedClearDoubleFailureSibling: double failure leaves no durable marker; resurrection is possible and surfaced, never silently claimed prevented")
+}
+
 /** Review #14: crash reporting must be fail-closed at cold start. The manifest
  *  must set firebase_crashlytics_collection_enabled=false so the SDK does not
  *  capture anything during the pre-create window — before Application.onCreate /
@@ -1174,6 +1220,6 @@ private fun crashlyticsColdStartFailClosed() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); engineMetricsFailedClearDoubleFailure(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }
