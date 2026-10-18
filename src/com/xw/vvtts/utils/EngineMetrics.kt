@@ -104,6 +104,19 @@ object EngineMetrics {
     )
 
     private val lock = Any()
+    // Serializes the ENTIRE merge/clear critical sections against each other —
+    // snapshot, cross-process transaction, AND baseline advance — so two
+    // overlapping flush() callers cannot both snapshot the same local-minus-
+    // baseline and merge the same delta twice (review round 8: confirmed
+    // concurrent-flush double-merge race). Deliberately SEPARATE from [lock]
+    // (the counter lock): record*() only ever takes [lock] and never holds it
+    // across disk I/O, so an in-progress flush on one thread never blocks
+    // speech-metric recording on another. clear() shares this mutex so an
+    // opt-out wipe can never land between a flusher's transaction and its
+    // baseline advance (which would corrupt deltas into the store). Lock order
+    // is always flushLock -> lock; nothing acquires lock then flushLock, so no
+    // deadlock.
+    private val flushLock = Any()
     private var appContext: Context? = null
     private var lastPersistElapsed = 0L
 
@@ -298,22 +311,31 @@ object EngineMetrics {
         // never be populated on a session that opted out).
         if (!crashEnabled(context)) return
         val v = combined()
-        CrashlyticsFx.setKey("m_init_n", v[I_INIT_N].toString())
-        CrashlyticsFx.setKey("m_init_fail", v[I_INIT_FAIL].toString())
-        CrashlyticsFx.setKey("m_init_ms", v[I_INIT_MS].toString())
-        CrashlyticsFx.setKey("m_shutdown_ms", v[I_SHUT_MS].toString())
-        CrashlyticsFx.setKey("m_synth_n", v[I_SYNTH_N].toString())
-        CrashlyticsFx.setKey("m_synth_max_ms", v[I_SYNTH_MAX].toString())
-        CrashlyticsFx.setKey("m_synth_avg_ms", avgMs(v[I_SYNTH_MS], v[I_SYNTH_N]))
-        CrashlyticsFx.setKey("m_timeout", v[I_TIMEOUT].toString())
-        CrashlyticsFx.setKey("m_rotate", v[I_ROTATE].toString())
-        CrashlyticsFx.setKey("m_jni_open_fail", v[I_JNI].toString())
-        CrashlyticsFx.setKey("m_native_load_fail", v[I_NATIVE].toString())
-        CrashlyticsFx.setKey("m_queue_wait_avg_ms", avgMs(v[I_QUEUE_MS], v[I_QUEUE_N]))
-        CrashlyticsFx.setKey("m_ok", v[I_OK].toString())
-        CrashlyticsFx.setKey("m_fail", v[I_FAIL_OUT].toString())
-        CrashlyticsFx.setKey("m_timeout_req", v[I_TIMEOUT_OUT].toString())
-        CrashlyticsFx.setKey("m_interrupted", v[I_INTR].toString())
+        // Send the whole key set as ONE batch call, so the fail-closed consent
+        // gate (CrashlyticsFx.setKeys) is evaluated a single time instead of 16
+        // separate durable-prefs reads on this flush path (review round 8).
+        // Keys are sparse, stable names carrying aggregate numbers only — never
+        // utterance text, audio, or synthesis content.
+        CrashlyticsFx.setKeys(
+            linkedMapOf<String, String>(
+                "m_init_n" to v[I_INIT_N].toString(),
+                "m_init_fail" to v[I_INIT_FAIL].toString(),
+                "m_init_ms" to v[I_INIT_MS].toString(),
+                "m_shutdown_ms" to v[I_SHUT_MS].toString(),
+                "m_synth_n" to v[I_SYNTH_N].toString(),
+                "m_synth_max_ms" to v[I_SYNTH_MAX].toString(),
+                "m_synth_avg_ms" to avgMs(v[I_SYNTH_MS], v[I_SYNTH_N]),
+                "m_timeout" to v[I_TIMEOUT].toString(),
+                "m_rotate" to v[I_ROTATE].toString(),
+                "m_jni_open_fail" to v[I_JNI].toString(),
+                "m_native_load_fail" to v[I_NATIVE].toString(),
+                "m_queue_wait_avg_ms" to avgMs(v[I_QUEUE_MS], v[I_QUEUE_N]),
+                "m_ok" to v[I_OK].toString(),
+                "m_fail" to v[I_FAIL_OUT].toString(),
+                "m_timeout_req" to v[I_TIMEOUT_OUT].toString(),
+                "m_interrupted" to v[I_INTR].toString()
+            )
+        )
     }
 
     private fun avgMs(totalMs: Long, count: Long) = if (count > 0) (totalMs / count).toString() else "0"
@@ -351,6 +373,17 @@ object EngineMetrics {
      *  one atomic cross-process read-modify-write, then advance the baseline and
      *  refresh [shared]. synth_max is merged by max, not sum. */
     private fun mergeDeltas(context: Context) {
+        // Serialize the WHOLE merge against every other flush and against clear()
+        // (issue #1). Without this, two overlapping flush() callers both snapshot
+        // the same local-minus-baseline before either advances it and each merges
+        // the identical delta, double-counting it. mergeDeltasSerialized holds the
+        // flush mutex across snapshot -> transaction -> baseline advance; calls
+        // that miss the mutex wait and then recompute deltas from the now-advanced
+        // baseline, so they only merge genuinely-new increments.
+        synchronized(flushLock) { mergeDeltasSerialized(context) }
+    }
+
+    private fun mergeDeltasSerialized(context: Context) {
         val deltas = LongArray(N_COUNTERS)
         val mergedLocal = LongArray(N_COUNTERS)
         var snapshotGen: Long
@@ -480,7 +513,14 @@ object EngineMetrics {
      *  generation unchanged — without a visible marker a sibling process would
      *  never detect the consent change and could merge its pre-opt-out deltas
      *  onto the stale aggregate after a re-enable. */
-    fun clear(context: Context): Boolean {
+    fun clear(context: Context): Boolean = synchronized(flushLock) { clearSerialized(context) }
+
+    /** Clear under the flush mutex (issue #1): share flushLock with mergeDeltas so
+     *  an opt-out wipe can never land between a flusher's in-transaction gen check
+     *  and its baseline advance — that split, on its own, would let a later flush
+     *  compute negative deltas that the generation guard can no longer catch
+     *  (clear's refreshShared has already updated cachedGeneration). */
+    private fun clearSerialized(context: Context): Boolean {
         synchronized(lock) {
             Arrays.fill(local, 0L)
             Arrays.fill(baseline, 0L)

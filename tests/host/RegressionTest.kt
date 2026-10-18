@@ -676,6 +676,86 @@ private fun engineMetricsMergeWindow() {
     println("PASS engineMetricsMergeWindow: increment landing during the merge window stays outstanding")
 }
 
+/** Issue #1 (review round 8): two OVERLAPPING now=true flush() calls must not
+ *  merge the same local-minus-baseline delta twice. The seam blocks thread A
+ *  inside mergeDeltas right after its snapshot (before it advances the baseline);
+ *  thread B then runs a second forced flush. Without a flush mutex, B also
+ *  snapshots synth_n=1 against the still-unchanged baseline and merges +1 on top
+ *  of A's +1 (synth_n ends at 2). With the mutex, B waits for A to advance the
+ *  baseline and then recomputes its deltas, merging only its own new rotate
+ *  event (synth_n stays 1). Uses real threads + latches so the race window is
+ *  entered deterministically. */
+private fun engineMetricsConcurrentFlushNoDoubleMerge() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    set(CrashlyticsFx, "writesAllowed", true)
+    set(CrashlyticsFx, "appContext", context)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+
+    // One pending synthesis, deliberately left throttled/unflushed so there is a
+    // real positive synth_n delta that BOTH flush() calls would compute if they
+    // both snapshot before either advances the baseline. The first recordSynth
+    // lands within PERSIST_INTERVAL_MS of init's forced flush, so it is throttled
+    // and stays local (outstanding, not yet on disk).
+    EngineMetrics.recordSynth(100)
+    check(store.getLong("synth_n", -1L) == 0L) { "precondition: synth_n must still be pending (unpersisted)" }
+
+    val aParked = CountDownLatch(1)
+    val bParked = CountDownLatch(1)
+    val letABegin = CountDownLatch(1)
+    val letAGlobalResume = CountDownLatch(1)
+    val bDone = CountDownLatch(1)
+    val parked = java.util.concurrent.atomic.AtomicInteger(0)
+
+    set(EngineMetrics, "mergeSeam") {
+        // Park EVERY thread that reaches the delta-snapshot seam (each has then
+        // snapshotted synth_n=1 against the yet-untouched zero baseline). Under the
+        // OLD (no-lock) code BOTH A and B park here, so releasing them together makes
+        // each commit its stale +1 and the second one double-counts (synth_n=2).
+        // Under the fix B never reaches this seam -- it is queued on the flush mutex
+        // ahead of the snapshot -- so only A parks and bParked times out, after which
+        // the two commits are serialized (synth_n=1).
+        val n = parked.incrementAndGet()
+        if (n == 1) aParked.countDown()
+        if (n == 2) bParked.countDown()
+        letAGlobalResume.await()
+    }
+
+    try {
+        val a = Thread { EngineMetrics.recordRotate() }  // first forced flush
+        val b = Thread {
+            letABegin.await()
+            EngineMetrics.recordRotate()                 // second forced flush
+            bDone.countDown()
+        }
+        a.start()
+        aParked.await(30, java.util.concurrent.TimeUnit.SECONDS)  // A snapshotted at baseline 0
+        b.start()
+        letABegin.countDown()   // B issues a second now=true flush while A is paused
+        // Old code: B parks in the seam too (bParked fires) -> both hold a stale +1.
+        // Fix: B is queued on the flush mutex, never parks -> this wait times out.
+        bParked.await(3, java.util.concurrent.TimeUnit.SECONDS)
+        letAGlobalResume.countDown()  // release the parked thread(s)
+        check(bDone.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+            "round review (issue #1): thread B never completed its flush"
+        }
+
+        val synthN = store.getLong("synth_n", -1L)
+        val rotate = store.getLong("rotate", -1L)
+        check(synthN == 1L) { "round review (issue #1): overlapping flush() merged the same synth delta twice: synth_n=$synthN (expected 1)" }
+        check(rotate == 2L) { "round review (issue #1): two rotate events must merge exactly twice: rotate=$rotate (expected 2)" }
+    } finally {
+        set(EngineMetrics, "mergeSeam", null)
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        set(CrashlyticsFx, "appContext", null)
+    }
+    EngineMetrics.clear(context)
+    println("PASS engineMetricsConcurrentFlushNoDoubleMerge: two overlapping now=true flushes merge each delta exactly once (synth_n=1, rotate=2)")
+}
+
 /** #2-cross-process: an idle process holding pre-opt-out deltas must discard them
  *  when the sibling process clears on opt-out — never merge them after re-enable
  *  into the fresh window. */
@@ -1484,6 +1564,6 @@ private fun crashlyticsColdStartFailClosed() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

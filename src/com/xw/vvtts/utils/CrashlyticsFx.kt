@@ -241,6 +241,36 @@ object CrashlyticsFx {
         try { c.setCustomKey(name, value) } catch (t: Throwable) { /* no-op */ }
     }
 
+    // FirebaseCrashlytics.setCustomKeys(Map) — added in Crashlytics 18.6.0. This
+    // app's firebase-bom 33.7.0 provides it; the host test stub does not, so it is
+    // resolved reflectively once and the batch API is used when present, with a
+    // per-key setCustomKey fallback otherwise. All keys are emitted under ONE
+    // fail-closed consent check (issue: repeated per-key consent reads).
+    private val setCustomKeysMethod: java.lang.reflect.Method? by lazy {
+        try { FirebaseCrashlytics::class.java.getMethod("setCustomKeys", java.util.Map::class.java) }
+        catch (t: Throwable) { null }
+    }
+
+    /** Attach a batch of numeric custom keys (sparse, stable names, numbers only)
+     *  under a SINGLE fail-closed consent gate instead of one durable-prefs read
+     *  per key. The consent check is done exactly once; the SDK write prefers the
+     *  batch setCustomKeys(Map) API and falls back to per-key setCustomKey. The
+     *  write gate still fails closed (opt-out / cross-process opt-out emits
+     *  nothing), and the per-key write probes are preserved so host tests observe
+     *  exactly which keys would have been attached. Never carries text. */
+    fun setKeys(batch: Map<String, String>) {
+        val c = cs ?: return
+        if (!writesEnabled()) return
+        for ((k, v) in batch) writeProbe?.invoke("key:$k=$v")
+        val map = HashMap<String, Any>(batch.size)
+        map.putAll(batch)
+        try {
+            val m = setCustomKeysMethod
+            if (m != null) { m.invoke(c, map); return }
+        } catch (t: Throwable) { /* fall through to per-key */ }
+        try { for ((k, v) in batch) c.setCustomKey(k, v) } catch (t: Throwable) { /* no-op */ }
+    }
+
     /** Report a caught-but-not-fatal exception with a short location tag. */
     fun record(tag: String, e: Throwable) {
         val c = cs ?: return
