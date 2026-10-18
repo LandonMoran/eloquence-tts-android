@@ -944,9 +944,159 @@ private fun telemetryConsentFailedOptOutPersist() {
     println("PASS telemetryConsentFailedOptOutPersist: failed opt-out write reported; durable value unchanged; good write survives restart")
 }
 
+/** Reviews #9 & #11: the runtime write gate must follow consent IMMEDIATELY when
+ *  the user toggles Crash reporting from Settings (not just at process init), and
+ *  the SDK-toggle result must be REPORTED so the switch never lies. Deterministic:
+ *  opt in, init, then toggle OFF mid-session. The host stub lacks the toggle
+ *  method (documented gap), so setCrashCollectionEnabled(false) must REPORT that
+ *  the SDK toggle was NOT applied (returns false — review #11 surfaces it) yet
+ *  must STILL suppress further writes via the synced gate (review #9). Old code
+ *  returned Unit and never touched the gate, so an opted-in running process kept
+ *  emitting after a runtime opt-out — writes flow again here, which fails. */
+private fun crashRuntimeToggleSyncsWriteGateAndReportsResult() {
+    val context = Context()
+    TelemetryPrefs.setCrashEnabled(context, true) // opted in
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "writeProbe") { label: String -> seen.add(label) }
+    try {
+        CrashlyticsFx.initProcess(context) // writesAllowed=true (consent ON)
+        // Sanity: an opted-in process may write Crashlytics data.
+        CrashlyticsFx.setKey("probe", "v")
+        check(seen.isNotEmpty()) { "precondition: opted-in process should be able to write before the toggle" }
+        seen.clear()
+
+        // Toggle OFF at RUNTIME. Stub lacks the toggle method -> SDK toggle cannot
+        // be applied: must be REPORTED (review #11) but the app gate must STILL
+        // flip so nothing more is emitted (review #9).
+        val applied = CrashlyticsFx.setCrashCollectionEnabled(false)
+        check(!applied) { "SDK toggle could not be applied on this stub; setCrashCollectionEnabled must report it (review #11)" }
+        // A running process that just opted out must emit NOTHING now.
+        CrashlyticsFx.setKey("probe2", "v")
+        CrashlyticsFx.record("p", RuntimeException("x"))
+        CrashlyticsFx.br("p")
+        check(seen.isEmpty()) { "write gate did not follow a RUNTIME opt-out (review #9): $seen" }
+
+        // Opt back IN at runtime: writes resume.
+        CrashlyticsFx.setCrashCollectionEnabled(true)
+        CrashlyticsFx.setKey("probe3", "v")
+        check(seen.size == 1) { "write gate did not re-enable on a RUNTIME opt-in (review #9): $seen" }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+        TelemetryPrefs.setCrashEnabled(context, true)
+    }
+    println("PASS crashRuntimeToggleSyncsWriteGateAndReportsResult: runtime consent change flips the write gate and reports the SDK-toggle result")
+}
+
+/** Review #10 (producer side): when a clear's atomic wipe FAILS, the engine must
+ *  still persist a DURABLE marker + a generation bump so sibling processes can
+ *  detect the consent change, and a later successful clear must clear the marker
+ *  (self-heal). Old code made the failure process-local, so a sibling could never
+ *  learn the wipe failed. Deterministic driver: clearWriteSeam returns false, so
+ *  the wipe cannot land; the fallback marker write (not seam-gated) must. */
+private fun engineMetricsFailedClearPersistsMarker() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+    EngineMetrics.recordInit(10L, true) // stale retained aggregate init_n=1 on disk
+    check(store.getLong("init_n", -1) == 1L) { "precondition: stale retained init_n=1 on disk" }
+    val genBefore = store.getLong("metrics_generation", 0L)
+
+    set(EngineMetrics, "clearWriteSeam") { false }
+    val cleared = try { EngineMetrics.clear(context) } finally { set(EngineMetrics, "clearWriteSeam", null) }
+    check(!cleared) { "clear() must still report the failed wipe (review #6)" }
+    check(store.getBoolean("metrics_clear_failed", false)) { "failed clear must persist a DURABLE marker so siblings detect it (review #10)" }
+    check(store.getLong("metrics_generation", -1) == genBefore + 1L) { "failed clear must still bump the shared generation (review #10)" }
+    check(store.getLong("init_n", -1) == 1L) { "the failed wipe leaves the stale aggregate on disk (unchanged)" }
+
+    // Self-heal: the NEXT unobstructed clear clears the marker.
+    check(EngineMetrics.clear(context)) { "an unobstructed clear should succeed" }
+    check(!store.getBoolean("metrics_clear_failed", true)) { "successful clear must clear the failed-clear marker (self-heal, review #10)" }
+
+    EngineMetrics.clear(context)
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS engineMetricsFailedClearPersistsMarker: failed clear persists durable marker + gen bump; a later clear self-heals")
+}
+
+/** Review #10 (consumer / cross-process side): a SIBLING process that never saw
+ *  the failed wipe must not resurrect retained data once the durable marker is
+ *  set. The stale aggregate stays on disk (the wipe failed), so alone the
+ *  sibling's snapshot still holds pre-opt-out counts; the marker must make it
+ *  (a) drop its own pre-opt-out delta on the generation bump, and (b) merge fresh
+ *  data and attach crash keys against a ZERO base under the marker. Deterministic
+ *  driver: write the durable artifacts a REAL failed clear (with the fix) leaves
+ *  on the shared store, standing in for a sibling engine process, then observe
+ *  this process. Fails on old code (no durable marker -> no zero base): after
+ *  re-enable this sibling merges init onto the stale 2 (3) and attaches the stale
+ *  count, both checked here. */
+private fun engineMetricsFailedClearCrossProcessNoResurrection() {
+    val context = Context()
+    val store = MirroredPreferences(context, "vvtts_engine_metrics")
+    TelemetryPrefs.setCrashEnabled(context, true)
+    EngineMetrics.clear(context)
+    EngineMetrics.init(context)
+    // This sibling (B) merged a retained aggregate (opted-in usage) -> init_n=2.
+    EngineMetrics.recordInit(10L, true)
+    EngineMetrics.recordInit(20L, true)
+    check(store.getLong("init_n", -1) == 2L) { "precondition: retained init_n=2 on disk" }
+    // B still holds a pre-opt-out delta UNMERGED (synth is throttle-gated).
+    EngineMetrics.recordSynth(10)
+    check(store.getLong("synth_n", -1) == 0L) { "precondition: synth delta should be outstanding/unmerged" }
+
+    // A's failed clear (with the fix) leaves these DURABLE artifacts on the shared
+    // store: a marker + generation bump, but the atomic wipe did NOT zero the
+    // aggregate. Write exactly those results the way a real A (engine process)
+    // would — the host runs one singleton per test, and calling clear() here would
+    // also zero B's in-memory arrays, defeating the cross-process setup.
+    val genBefore = store.getLong("metrics_generation", 0L)
+    store.update { map ->
+        map["metrics_clear_failed"] = true
+        map["metrics_generation"] = genBefore + 1L
+    }
+    check(store.getLong("init_n", -1) == 2L) { "the failed wipe leaves the stale aggregate on disk (unchanged)" }
+
+    // Re-enable (user toggled reporting back on in the other process).
+    TelemetryPrefs.setCrashEnabled(context, true)
+
+    // Observe every key ATTACH and (below) the disk after merges. With the marker
+    // folded in, B must present the retained aggregate as ZERO on the attach path.
+    val seen = mutableListOf<String>()
+    set(CrashlyticsFx, "writeProbe") { label: String -> seen.add(label) }
+    try {
+        // B's first post-enable rotate: generation changed -> DISCARD the pre-opt-out
+        // synth delta rather than fold it into the fresh window.
+        EngineMetrics.recordRotate()
+        check(store.getLong("synth_n", -1) == 0L) { "pre-opt-out delta leaked into fresh window after failed cross-process wipe (review #10)" }
+
+        // Second rotate (fresh activity, no outstanding pre-class delta): the marker
+        // must make B merge onto a ZERO base (not the stale 2) and ATTACH zero —
+        // the retained count must never resurrect on either path.
+        EngineMetrics.recordRotate()
+        check(store.getLong("rotate", -1) == 1L) { "fresh post-opt-out delta should merge after failed cross-process wipe (review #10)" }
+        check(seen.any { it == "key:m_init_n=0" }) { "stale retained aggregate attached after failed cross-process wipe (review #10): $seen" }
+        check(seen.none { it.startsWith("key:m_init_n=") && it != "key:m_init_n=0" }) { "retained init_n attached after failed cross-process wipe (review #10): $seen" }
+
+        // Fresh NEW init measurement after re-enable must merge onto ZERO (not
+        // 2+1). This is the write-side resurrection guard, and is what fails on
+        // old code (no durable marker -> clearWriteFailed stays false -> base =
+        // the stale 2 -> 3).
+        EngineMetrics.recordInit(100L, true)
+        check(store.getLong("init_n", -1) == 1L) { "pre-opt-out count resurrected on a fresh init after failed cross-process wipe (review #10): got ${store.getLong("init_n", -1)}" }
+    } finally {
+        set(CrashlyticsFx, "writeProbe", null)
+        set(CrashlyticsFx, "writesAllowed", true)
+    }
+
+    EngineMetrics.clear(context)
+    TelemetryPrefs.setCrashEnabled(context, true)
+    println("PASS engineMetricsFailedClearCrossProcessNoResurrection: sibling honors durable failed-clear marker — drops pre-opt-out delta, masks/zero-bases the retained aggregate, and never resurrects it")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist() }
+try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection() }
     finally { Context.root.deleteRecursively() }
 }

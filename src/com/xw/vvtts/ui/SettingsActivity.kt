@@ -267,9 +267,20 @@ class SettingsActivity : Activity() {
             val persisted = TelemetryPrefs.setCrashEnabled(this, on)
             if (persisted || on) {
                 // Write landed, or an enable that failed to persist is at worst the
-                // opt-out default (safe on next launch). Apply the SDK toggle.
-                CrashlyticsFx.setCrashCollectionEnabled(on)
+                // opt-out default (safe on next launch). Apply the SDK toggle; it
+                // reports whether the SDK actually toggled (review #11) so a switch
+                // can never read one state while the SDK is in the other.
+                val toggled = CrashlyticsFx.setCrashCollectionEnabled(on)
                 if (!on) EngineMetrics.clear(this)
+                if (!toggled) {
+                    // Review #11: the SDK's collection toggle did not take effect
+                    // (reflection missing/invocation failed on the real SDK). The
+                    // app-side write gate still fail-closes for an opt-out, but the
+                    // underlying SDK state may not match the switch — tell the user
+                    // and log it instead of letting the toggle silently no-op.
+                    Log.w("SettingsActivity", "Crashlytics collection toggle could not be applied (SDK drift); reporting may not match the switch")
+                    Toast.makeText(this, getString(R.string.crash_toggle_not_applied), Toast.LENGTH_SHORT).show()
+                }
             } else {
                 // OPT-OUT write FAILED (review #7): the choice is not durable and a
                 // later launch would read the old value and re-enable reporting.

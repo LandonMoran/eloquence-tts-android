@@ -37,11 +37,13 @@ object CrashlyticsFx {
     }
 
     // Write gate for the opt-out (review #5). Crash reporting is an OPT-OUT that
-    // defaults ON, so this starts true (writes allowed) and is narrowed to the
-    // consent value by [initProcess] in Application.onCreate. When a process is
-    // opted out it must emit NO keys, breadcrumbs, or exceptions — even if the
-    // SDK's disable toggle could not be applied (fail closed: do not populate
-    // Crashlytics for a user who asked to opt out).
+    // defaults ON, so this starts true (writes allowed) and is set to the consent
+    // value both by [initProcess] in Application.onCreate and immediately by
+    // [setCrashCollectionEnabled] whenever the user toggles it from Settings
+    // (review #9: a running process must stop emitting the moment consent changes).
+    // When a process is opted out it must emit NO keys, breadcrumbs, or
+    // exceptions — even if the SDK's disable toggle could not be applied (fail
+    // closed: do not populate Crashlytics for a user who asked to opt out).
     private var writesAllowed = true
 
     // Host-regression seams (always null in production): force the toggle path's
@@ -111,14 +113,30 @@ object CrashlyticsFx {
      * [initProcess]) so the choice is consistent, and immediately whenever the
      * user toggles it from Settings. The SDK persists the value across restarts.
      *
+     * Returns whether the SDK toggle actually took effect (review #11): callers
+     * surface a failed toggle so the switch never lies — it must not read OFF
+     * while the SDK is still live and could transmit. Regardless of that result
+     * the runtime write gate is set to [enabled] synchronously (review #9): a
+     * process initialized while opted-in stops emitting the moment consent
+     * changes, and fail-closes (an opt-out suppresses writes even if the SDK
+     * disable could not be applied).
+     *
      * LIMITATION (disclosed to the user): disabling stops NEW collection and the
      * transmission of crashes that occur after the change, as far as the SDK
      * permits, but reports already collected/queued on-device may still be
      * uploaded, and data already uploaded to Firebase cannot be deleted.
      */
-    fun setCrashCollectionEnabled(enabled: Boolean) {
-        val c = cs ?: return
-        setCollectionEnabled(c, enabled)
+    fun setCrashCollectionEnabled(enabled: Boolean): Boolean {
+        val c = cs
+        // If there is no SDK instance at all, collection cannot happen, so the
+        // toggle is trivially "applied" (nothing can transmit); still enforce the
+        // write gate below so an opted-out caller emits nothing.
+        val applied = if (c != null) setCollectionEnabled(c, enabled) else true
+        // Review #9: the gate must mirror consent immediately (not only at process
+        // init), and fail closed — disabling suppresses writes even when the SDK
+        // toggle could not be applied.
+        writesAllowed = enabled
+        return applied
     }
 
     /**
@@ -193,7 +211,7 @@ object CrashlyticsFx {
     fun setKey(name: String, value: String) {
         val c = cs ?: return
         if (!writesAllowed) return
-        writeProbe?.invoke("key:$name")
+        writeProbe?.invoke("key:$name=$value")
         try { c.setCustomKey(name, value) } catch (t: Throwable) { /* no-op */ }
     }
 

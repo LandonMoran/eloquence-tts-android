@@ -67,6 +67,12 @@ object EngineMetrics {
     // idle process still holding pre-opt-out deltas can detect and discard them
     // before they could merge after a later re-enable.
     private const val GEN_KEY = "metrics_generation"
+    // Durable marker written when a clear's atomic wipe could NOT persist
+    // (review #10). MirroredPreferences files are shared across both processes;
+    // this key makes a failed clear visible to every process reading the same
+    // store, so a sibling that never saw the wipe still discards its pre-clear
+    // deltas and treats the retained aggregate as zero instead of merging onto it.
+    private const val CLEAR_FAIL_KEY = "metrics_clear_failed"
 
     // Indexes into the counter arrays; must stay aligned with [KEYS].
     private const val I_INIT_N = 0
@@ -310,15 +316,26 @@ object EngineMetrics {
 
     /** The window presented to Crashlytics = shared on-disk aggregate plus this
      *  process's not-yet-merged deltas. synth_max is a max (not additive), so it
-     *  is taken as the larger of the two. */
+     *  is taken as the larger of the two.
+     *
+     *  When a clear could not wipe the aggregate durably, the retained shared
+     *  snapshot is UNTRUSTED: it predates the opt-out and was not zeroed, so it
+     *  must read as zero too, not just merge as zero. This is what stops a failed
+     *  wipe from resurrecting retained counts cross-process — [refreshShared]
+     *  folds the durable marker into [clearWriteFailed] (review #10), and here we
+     *  mask the shared base with it, exactly like [mergeDeltas] does. */
     private fun combined(): LongArray {
         val out = LongArray(N_COUNTERS)
         synchronized(lock) {
+            // null base => treat the shared aggregate as zero while a clear failure
+            // is latched (either this process's failed wipe or a sibling's, via the
+            // durable marker read in refreshShared). Only outstanding deltas show.
+            val base: LongArray? = if (clearWriteFailed) null else shared
             for (i in 0 until N_COUNTERS) {
                 out[i] = if (i == I_SYNTH_MAX)
-                    maxOf(shared[i], local[i])
+                    (base?.let { maxOf(shared[i], local[i]) }) ?: local[i]
                 else
-                    shared[i] + (local[i] - baseline[i])
+                    (base?.get(i) ?: 0L) + (local[i] - baseline[i])
             }
         }
         return out
@@ -412,19 +429,25 @@ object EngineMetrics {
     }
 
     /** Reload [shared] to mirror the on-disk aggregate (picks up the other
-     *  process's merges), and cache the current reset generation. */
+     *  process's merges), cache the current reset generation, and mirror any
+     *  durable failed-clear marker created by either process (review #10) into
+     *  the in-process guard that [mergeDeltas] consults, so a sibling process
+     *  that missed a failed wipe still refuses to resurrect retained counts. */
     private fun refreshShared() {
         val ctx = appContext ?: return
         val fresh = LongArray(N_COUNTERS)
         var generation = 0L
+        var clearFailed = false
         try {
             val p = MirroredPreferences(ctx, PREFS_NAME)
             for (i in 0 until N_COUNTERS) fresh[i] = p.getLong(KEYS[i], 0)
             generation = p.getLong(GEN_KEY, 0L)
+            clearFailed = p.getBoolean(CLEAR_FAIL_KEY, false)
         } catch (t: Throwable) { return }
         synchronized(lock) {
             System.arraycopy(fresh, 0, shared, 0, N_COUNTERS)
             cachedGeneration = generation
+            clearWriteFailed = clearFailed
         }
     }
 
@@ -432,8 +455,12 @@ object EngineMetrics {
      *  deltas and baselines). Called when the user turns crash reporting OFF in
      *  Settings, so retained diagnostics are not silently uploaded if the toggle
      *  is later re-enabled. Returns the durable wipe result (review #6): a failed
-     *  persistent wipe is flagged locally and the engine refuses to resurrect the
-     *  old aggregate on a later re-enable. */
+     *  persistent wipe is flagged and the engine refuses to resurrect the old
+     *  aggregate on a later re-enable. The failure is ALSO made durable and
+     *  cross-process visible (review #10), because a failed wipe leaves the shared
+     *  generation unchanged — without a visible marker a sibling process would
+     *  never detect the consent change and could merge its pre-opt-out deltas
+     *  onto the stale aggregate after a re-enable. */
     fun clear(context: Context): Boolean {
         synchronized(lock) {
             Arrays.fill(local, 0L)
@@ -446,13 +473,15 @@ object EngineMetrics {
         var ok = false
         try {
             // A clear MUST land: retry the atomic wipe. A failed wipe is an
-            // incomplete privacy operation (review #6).
+            // incomplete privacy operation (review #6). A successful wipe also
+            // clears any earlier failed-clear marker so the store self-heals.
             var attempt = 0
             while (!ok && attempt++ < 3) {
                 ok = clearWriteSeam?.invoke()
                     ?: MirroredPreferences(context, PREFS_NAME).update { map ->
                         for (key in KEYS) map[key] = 0L
                         map[GEN_KEY] = ((map[GEN_KEY] as? Long ?: 0L) + 1L)
+                        map[CLEAR_FAIL_KEY] = false
                     }
             }
         } catch (t: Throwable) { ok = false }
@@ -465,8 +494,35 @@ object EngineMetrics {
             // surface it locally (never via telemetry). New reports are already
             // halted because the caller disabled Crashlytics (review #4).
             clearWriteFailed = true
-            Log.w("EngineMetrics", "clear: persistent diagnostic wipe FAILED; treating retained aggregate as zero (review #6)")
+            persistClearFailed(context)
+            Log.w("EngineMetrics", "clear: persistent diagnostic wipe FAILED; treating retained aggregate as zero (review #6) and marking the failure durably (review #10)")
         }
         return ok
+    }
+
+    /** Durably record a failed clear so sibling processes see the consent change
+     *  even though the atomic wipe could not land (review #10). A failed wipe
+     *  leaves the on-disk aggregate AND its generation unchanged, so on its own a
+     *  sibling would never detect that an opt-out + clear happened and could fold
+     *  its still-held pre-opt-out deltas onto the stale aggregate after a
+     *  re-enable. Writing a durable marker (plus a generation bump) via a
+     *  separate, marker-only update — distinct from the aggregate purge that just
+     *  failed — makes the failure visible to every process reading the shared
+     *  store, which then discards pre-clear deltas and treats the retained
+     *  aggregate as zero (see [refreshShared] and [mergeDeltas]). This guard is
+     *  best-effort: if the marker write itself fails the store is unrecoverably
+     *  unhealthy, and telemetry must never break the app. */
+    private fun persistClearFailed(context: Context) {
+        var ok = false
+        var attempt = 0
+        while (!ok && attempt++ < 3) {
+            try {
+                ok = MirroredPreferences(context, PREFS_NAME).update { map ->
+                    map[CLEAR_FAIL_KEY] = true
+                    map[GEN_KEY] = ((map[GEN_KEY] as? Long ?: 0L) + 1L)
+                }
+            } catch (t: Throwable) { ok = false }
+        }
+        if (ok) refreshShared() // mirror the durable marker into this process's guard too
     }
 }

@@ -172,6 +172,7 @@ Tap to change the spoken language</string>
     <string name="analytics_note">Off by default. Shares app usage information (screens opened, app version, device type) to help improve features. Eloquence never includes the text it reads aloud, dictionary entries, or synthesized audio in these reports.</string>
     <string name="crash_row">Crash reporting</string>
     <string name="crash_opt_out_not_saved">Crash reporting is off for now, but the choice could not be saved. Please toggle it again.</string>
+    <string name="crash_toggle_not_applied">Crash reporting may not be updated yet. Please retry the toggle.</string>
     <string name="crash_note">On by default. Sends reports to fix failures, including crashes in the speech engine, with device and app information and timing — never the text being read aloud. Turning it off stops new reports and clears diagnostics saved on this device; reports already sent to the crash service cannot be deleted.</string>
     <string name="update_channel_name">Updates</string>
     <string name="update_channel_desc">Release notifications for Eloquence TTS</string>
