@@ -47,9 +47,16 @@ int eciSpeaking(ECIHand h) {
     return 0;
 }
 /** Inject index insertion success or failure. */
-int et_insertIndex(void *h, long index) { return fail_setup != 8; }
-/** Validate fixture text and optionally reject native input submission. */
-int et_addText(void *h, const char *text) { assert(strcmp(text, "hello") == 0); return fail_setup != 6; }
+int et_insertIndex(void *h, int32_t index) { return fail_setup != 8; }
+/** Validate fixture text, optionally land a stop after the text is in, and optionally reject input. */
+int et_addText(void *h, const char *text) {
+    assert(strcmp(text, "hello") == 0);
+    if (cancel_during_copy == 4) {
+        atomic_fetch_add(&active->stopGeneration, 1); /* a stop that lands once the text is in */
+        atomic_store(&waiting, 1);                    /* and an engine now busy voicing it */
+    }
+    return fail_setup != 6;
+}
 /** Deliver fixture PCM and optionally simulate failure or continued speaking for cancellation tests. */
 int et_synthesize(void *h) {
     if (fail_setup == 7) return 0;
@@ -155,6 +162,24 @@ static void test_resampler_equivalence(void) {
     }
 }
 
+/** A trimmed buffer is tapered by the trim; an untouched one is not. */
+static void test_trim_taper_ownership(void) {
+    const int rate = 44100;
+    const size_t pad = (size_t)(rate * 2 / 1000);
+    const size_t n = 8 * pad;
+    short *pcm = calloc(n, sizeof(*pcm));
+    assert(pcm && n >= 32);
+    for (size_t i = 2 * pad; i < 5 * pad; i++) pcm[i] = 4000;
+    size_t samples = n;
+    assert(vv_trim_silence(pcm, &samples, rate) == 1); /* trimmed: it tapered the edges */
+    assert(samples > 0 && pcm[0] == 0 && pcm[samples - 1] == 0);
+    /* All silence: nothing was trimmed, so nothing may claim a taper. */
+    short quiet[64] = {0};
+    size_t q = 64;
+    assert(vv_trim_silence(quiet, &q, rate) == 0 && q == 64);
+    free(pcm);
+}
+
 /** Do not trim when leading and trailing silence overlap after preserving edge padding. */
 static void test_trim_silence_overlapping_edges(void) {
     const size_t n = 22066;
@@ -189,6 +214,7 @@ static void test_silent_engine_output(void) {
 int main(void) {
     test_resampler_equivalence();
     test_trim_silence_overlapping_edges();
+    test_trim_taper_ownership();
     test_silent_engine_output();
     for (int i=0;i<256;i++) pcm_fixture[i] = i > 32 && i < 220 ? 4000 : 0;
     for (fail_setup=1;fail_setup<=3;fail_setup++) { int before=deletes; assert(INIT()==0); assert(deletes==before+1); }
@@ -210,6 +236,11 @@ int main(void) {
     cancel_during_copy=2;
     pthread_t thread; pthread_create(&thread,NULL,stop_thread,NULL);
     assert(SYNTH(h)==NULL); pthread_join(thread,NULL); assert(stop_calls>0);
+    cancel_during_copy=0;
+    // A stop that lands after the text is in must still stop and drain the engine:
+    // returning early would leave a cancelled utterance being voiced into s->pcm.
+    cancel_during_copy=4; before=stop_calls;
+    assert(SYNTH(h)==NULL); assert(stop_calls==before+1);
     cancel_during_copy=0;
     // Busy admission must reject a concurrent request without changing state.
     s->synthBusy=1; assert(SYNTH(h)==NULL); s->synthBusy=0;

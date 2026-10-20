@@ -35,8 +35,11 @@
 /* The engine's own text layer (upstream cli/probe.c path): the eci*
  * shims for add/synthesize are inert, so call the et_* entry points
  * directly.  The handle is opaque (OldInst* in the engine); void* is
- * ABI-compatible. */
-extern int et_insertIndex(void *h, long index);
+ * ABI-compatible.  The index is the engine's int32_t, not a `long':
+ * et_insertIndex is declared `int STDCALL et_insertIndex(OldInst *, int32_t)'
+ * in src/eci/api/eci_text.c, and on LP64 this declaration claimed eight
+ * bytes where the engine reads four. */
+extern int et_insertIndex(void *h, int32_t index);
 extern int et_addText(void *h, const char *text);
 extern int et_synthesize(void *h);
 
@@ -482,7 +485,17 @@ static jshortArray vv_synthesize(
            __android_log_print(ANDROID_LOG_ERROR, "VvTtsCore", "et_addText failed: refusing to synthesize stale/empty input (#135)");
            goto failed;
        }
-       if (vv_cancelled(s)) return NULL;
+       if (vv_cancelled(s)) {
+           /* The text is already in the engine's hands, and in immediate
+            * mode the engine starts voicing it as the queue is processed.
+            * Returning here without stopping would leave a cancelled
+            * utterance being synthesised into s->pcm with nobody waiting on
+            * it; the drain is what sends eciStop and proves quiet. */
+           operation = "vv_wait_till_done";
+           vv_wait_till_done(s);
+           return (atomic_load(&s->retired) || atomic_load(&s->failed))
+                  ? vv_empty_result(env) : NULL;
+       }
        struct timespec st1, st2, st3;
        clock_gettime(CLOCK_MONOTONIC, &st1);
        int synthRet = et_synthesize(s->hECI);
@@ -513,19 +526,23 @@ static jshortArray vv_synthesize(
         return vv_empty_result(env);
     }
     if (s->pcmLen == 0) return NULL;
-    /* Engine synthesized natively at s->outputHz (44,100 default): trim and
-     * edge-fade only -- no 4x sinc; the engine's own resampler already
-     * produced the Android playback rate (see vv_resample.h). */
-    vv_trim_silence(s->pcm, &s->pcmLen, s->outputHz);
     /* #313: an engine result that is fully silent is silent speech:the engine failed
      * to voice the text but returned a nonempty buffer.  Handing it to the framework
-     * would advance utterance progress with no audible output.  Collapse to failure. */
+     * would advance utterance progress with no audible output.  Collapse to failure.
+     * Ask this of what the ENGINE produced: the trims below taper the buffer's
+     * edges, and a taper must never turn voiced speech into a false silence. */
     if (!vv_has_audio(s->pcm, s->pcmLen)) {
 
         __android_log_print(ANDROID_LOG_ERROR, "SPD", "synth: engine returned silent PCM; treating as failure (#313)");
         return NULL;
     }
-    vv_fade_edges(s->pcm, s->pcmLen, s->outputHz);
+    /* Engine synthesized natively at s->outputHz (44,100 default): trim and
+     * edge-fade only -- no 4x sinc; the engine's own resampler already
+     * produced the Android playback rate (see vv_resample.h).  The trim
+     * tapers the edges it keeps, so only a buffer it left alone needs the
+     * separate fade: tapering the same window twice squares the ramp. */
+    if (!vv_trim_silence(s->pcm, &s->pcmLen, s->outputHz))
+        vv_fade_edges(s->pcm, s->pcmLen, s->outputHz);
     size_t outLen = s->pcmLen;
     operation = "NewShortArray";
     jshortArray out = (*env)->NewShortArray(env, (jsize)outLen);

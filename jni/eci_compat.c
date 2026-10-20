@@ -31,8 +31,12 @@ extern int ev_setOutputBuffer(OldInst *h, int32_t samples, void *buffer);
 
 extern int32_t api_new(void **out, int32_t lang);
 extern int32_t api_delete(void *self);
-extern int32_t api_add_text(void *self, void *text, int32_t b, int32_t c, int32_t d, int32_t f);
-extern int32_t api_synthesize(void *self);
+/* The engine's own text entries: these are what "text in" and "say it"
+ * amount to, filters and pending parameters included (see src/eci/api/
+ * eci_text.c).  api_add_text/api_synthesize underneath are the newer
+ * instance calls, which know nothing about the old instance's queue. */
+extern int et_addText(OldInst *h, const char *text);
+extern int et_synthesize(OldInst *h);
 
 extern int es_delete(OldInst *h);
 extern int vc_getVoiceParam(OldInst *h, int voiceno, int which);
@@ -101,14 +105,26 @@ int vv_register_callback(ECIHand handle, ECICallback callback, void *data)
     return OI_CALLBACK(h) == (void *)callback && OI_CBDATA(h) == data;
 }
 
+/* Text in, on the published contract: one when the engine took it, nought
+ * when it did not.  This used to go straight to api_add_text with a length of
+ * nought, and nought is a length the filter layer stops on immediately
+ * (`(p - text) < len' in tf_globalFilters), so every call queued no text and
+ * answered success.  et_addText is the whole of the job: it converts the
+ * encoding, runs the filters, flushes the pending voice/environment
+ * parameters and hands the text on. */
 ECIAPI int ECICALL eciAddText(ECIHand handle, const void *text)
 {
-    return (int)api_add_text(OI_NEW((OldInst *)handle), (void *)text, 0, 0, 0, 0);
+    if (!handle || !text) return 0;
+    return et_addText((OldInst *)handle, (const char *)text) ? 1 : 0;
 }
 
+/* And say it.  api_synthesize answers nought when it worked and a negative
+ * refusal otherwise, which is the opposite of the published nought/nonzero;
+ * et_synthesize speaks the manual queue as well and already answers 1/0. */
 ECIAPI int ECICALL eciSynthesize(ECIHand handle)
 {
-    return (int)api_synthesize(OI_NEW((OldInst *)handle));
+    if (!handle) return 0;
+    return et_synthesize((OldInst *)handle) ? 1 : 0;
 }
 
 ECIAPI int ECICALL eciSpeaking(ECIHand handle)

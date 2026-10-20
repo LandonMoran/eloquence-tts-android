@@ -42,7 +42,14 @@ public final class ElqmBridge {
             if (offLen == null) {
                 return null;
             }
-            byte[] section = inflate(p, (int) offLen[0], (int) offLen[1]);
+            // Validate the section against the pack in 64-bit terms before the
+            // narrowing casts: a damaged index must fall back, never wrap into a
+            // negative offset and read whatever the array happens to precede.
+            long off = offLen[0], len = offLen[1];
+            if (off < 0 || len <= 0 || off > p.length || len > p.length - off) {
+                return null;
+            }
+            byte[] section = inflate(p, (int) off, (int) len);
             String json = reconstruct(section, order);
             if (json == null) {
                 return null;
@@ -109,12 +116,24 @@ public final class ElqmBridge {
         }
         int pos = 8; // magic(4) + version(1) + flags(1) + langCount(2)
         int nlangs = readU16(p, 6);
+        int want = s2 - s1;
         for (int i = 0; i < nlangs; i++) {
+            if (pos >= p.length) {
+                return null;
+            }
             int clen = p[pos] & 0xFF;
-            if (regionMatches(p, pos + 1, path, s1, s2 - s1)) {
+            int entryEnd = pos + 1 + clen + 16;
+            if (entryEnd > p.length) {
+                return null;
+            }
+            // The stored code has to be the same LENGTH as the one asked for:
+            // language codes share prefixes ("en" / "eng"), so a bare
+            // regionMatches let a shorter code match a longer one and answer
+            // with that other language's section.
+            if (clen == want && regionMatches(p, pos + 1, path, s1, want)) {
                 return new long[] { readU64(p, pos + 1 + clen), readU64(p, pos + 1 + clen + 8) };
             }
-            pos += 1 + clen + 16;
+            pos = entryEnd;
         }
         return null;
     }
