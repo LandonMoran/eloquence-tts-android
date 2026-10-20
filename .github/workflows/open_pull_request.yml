@@ -6,9 +6,6 @@ on:
       - Dev
   workflow_dispatch:
 
-env:
-  MESSAGE: Merge branch `${{ github.head_ref || github.ref_name }}` to `main`
-
 jobs:
   pull-request:
     name: Open pull request
@@ -21,9 +18,9 @@ jobs:
         uses: repo-sync/pull-request@v2
         with:
           destination_branch: main
-          pr_title: 'chore: ${{ env.MESSAGE }}'
+          pr_title: 'chore: Merge branch Dev to main'
           pr_body: |
-            This pull request will ${{ env.MESSAGE }}.
+            This pull request will merge `Dev` to `main`.
 
             ## Before merging this PR
             - [ ] Release checks pass (build, emulator smoke)
