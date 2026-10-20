@@ -62,6 +62,10 @@ jobs:
           bash tests/vendor-openevv-test.sh
           python3 tests/contracts.py
           python3 tools/prepare_assets.py --verify
+          # Exercises the real FCM sender (JWT signing + v1 send) against a local
+          # server; the release path depends on it, so it must not go untested.
+          pip install --quiet cryptography
+          python3 .github/scripts/test_send_fcm.py
 
       # Ephemeral CI identity; release signing is isolated in release.yml.
       - name: Prepare ephemeral CI signing key

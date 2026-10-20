@@ -47,10 +47,13 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
         val version = data["version"] ?: return
         // Defense-in-depth against a drifted dev-topic subscription: if the
         // user has prereleases off, drop it even if one somehow arrived.
-        val from = message.from ?: ""
-        val isPrerelease = from.endsWith("_dev")
+        // The flag comes from the payload, not from RemoteMessage.from: `from` is the
+        // sender ID (or a "/topics/"-prefixed name, depending on the send path), so a
+        // suffix test on it silently never fired. The sender states which channel it
+        // published to in data["prerelease"] (release.yml -> send_fcm.py).
+        val isPrerelease = data["prerelease"] == "true"
         if (isPrerelease && !UpdateNotifPrefs.usesPrereleases(applicationContext)) return
-        CrashlyticsFx.br("FCM release v$version ($from)")
+        CrashlyticsFx.br("FCM release v$version (prerelease=$isPrerelease from=${message.from})")
         postUpdateNotification(version)
     }
 

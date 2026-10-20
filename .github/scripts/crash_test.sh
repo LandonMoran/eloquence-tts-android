@@ -61,7 +61,9 @@ if [ -n "${APP_PID:-}" ]; then
 	extract_elq native-stacks-a.txt > /tmp/elq-a.txt || true
 	extract_elq native-stacks-b.txt > /tmp/elq-b.txt || true
 	if [ -s /tmp/elq-a.txt ] && [ -s /tmp/elq-b.txt ]; then
-		if diff -u /tmp/elq-a.txt /tmp/elq-b.txt > /tmp/elq-diff.txt 2>&1; then
+		# Written beside the snapshots (not /tmp) so the workflow's artifact upload
+		# carries the verdict evidence with the dumps it came from.
+		if diff -u /tmp/elq-a.txt /tmp/elq-b.txt > elq-diff.txt 2>&1; then
 			echo "ELQ_VERDICT:WEDGED_FROZEN_FRAMES (identical native frames both snapshots = non-terminating loop)"
 		else
 			echo "ELQ_VERDICT:CHANGING_FRAMES (elq-synth advanced between snapshots = slow-but-progressing)"
