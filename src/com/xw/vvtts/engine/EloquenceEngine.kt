@@ -191,13 +191,12 @@ class EloquenceEngine(context: Context) {
         // Language modules actually linked in this build (matches build_native.sh LANGS)
         val SHIPPED_DIALECTS: Set<Long> = VoiceRegistry.voices.map { it.dialect.toLong() }.toSet()
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
-        // Engine's real output rate:  the enu library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
-                const val ENGINE_SAMPLE_RATE = 11025
-                // Playback rate:   the JNI layer resamples the engine's 11.025k PCM
-                // natively to  44.1k (4x polyphase windowed-sinc FIR( before returning it,
-                // so we tell Android AudioTrack the truth here.  ENGINE_SAMPLE_RATE stays untouched.
-
-                const val SAMPLE_RATE = 44100
+        // Output rate the bridge hands back and the service advertises to the
+        // Android framework. The engine produces this rate itself -- every session
+        // is opened with eciSampleRate code 5 (see ensureHandle/synthesizeCore and
+        // jni/README.md) -- so the bridge only trims silence and tapers the edges;
+        // there is no Kotlin/JNI resample step to keep in sync with it.
+        const val SAMPLE_RATE = 44100
 
 
         /** Dialect -> text encoding (CJK uses its own encodings; Western uses windows-1252) */
