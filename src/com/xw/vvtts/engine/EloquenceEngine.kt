@@ -487,23 +487,31 @@ class EloquenceEngine(context: Context) {
         worker.executor.shutdown()
 
 
-        // Drain/cancel in-flight work BEFORE closing the native handles: a worker
-        // still inside synthesizeCore would otherwise hit a native session that
-        // shutdown() just freed (use-after-free racing the closed EP pipe),and
-        // submit() during teardown would throw. A hung worker gets shutdownNow()
-        // after a short grant.
+        // Drain in-flight work BEFORE closing the native handles: a worker still
+        // inside synthesizeCore would otherwise hit a native session that
+        // shutdown() just freed (use-after-free racing the closed EP pipe), and
+        // submit() during teardown would throw.  A worker that outlasts the grant
+        // is not interrupted: it finishes the native call it is in and closes its
+        // handles then (see below).
 
 
 
         try {
             if (!worker.executor.awaitTermination(150, TimeUnit.MILLISECONDS)) {
 
-                worker.executor.shutdownNow()
+                // shutdownNow() cannot stop a native call that is already running, and
+                // it discards the closeHandles() task queued above, so a worker whose
+                // in-flight task was not a synthesis would never free its native
+                // sessions. Let the executor drain instead: it already refuses new
+                // work, and both the in-flight task's tail and the queued cleanup
+                // close the handles only once the owning thread is free.
+                Log.w(TAG, "TTS_TEARDOWN: native call in flight; handles close on return")
                 worker.executor.awaitTermination(100, TimeUnit.MILLISECONDS)
             }
         } catch (ie: InterruptedException) {
             Thread.currentThread().interrupt()
-            worker.executor.shutdownNow()
+            // Interrupting does not unpick the queued cleanup either, so leave the
+            // executor draining for the same reason as above.
         }
         retireExecutor.shutdown()
         synthWorker = SynthWorker()

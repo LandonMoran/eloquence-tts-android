@@ -117,25 +117,27 @@ void vv_fade_edges(short *pcm, size_t n, int rate_hz) {
  * Trim edge samples below magnitude 700 in place and update *pn. Scan at most
  * 2 s per edge, retaining and tapering 2 ms of padding at rate_hz (11,025 Hz
  * when nonpositive). Leave short buffers and near-empty results unchanged.
+ * Returns 1 when it tapered the kept edges and 0 when the buffer is untouched,
+ * so a caller can avoid tapering the same window a second time.
  */
-void vv_trim_silence(short *pcm, size_t *pn, int rate_hz) {
+int vv_trim_silence(short *pcm, size_t *pn, int rate_hz) {
     size_t n = *pn;
-    if (n < 32) return;
+    if (n < 32) return 0;
     const int TH = 700;
     unsigned rate_u = rate_hz > 0 ? (unsigned)rate_hz : 11025u;
     size_t cap = (n < 2 * (size_t)rate_u) ? n : (2 * (size_t)rate_u);
     size_t lead = 0;
     while (lead < n && lead < cap && pcm[lead] > -TH && pcm[lead] < TH) lead++;
-    if (n - lead < 16) return;
+    if (n - lead < 16) return 0;
     size_t tail = 0;
     while (tail < n - 1 && tail < cap && pcm[n - 1 - tail] > -TH && pcm[n - 1 - tail] < TH) tail++;
     /* Keep ~2 ms of natural padding, then taper ~2 ms to zero at both ends. */
     const size_t pad = (size_t)((rate_u * 2u) / 1000u);
     lead = lead > pad ? lead - pad : 0;
     tail = tail > pad ? tail - pad : 0;
-    if (lead > n || tail > n - lead) return;
+    if (lead > n || tail > n - lead) return 0;
     size_t keep = n - lead - tail;
-    if (keep < 16) return;
+    if (keep < 16) return 0;
     memmove(pcm, pcm + lead, keep * sizeof(short));
     size_t fade = keep / 2 < pad ? keep / 2 : pad;
     for (size_t k = 0; k < fade; k++) {
@@ -143,6 +145,9 @@ void vv_trim_silence(short *pcm, size_t *pn, int rate_hz) {
         pcm[keep - 1 - k] = (short)((int)pcm[keep - 1 - k] * (int)k / (int)fade);
     }
     *pn = keep;
+    /* A zero-length ramp (pad == 0, i.e. a rate under 500 Hz) tapered
+     * nothing, so the caller still owns the edge fade. */
+    return fade > 0;
 }
 
 /** Initialize the shared coefficient table once, safely across threads. */

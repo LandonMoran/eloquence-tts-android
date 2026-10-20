@@ -1,9 +1,14 @@
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "../../jni/eci_compat.c"
-static int stop_result, callback_refused;
+static int stop_result, callback_refused, add_result, synth_result, added;
 /** Return the configured stop result for compatibility-wrapper tests. */
 int eo_stop(OldInst *h) { return stop_result; }
+/** Count text handed to the engine and return the configured result. */
+int et_addText(OldInst *h, const char *text) { assert(strcmp(text, "hello") == 0); added++; return add_result; }
+/** Return the configured synthesis result. */
+int et_synthesize(OldInst *h) { return synth_result; }
 /** Upstream es_delete always releases; the wrapper returns NULL (deleted) after it. */
 int es_delete(OldInst *h) { (void)h; return 0; }
 /** Store callback fields unless the fixture is configured to refuse registration. */
@@ -24,5 +29,14 @@ int main(void) {
     assert(eciGetVoiceParam(&h,16,2)==162);
     assert(eciCopyVoice(&h,1,16)==17);
     assert(eciCopyVoice(&h,1,8)==0);
-    puts("PASS compatibility: stop/delete results, callback registration, canonical voice delegation");
+    /* Text in and say it: the published contract is nonzero for success, and the
+     * text has to reach the engine (a zero length reaches nothing at all). */
+    add_result=1; synth_result=1;
+    assert(eciAddText(&h,"hello")==1 && added==1);
+    assert(eciSynthesize(&h)==1);
+    add_result=0; synth_result=0;
+    assert(eciAddText(&h,"hello")==0 && added==2);
+    assert(eciSynthesize(&h)==0);
+    assert(eciAddText(NULL,"hello")==0 && eciAddText(&h,NULL)==0 && added==2);
+    puts("PASS compatibility: stop/delete results, callback registration, canonical voice delegation, text-in contracts");
 }

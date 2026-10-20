@@ -42,8 +42,10 @@ int vv_resample_4x(const short *in, size_t in_n, short **out, size_t *outn);
 /** Taper both PCM edges in place toward zero over at most 2 ms at rate_hz. */
 void vv_fade_edges(short *pcm, size_t n, int rate_hz);
 
-/** Trim edge silence in place and update *pn (~2 s scan, ~2 ms padding at rate_hz). */
-void vv_trim_silence(short *pcm, size_t *pn, int rate_hz);
+/** Trim edge silence in place and update *pn (~2 s scan, ~2 ms padding at rate_hz).
+ * Returns 1 when it tapered the kept edges, 0 when the buffer is unchanged, so
+ * callers that always want a tapered start/end only fade when this answered 0. */
+int vv_trim_silence(short *pcm, size_t *pn, int rate_hz);
 
 /** Initialize the shared coefficient table once, safely across threads. */
 void vv_resample_build(void);
