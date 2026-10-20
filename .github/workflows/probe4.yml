@@ -1,0 +1,17 @@
+name: Probe4
+
+on: [workflow_dispatch]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Open PR
+        uses: repo-sync/pull-request@v2
+        with:
+          destination_branch: main
+          pr_title: 'probe4'
+          pr_body: 'probe'
+          pr_draft: true
