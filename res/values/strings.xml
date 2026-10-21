@@ -159,6 +159,8 @@ Tap to change the spoken language</string>
     <string name="download_install">Download and Install</string>
     <string name="update_downloading_fmt">Downloading update: %1$d%%</string>
     <string name="update_failed_fmt">Update failed: %1$s</string>
+    <string name="update_settings_not_saved">Update notification settings could not be saved. Your previous choices are still active.</string>
+    <string name="update_settings_apply_failed">Update notification settings could not be applied. Reopen Settings to retry.</string>
     <string name="update_install_ok">Update installed</string>
     <string name="update_open_release">Open release page</string>
 <string name="update_notify_toggle">Notify when updates available</string>

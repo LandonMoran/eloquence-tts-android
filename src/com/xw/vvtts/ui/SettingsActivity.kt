@@ -79,6 +79,8 @@ class SettingsActivity : Activity() {
     private val REQ_POST_NOTIFICATIONS = 704
     /** Switch awaiting the POST_NOTIFICATIONS permission result, null when idle. */
     private var pendingNotifyToggle: Switch? = null
+    /** Avoid re-entering update-preference callbacks when reverting a failed save. */
+    private var suppressUpdateToggleCallbacks = false
     /** Guards the launch auto-update dialog so it surfaces at most once per process. */
     @Volatile private var launchUpdateDialogShown = false
     /** Initializes settings and the shared engine, builds the settings screen and schedules requested autotests. */
@@ -243,14 +245,15 @@ class SettingsActivity : Activity() {
             mainContainer,
             getString(R.string.update_notify_toggle),
             UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
-        ) { on -> onUpdateNotifyToggleChanged(on, updateNotifySwitch) }
-        addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
-            UpdateNotifPrefs.usesPrereleases(this)) { on ->
-            UpdateNotifPrefs.get(this).edit { e ->
-                e.putBoolean(UpdateNotifPrefs.USE_PRERELEASES, on)
-            }
-            syncFcmTopics(this)
+        ) { on ->
+            if (!suppressUpdateToggleCallbacks) onUpdateNotifyToggleChanged(on, updateNotifySwitch)
         }
+        var prereleaseSwitch: Switch? = null
+        prereleaseSwitch = addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
+            UpdateNotifPrefs.usesPrereleases(this)) { on ->
+            onUpdatePrereleasesToggleChanged(on, prereleaseSwitch)
+        }
+
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
@@ -1057,8 +1060,14 @@ maybeShowLaunchUpdateDialog()
     private fun finalizeUpdateNotify(on: Boolean, sw: Switch?) {
         try {
             // FCM mirror is the master flag driving topic subscriptions.
-            UpdateNotifPrefs.get(this).edit { e ->
+            val saved = UpdateNotifPrefs.get(this).edit { e ->
                 e.putBoolean(UpdateNotifPrefs.NOTIFICATIONS_ENABLED, on)
+            }
+            if (!saved) {
+                val current = UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
+                setUpdateToggleSilently(sw, current)
+                Toast.makeText(this, R.string.update_settings_not_saved, Toast.LENGTH_LONG).show()
+                return
             }
             if (on) {
                 maybeRequestNotifPermission()
@@ -1080,8 +1089,44 @@ maybeShowLaunchUpdateDialog()
             }
         } catch (t: Throwable) {
             Log.e("SettingsActivity", "failed to update background notifications", t)
-            sw?.isChecked = !on
+            val current = try {
+                UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
+            } catch (_: Throwable) {
+                !on
+            }
+            setUpdateToggleSilently(sw, current)
+            Toast.makeText(this, R.string.update_settings_apply_failed, Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** Persist prerelease preference before syncing topics; revert the UI on a failed save. */
+    private fun onUpdatePrereleasesToggleChanged(on: Boolean, sw: Switch?) {
+        if (suppressUpdateToggleCallbacks) return
+        val saved = try {
+            UpdateNotifPrefs.get(this).edit { e -> e.putBoolean(UpdateNotifPrefs.USE_PRERELEASES, on) }
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "failed to update prerelease preference", t)
+            false
+        }
+        if (!saved) {
+            setUpdateToggleSilently(sw, UpdateNotifPrefs.usesPrereleases(this))
+            Toast.makeText(this, R.string.update_settings_not_saved, Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            syncFcmTopics(this)
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "failed to synchronize prerelease notifications", t)
+            Toast.makeText(this, R.string.update_settings_apply_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Restore a failed update switch save without recursively invoking its listener. */
+    private fun setUpdateToggleSilently(sw: Switch?, checked: Boolean) {
+        if (sw == null || sw.isChecked == checked) return
+        val wasSuppressing = suppressUpdateToggleCallbacks
+        suppressUpdateToggleCallbacks = true
+        try { sw.isChecked = checked } finally { suppressUpdateToggleCallbacks = wasSuppressing }
     }
 
     /**

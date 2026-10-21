@@ -45,8 +45,9 @@ Android's `TextToSpeechService` in `src/` selects and segments text, applies
 normalization and voice settings, then serializes synthesis work through
 `EloquenceEngine`. The engine calls the JNI bridge in `jni/`, which statically
 links the C `openevv` engine and exposes a single `libvvtts_core.so` per ABI.
-The bridge returns signed 16-bit mono PCM. Native engine audio is 11,025 Hz;
-the bridge resamples it to 44,100 Hz for Android playback.
+The bridge returns signed 16-bit mono PCM at 44,100 Hz. The engine's own
+converter produces that output rate; the bridge trims silence and tapers the
+PCM edges before Android playback.
 
 All advertised locales synthesize from the native engine submodule at
 `native/openevv`. The bridge's lifecycle, cancellation, size, and

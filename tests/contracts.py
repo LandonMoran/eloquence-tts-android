@@ -169,6 +169,22 @@ class Contracts(unittest.TestCase):
         self.assertIn('android:protectionLevel="signature"',manifest)
         self.assertNotIn('android.permission.BIND_TEXT_TO_SPEECH',manifest)
 
+    def test_update_notification_saves_are_checked(self):
+        """Prevent the UI from claiming an update preference saved when mirrored storage rejected it."""
+        activity = (ROOT/'src/com/xw/vvtts/ui/SettingsActivity.kt').read_text()
+        handler_start = activity.index('    private fun finalizeUpdateNotify(')
+        handler_end = activity.index('    /**', handler_start)
+        handler = activity[handler_start:handler_end]
+        self.assertRegex(handler, r'val saved = UpdateNotifPrefs\.get\(this\)\.edit')
+        self.assertIn('if (!saved)', handler)
+        self.assertIn('setUpdateToggleSilently(sw, current)', handler)
+        self.assertIn('R.string.update_settings_not_saved', handler)
+        prerelease_start = activity.index('    private fun onUpdatePrereleasesToggleChanged(')
+        prerelease_end = activity.index('    /**', prerelease_start)
+        prerelease = activity[prerelease_start:prerelease_end]
+        self.assertIn('if (!saved)', prerelease)
+        self.assertIn('setUpdateToggleSilently(sw, UpdateNotifPrefs.usesPrereleases(this))', prerelease)
+
     def test_synthesis_timing_chain_invariant(self):
         """Guard the stall-fix constants so a regression cannot re-land the two failure
         signatures: a per-call hang watchdog that does not outlast the retire window

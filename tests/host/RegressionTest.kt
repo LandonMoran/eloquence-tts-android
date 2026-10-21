@@ -131,6 +131,23 @@ private fun dictionary() {
 }
 
 /** Check version ordering, shipped voice lookup, pitch mapping, and synthesis budgeting. */
+private fun limitedUpdateBody() {
+    val type = ElqUpdateChecker::class.java.declaredClasses.first { it.simpleName == "LimitedInputStream" }
+    val constructor = type.declaredConstructors.single().apply { isAccessible = true }
+    val exactBytes = "abc".byteInputStream()
+    val exact = constructor.newInstance(exactBytes, 3L) as java.io.InputStream
+    check(exact.readBytes().contentEquals("abc".toByteArray())) { "body exactly at limit must be accepted" }
+    val exactSingleByte = constructor.newInstance("a".byteInputStream(), 1L) as java.io.InputStream
+    check(exactSingleByte.read() == 'a'.code && exactSingleByte.read() == -1) { "single-byte reads at limit must observe EOF" }
+    val oversizedBytes = "abcd".byteInputStream()
+    val oversized = constructor.newInstance(oversizedBytes, 3L) as java.io.InputStream
+    checkFails { oversized.readBytes() }
+    check(oversizedBytes.read() == -1) { "overflow probe must consume no more than the first excess byte" }
+    val empty = constructor.newInstance(ByteArray(0).inputStream(), 0L) as java.io.InputStream
+    check(empty.read() == -1) { "empty body at zero-byte limit must be accepted" }
+    println("PASS updater body bounds: exact-limit responses accepted; oversized responses rejected")
+}
+
 private fun versionsAndVoices() {
     check(ElqUpdateChecker.parseSemver("1.10.0")!! > ElqUpdateChecker.parseSemver("1.9.9")!!)
     check(ElqUpdateChecker.parseSemver("v1.0") == ElqUpdateChecker.parseSemver("V1.0.0"))
@@ -430,6 +447,48 @@ private fun warmupSerializationAndDestroy() {
 }
 
 /** Verify localized samples, Android result codes, and rejection of unsupported voice requests. */
+private fun updateNotificationSaveFailure() {
+    val context = Context()
+    val prefs = com.xw.vvtts.update.UpdateNotifPrefs.get(context)
+    check(prefs.edit {
+        it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, true)
+            .putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.USE_PRERELEASES, false)
+    })
+    val activity = SettingsActivity()
+    val config = VoiceConfig(context)
+    set(activity, "voiceConfig", config)
+    set(activity, "pendingNotifyToggle", null)
+    val updateSwitch = android.widget.Switch(activity).apply { isChecked = true }
+    val finalize = activity.javaClass.getDeclaredMethod(
+        "finalizeUpdateNotify", Boolean::class.javaPrimitiveType, android.widget.Switch::class.java
+    ).apply { isAccessible = true }
+    val updateStoreFile = File(Context.root, "ce/shared_prefs/${com.xw.vvtts.update.UpdateNotifPrefs.PREFS_NAME}.xml")
+    android.system.Os.failRenameContaining = updateStoreFile.name
+    try {
+        updateSwitch.isChecked = false
+        finalize.invoke(activity, false, updateSwitch)
+        check(updateSwitch.isChecked) { "failed notification opt-out must restore the previous enabled state" }
+        check(com.xw.vvtts.update.UpdateNotifPrefs.isEnabled(context)) { "failed notification opt-out changed durable preference" }
+    } finally {
+        android.system.Os.failRenameContaining = null
+    }
+
+    val prereleaseSwitch = android.widget.Switch(activity).apply { isChecked = false }
+    val changePrerelease = activity.javaClass.getDeclaredMethod(
+        "onUpdatePrereleasesToggleChanged", Boolean::class.javaPrimitiveType, android.widget.Switch::class.java
+    ).apply { isAccessible = true }
+    android.system.Os.failRenameContaining = updateStoreFile.name
+    try {
+        changePrerelease.invoke(activity, true, prereleaseSwitch)
+        check(!prereleaseSwitch.isChecked) { "failed prerelease save must restore the previous switch state" }
+        check(!com.xw.vvtts.update.UpdateNotifPrefs.usesPrereleases(context)) { "failed prerelease save changed durable preference" }
+    } finally {
+        android.system.Os.failRenameContaining = null
+    }
+
+    println("PASS update notification persistence: failed saves preserve durable choices and revert switches")
+}
+
 private fun sampleActivity() {
     for ((language,country) in listOf("deu" to "DEU", "jpn" to "JPN", "fra" to "FRA", "spa" to "MEX")) {
         val activity=com.xw.vvtts.ui.GetSampleText()
@@ -1564,6 +1623,6 @@ private fun crashlyticsColdStartFailClosed() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }
