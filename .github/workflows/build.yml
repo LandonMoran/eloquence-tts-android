@@ -87,10 +87,11 @@ jobs:
           gradle_tasks=(
             :assembleArm64Release :assembleArmv7Release :assembleUnivRelease :assembleX64Release
           )
-          # Upload symbols only for release tags, not branch/PR builds.
+          # Upload symbols for PR builds so test crashes can be symbolicated,
+          # and for release tags. Ordinary branch builds remain upload-free.
           # Each upload task depends on buildNative and shares that build with
           # the assembly tasks in this invocation.
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_REF" == refs/tags/v* ]]; then
             task_listing="$RUNNER_TEMP/gradle-tasks.txt"
             ./gradlew --no-daemon --no-build-cache --console=plain tasks --all > "$task_listing"
             for variant in Arm64Release Armv7Release UnivRelease; do
