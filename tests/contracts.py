@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 import sys
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 from types import SimpleNamespace
 from pathlib import Path
@@ -194,7 +195,18 @@ class Contracts(unittest.TestCase):
         permission=re.search(r'INSTALL_STATUS_PERMISSION = "([^"]+)"',installer)[1]
         self.assertIn(f'android:name="{permission}"',manifest)
         self.assertIn('android:protectionLevel="signature"',manifest)
-        self.assertNotIn('android.permission.BIND_TEXT_TO_SPEECH',manifest)
+        root = ET.fromstring(manifest)
+        ns = '{http://schemas.android.com/apk/res/android}'
+        app = root.find('application')
+        tts = next(service for service in app.findall('service')
+                   if service.get(ns + 'name') == '.services.VvTtsService')
+        self.assertEqual(tts.get(ns + 'permission'), 'android.permission.BIND_TEXT_SERVICE')
+        self.assertEqual(tts.get(ns + 'exported'), 'true')
+        self.assertTrue(any(action.get(ns + 'name') == 'android.intent.action.TTS_SERVICE'
+                            for action in tts.findall('./intent-filter/action')))
+        self.assertTrue(any(meta.get(ns + 'name') == 'android.speech.tts'
+                            and meta.get(ns + 'resource') == '@xml/tts_engine'
+                            for meta in tts.findall('meta-data')))
 
     def test_update_notification_opt_out_is_checked_at_delivery(self):
         """The delayed local and immediate FCM delivery paths must honor the latest master opt-out."""

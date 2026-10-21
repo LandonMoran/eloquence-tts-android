@@ -60,6 +60,7 @@
             android:name=".services.VvTtsService"
             android:label="@string/app_name"
             android:exported="true"
+            android:permission="android.permission.BIND_TEXT_SERVICE"
             android:process=":tts"
             android:stopWithTask="false"
             android:directBootAware="true">
