@@ -169,6 +169,14 @@ class Contracts(unittest.TestCase):
         self.assertIn('android:protectionLevel="signature"',manifest)
         self.assertNotIn('android.permission.BIND_TEXT_TO_SPEECH',manifest)
 
+    def test_update_notification_opt_out_is_checked_at_delivery(self):
+        """The delayed local and immediate FCM delivery paths must honor the latest master opt-out."""
+        scheduler = (ROOT/'src/com/xw/vvtts/update/UpdateNotificationScheduler.kt').read_text()
+        self.assertIn('UpdateNotifPrefs.isEnabled(context) && permissionGranted', scheduler)
+        self.assertIn('if (!shouldPostNotification(context, permissionGranted)) return', scheduler)
+        receiver = (ROOT/'src/com/xw/vvtts/update/FcmUpdateReceiver.kt').read_text()
+        self.assertRegex(receiver, r'if \(!UpdateNotifPrefs\.isEnabled\(applicationContext\)\) return\s+manager\(\)\?\.notify\(id, builder\.build\(\)\)')
+
     def test_update_notification_saves_are_checked(self):
         """Prevent the UI from claiming an update preference saved when mirrored storage rejected it."""
         activity = (ROOT/'src/com/xw/vvtts/ui/SettingsActivity.kt').read_text()

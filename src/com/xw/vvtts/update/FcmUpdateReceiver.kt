@@ -79,6 +79,8 @@ class FcmUpdateReceiver : FirebaseMessagingService() {
 
         val id = NOTIFICATION_ID
         try {
+            // The preference can change while this callback is preparing the notification.
+            if (!UpdateNotifPrefs.isEnabled(applicationContext)) return
             manager()?.notify(id, builder.build())
         } catch (security: SecurityException) {
             // POST_NOTIFICATIONS revoked since backgrounding the dialog;

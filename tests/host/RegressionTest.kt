@@ -454,6 +454,13 @@ private fun updateNotificationSaveFailure() {
         it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, true)
             .putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.USE_PRERELEASES, false)
     })
+    check(com.xw.vvtts.update.UpdateNotificationScheduler.shouldPostNotification(context, true))
+    check(!com.xw.vvtts.update.UpdateNotificationScheduler.shouldPostNotification(context, false))
+    check(prefs.edit { it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, false) })
+    check(!com.xw.vvtts.update.UpdateNotificationScheduler.shouldPostNotification(context, true)) {
+        "a notification check already in flight must honor a later opt-out"
+    }
+    check(prefs.edit { it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, true) })
     val activity = SettingsActivity()
     val config = VoiceConfig(context)
     set(activity, "voiceConfig", config)
