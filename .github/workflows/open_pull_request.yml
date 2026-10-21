@@ -1,0 +1,48 @@
+name: Open a PR to main
+
+on:
+  push:
+    branches:
+      - Dev
+  workflow_dispatch:
+
+jobs:
+  pull-request:
+    name: Open pull request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Open pull request
+        uses: actions/github-script@v7
+        env:
+          HEAD: ${{ github.head_ref || github.ref_name }}
+        with:
+          script: |
+            const head = process.env.HEAD;
+            const base = 'main';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Don't duplicate: return silently if a Dev -> base PR already exists.
+            const existing = await github.rest.pulls.list({
+              owner, repo, state: 'open', head: `${owner}:Dev`, base
+            });
+            if (existing.data.length > 0) {
+              console.log(`Open PR already exists: #${existing.data[0].number} — skipping.`);
+              return;
+            }
+
+            const pr = await github.rest.pulls.create({
+              owner, repo,
+              title: `chore: Merge branch \`${head}\` to \`${base}\``,
+              head: head === 'main' ? 'Dev' : head,
+              base,
+              draft: true,
+              body: `This pull request will merge \`${head}\` into \`${base}\`.\n\n## Before merging this PR\n- [ ] Release checks pass (build, emulator smoke)`,
+            });
+            console.log(`Opened PR #${pr.data.number}: ${pr.data.html_url}`);
