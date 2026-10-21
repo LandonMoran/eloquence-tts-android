@@ -41,6 +41,32 @@ class Contracts(unittest.TestCase):
         self.assertEqual(len(kotlin),10)
         self.assertNotIn('buildEloquenceConfig',engine)
 
+    def test_crashlytics_native_symbols_configured_and_uploaded(self):
+        """Require release symbol processing and explicit uploads for every built variant."""
+        build = (ROOT/'build.gradle').read_text()
+        ci = (ROOT/'.github/workflows/build.yml').read_text()
+        native = (ROOT/'build_native.sh').read_text()
+
+        self.assertRegex(build, r'firebaseCrashlytics\s*\{[^}]*nativeSymbolUploadEnabled\s+true')
+        # Hand-built libraries bypass AGP's native-symbol discovery; point the
+        # Crashlytics extension at each production ABI's unstripped output.
+        for abi in ('arm64-v8a', 'armeabi-v7a'):
+            self.assertIn(f'native-libs/{abi}', build)
+        # Firebase requires invoking the upload task after each native build.
+        # Discover exact plugin task names at release time; v3 docs use singular
+        # generally but plural in their accumulated flavor-directory example.
+        self.assertIn('uploadCrashlyticsSymbolFiles?${variant}', ci)
+        self.assertIn('for variant in Arm64Release Armv7Release UnivRelease', ci)
+        self.assertIn('tasks --all > "$task_listing"', ci)
+        self.assertIn("task_name=$(printf '%s\\n' \"$matches\" | awk '{print $1}')", ci)
+        self.assertIn('if [[ "$GITHUB_REF" == refs/tags/v* ]]', ci)
+        self.assertIn('gradle_tasks+=(":$task_name")', ci)
+        self.assertIn("task.name.startsWith('uploadCrashlyticsSymbolFile')", build)
+        self.assertIn("dependsOn tasks.named('buildNative')", build)
+        self.assertIn('-Wl,--build-id', native)
+        self.assertIn('llvm-readelf" -n', native)
+        self.assertIn('firebase-crashlytics-ndk', build)
+
     def test_release_signing_isolated(self):
         """Require production signing secrets to stay in the protected release workflow."""
         for file in (ROOT/'.github/workflows').glob('*.yml'):
