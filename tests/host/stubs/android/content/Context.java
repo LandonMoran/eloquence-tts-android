@@ -33,6 +33,8 @@ public class Context {
     }
     /** Create and return a cache directory within the selected storage area. */
     public File getCacheDir() { File f=new File(getDataDir(),"cache"); f.mkdirs(); return f; }
+    /** Return host resources supplying the density used by progress UI construction. */
+    public android.content.res.Resources getResources() { return new android.content.res.Resources(); }
     /** Return the UserManager fixture used to control simulated unlock state. */
     public Object getSystemService(Class<?> cls) { return new UserManager(); }
     /** Provide a listener-only SharedPreferences proxy keyed by storage area and preference name. */
