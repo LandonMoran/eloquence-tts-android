@@ -7,7 +7,11 @@ import android.app.Activity
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
+import android.provider.Settings
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -73,6 +77,7 @@ class SettingsActivity : Activity() {
     private var charSection: LinearLayout? = null
     private var punctBtn: Button? = null
     private var numberBtn: Button? = null
+    private var batteryStatusView: TextView? = null
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
     private val REQ_DICT_CREATE = 703
@@ -83,6 +88,11 @@ class SettingsActivity : Activity() {
     private var suppressUpdateToggleCallbacks = false
     /** Guards the launch auto-update dialog so it surfaces at most once per process. */
     @Volatile private var launchUpdateDialogShown = false
+    override fun onResume() {
+        super.onResume()
+        refreshBatteryStatus()
+    }
+
     /** Initializes settings and the shared engine, builds the settings screen and schedules requested autotests. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -218,6 +228,18 @@ class SettingsActivity : Activity() {
         numberBtn = numberBtnLocal
         numberBtnLocal.setOnClickListener { showNumberDialog() }
         refreshNumberButton(numberBtnLocal)
+
+        // ===== BATTERY SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_battery)
+        val batteryStatus = TextView(this)
+        batteryStatus.textSize = 14f
+        batteryStatus.setTextColor(getColor(R.color.m3_on_surface))
+        mainContainer.addView(batteryStatus)
+        batteryStatusView = batteryStatus
+        val batteryBtn = addRow(this, mainContainer)
+        batteryBtn.text = getString(R.string.battery_allow_button)
+        batteryBtn.setOnClickListener { requestUnrestrictedBattery() }
+        refreshBatteryStatus()
         
         // ===== LANGUAGE / DICTIONARY SECTION =====
         addSectionHeader(mainContainer, R.string.sec_dictionary)
@@ -666,6 +688,33 @@ maybeShowLaunchUpdateDialog()
     }
 
     private fun dp(px: Int): Int = (px * resources.displayMetrics.density).toInt()
+
+    /** Whether Android has excused the app from battery optimisation. */
+    private fun isBatteryUnrestricted(): Boolean {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return power.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /** Shows whether battery optimisation is on for the app. */
+    private fun refreshBatteryStatus() {
+        batteryStatusView?.text = getString(
+            if (isBatteryUnrestricted()) R.string.battery_unrestricted else R.string.battery_optimised
+        )
+    }
+
+    /** Asks Android to exempt the app from battery optimisation; falls back to the list if refused. */
+    private fun requestUnrestrictedBattery() {
+        if (isBatteryUnrestricted()) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            return
+        }
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
 
     private fun refreshLanguageUi() {
         langSwitch?.isChecked = LanguageDetector.isDetectionEnabled()
