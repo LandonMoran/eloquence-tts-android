@@ -330,14 +330,17 @@ class EloquenceEngine(context: Context) {
             '/' to " slash ", '*' to " asterisk ",
         )
 
-        private fun expandPunct(text: String): String {
+        @JvmStatic
+        fun expandPunct(text: String): String {
             val sb = StringBuilder(text.length +  24)
             var i =  0
             while (i < text.length) {
                 val c = text[i]
-                if (c == '.' && i >  0 && i +  1 < text.length &&
-                    text[i -  1].isDigit() && text[i +  1].isDigit()) {
-                    sb.append(c)  // decimal point: keep "3.14" intact
+                val betweenDigits = i >  0 && i +  1 < text.length &&
+                    text[i -  1].isDigit() && text[i +  1].isDigit()
+                if ((c == '.' || c == ',' || c == ':') && betweenDigits) {
+                    // Inside a number or a time (3.14, 1,000, 12:30): not punctuation, keep it silent.
+                    sb.append(c)
                 } else {
                     val name = punctMap[c]
                     if (name != null) sb.append(name) else sb.append(c)
