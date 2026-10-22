@@ -243,6 +243,12 @@ class EloquenceEngine(context: Context) {
             // 1-4 = fixed group sizes 1..4.
             t = numberGroups(t,  numberMode)
 
+            // Times (12:30 -> 12 30) and Roman numerals after a title word (Chapter IV -> Chapter 4),
+            // ported from evvdroid's Numbers.kt, so the engine does not read the colon or spell the numeral.
+            if (dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB) {
+                t = readTimeAndRoman(t)
+            }
+
             // Comma-grouped magnitude expansion ( #313 followup:. The native reader
             // corrupts "1,000,000"/"$1,000,000" into "...hundred" when the trailing
             // comma-group(s( are all zeros (heading off the number-reading modes(.
@@ -329,6 +335,39 @@ class EloquenceEngine(context: Context) {
             '(' to " open parenthesis ", ')' to " close parenthesis ",
             '/' to " slash ", '*' to " asterisk ",
         )
+
+        private val TIME_REGEX = Regex("""\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b""")
+        private val ROMAN_CONTEXT = Regex(
+            """\b(Chapter|Part|Section|Volume|Book|Act|Scene|Room|Suite|Floor|Gate|King|Queen|Pope|Emperor|Henry|Louis|Edward|George|Charles|William|John|Paul|Richard|James|Alexander|Napoleon|Elizabeth|Tsar|Czar)\s+([IVXLCDM]+)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        private val ROMAN_SHAPE = Regex("""^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$""")
+
+        internal fun readTimeAndRoman(text: String): String {
+            val timed = TIME_REGEX.replace(text) { m ->
+                val s = m.groupValues[3]
+                if (s.isNotEmpty()) "${m.groupValues[1]} ${m.groupValues[2]} $s"
+                else "${m.groupValues[1]} ${m.groupValues[2]}"
+            }
+            return ROMAN_CONTEXT.replace(timed) { m ->
+                val roman = m.groupValues[2].uppercase()
+                val decimal = romanToDecimal(roman)
+                if (decimal != null) "${m.groupValues[1]} $decimal" else m.value
+            }
+        }
+
+        private fun romanToDecimal(roman: String): Int? {
+            if (roman.isEmpty() || !ROMAN_SHAPE.matches(roman)) return null
+            val values = mapOf('I' to 1, 'V' to 5, 'X' to 10, 'L' to 50, 'C' to 100, 'D' to 500, 'M' to 1000)
+            var total = 0
+            var prev = 0
+            for (c in roman.reversed()) {
+                val curr = values[c] ?: return null
+                total = if (curr < prev) total - curr else total + curr
+                prev = curr
+            }
+            return if (total > 0) total else null
+        }
 
         @JvmStatic
         fun expandPunct(text: String): String {
