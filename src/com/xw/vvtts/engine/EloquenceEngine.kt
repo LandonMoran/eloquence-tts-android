@@ -226,6 +226,7 @@ class EloquenceEngine(context: Context) {
             // tables fix syllables/contractions the linked eci library would otherwise botch..
             var t = base.replace("\u0080", "euro").replace('|', ' ')
             t = t.replace('\u2019', '\'')
+            if (dialect != DIALECT_JA_JP && dialect != DIALECT_PL_PL) t = SpeechTextFixes.flattenWestern(t)
             if (t.isEmpty()) return t
             val overrides: List<Pair<Regex, String>> = when (dialect) {
                 DIALECT_EN_US -> ENU_SPOKEN_REGEXES

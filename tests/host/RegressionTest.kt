@@ -330,6 +330,19 @@ private fun abbreviationSplitting() {
     println("PASS abbreviation splitting: e.g., U.S., initials and vs. stay inside a chunk")
 }
 
+/** Western text is flattened so no character reaches the engine as '?' from encoding. */
+private fun westernFlatten() {
+    val input = "\u201CHi\u201D \u2014 Dvo\u0159\u00E1k\u2026 \u2264 5\u00B0 \u20AC9 caf\u00E9 \u2022 \u4E2D\u6587\u0000end"
+    val flat = SpeechTextFixes.flattenWestern(input)
+    val bytes = flat.toByteArray(java.nio.charset.Charset.forName("windows-1252"))
+    check(!bytes.any { it == '?'.code.toByte() }) { "Encoded text contains '?': '$flat'" }
+    check(flat.contains("\"Hi\"")) { "Curly quotes not mapped: '$flat'" }
+    check(flat.contains("Dvor\u00e1k")) { "Accented base letter lost: '$flat'" }
+    check(flat.contains("café")) { "Windows-1252 accent was changed: '$flat'" }
+    check(!flat.contains('\u0000')) { "NUL survived flattening" }
+    println("PASS western flatten: no '?' bytes, quotes, dashes and accents handled")
+}
+
 /** Exercise Telegram-style mixed-script, punctuation-heavy text through segmentation and chunk preprocessing. */
 private fun telegramFormattedText() {
     val text = """
@@ -1720,6 +1733,6 @@ private fun speechRateCurve() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); abbreviationSplitting(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); abbreviationSplitting(); westernFlatten(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

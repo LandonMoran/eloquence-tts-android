@@ -49,6 +49,65 @@ object SpeechTextFixes {
         return out
     }
 
+    /**
+     * Turn text into characters the Windows-1252 engine can read. Typographic
+     * marks get plain equivalents, a character with an accent gives up its base
+     * letter, and anything else becomes a space rather than a '?'. Ported from
+     * evvdroid's WesternText.flatten.
+     */
+    fun flattenWestern(text: String): String {
+        if (text.isEmpty()) return text
+        val out = StringBuilder(text.length)
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            val plain = PLAIN_WESTERN[c]
+            when {
+                plain != null -> out.append(plain)
+                c.code == 0 -> out.append(' ')
+                c.code <= 0xFF -> out.append(c)
+                else -> out.append(stripWestern(text, i))
+            }
+            i += if (Character.isHighSurrogate(c) && i + 1 < text.length) 2 else 1
+        }
+        return out.toString()
+    }
+
+    private val PLAIN_WESTERN: Map<Char, String> = mapOf(
+        '\u2018' to "'", '\u2019' to "'", '\u201A' to "'", '\u201B' to "'",
+        '\u201C' to "\"", '\u201D' to "\"", '\u201E' to "\"", '\u201F' to "\"",
+        '\u2010' to "-", '\u2011' to "-", '\u2012' to "-", '\u2013' to "-",
+        '\u2014' to "-", '\u2015' to "-", '\u2212' to "-",
+        '\u2026' to "...", '\u2022' to ".", '\u00B7' to ".",
+        '\u00A0' to " ", '\u2002' to " ", '\u2003' to " ", '\u200B' to "",
+        '\u200C' to "", '\u200D' to "", '\uFEFF' to "",
+        '\u2039' to "<", '\u203A' to ">", '\u2032' to "'", '\u2033' to "\"",
+        '\u2044' to "/", '\u2215' to "/",
+        '\u2122' to " trademark ", '\u2116' to " number ",
+        '\u20AC' to " euro ", '\u00A3' to " pounds ", '\u00A5' to " yen ",
+        '\u2264' to " less than or equal to ", '\u2265' to " greater than or equal to ",
+        '\u2260' to " not equal to ", '\u2248' to " about ", '\u221E' to " infinity ",
+        '\u2192' to " to ", '\u2190' to " from ",
+    )
+
+    /** Keep the base letter of an accented character outside the byte set, else a space. */
+    private fun stripWestern(text: String, at: Int): String {
+        val c = text[at]
+        val one = if (Character.isHighSurrogate(c) && at + 1 < text.length) {
+            text.substring(at, at + 2)
+        } else {
+            c.toString()
+        }
+        val base = java.text.Normalizer.normalize(one, java.text.Normalizer.Form.NFD)
+            .filter { it.code <= 0xFF && !isCombiningMark(it) }
+        return if (base.isEmpty()) " " else base
+    }
+
+    private fun isCombiningMark(c: Char): Boolean = when (Character.getType(c).toByte()) {
+        Character.NON_SPACING_MARK, Character.COMBINING_SPACING_MARK, Character.ENCLOSING_MARK -> true
+        else -> false
+    }
+
     /** Annotation that turns phrase prediction on or off for one utterance. */
     fun phrasePredictionPrefix(phrasePrediction: Boolean): String =
         if (phrasePrediction) PHRASE_ON else PHRASE_OFF
