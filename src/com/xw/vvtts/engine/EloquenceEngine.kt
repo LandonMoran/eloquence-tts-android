@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.KonaVoice
+import com.xw.vvtts.utils.SpeechRate
 import com.xw.vvtts.utils.SpeechTextFixes
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
@@ -658,7 +659,7 @@ class EloquenceEngine(context: Context) {
             val vp = voiceProfile
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
-            params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
+            params[6] = SpeechRate.speedForPercent(50, uiRate).coerceIn(5, 250)
             if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
