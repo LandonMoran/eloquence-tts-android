@@ -1642,9 +1642,32 @@ private fun crashlyticsColdStartFailClosed() {
     println("PASS crashlyticsColdStartFailClosed: manifest disables Crashlytics collection at cold start until consent is applied")
 }
 
+/** Port of evvdroid's text fixes, pause shortening and phrase prediction annotation. */
+private fun speechTextFixes() {
+    check(SpeechTextFixes.fixText("teamtalk5") == "teamtalk 5") { "letter-before-digit must be split" }
+    check(SpeechTextFixes.fixText("3.14") == "3.14") { "decimal point must be left alone" }
+    check(SpeechTextFixes.fixText("books (s)") == "books(s)") { "loose (s) suffix must close up" }
+    check(SpeechTextFixes.fixText("1,000,000") == "1000000") { "round thousand groups must be joined" }
+    check(SpeechTextFixes.fixText("12,345") == "12,345") { "non-round thousand groups must be kept" }
+    check(SpeechTextFixes.shortenPauses("One, two.", SpeechTextFixes.PAUSES_ALL, last = true) == "One `p1, two `p1.") { "all-pause shortening must annotate marks and the end" }
+    check(SpeechTextFixes.shortenPauses("Navigate up", SpeechTextFixes.PAUSES_END_ONLY, last = true) == "Navigate up `p100") { "end-only must annotate the end gap only" }
+    check(!SpeechTextFixes.shortenPauses("Wait...", SpeechTextFixes.PAUSES_ALL, last = true).contains("`p100")) { "a trailing mark must not get a second end pause" }
+    check(SpeechTextFixes.shortenPauses("3.14", SpeechTextFixes.PAUSES_ALL, last = false) == "3.14") { "decimal point must not be shortened" }
+    check(SpeechTextFixes.shortenPauses("Keep me", SpeechTextFixes.PAUSES_KEEP, last = true) == "Keep me") { "keep mode must not change text" }
+    check(SpeechTextFixes.phrasePredictionPrefix(false) == "`pp0 ") { "phrase prediction must be off by default" }
+    check(SpeechTextFixes.phrasePredictionPrefix(true) == "`pp1 ") { "phrase prediction on must send pp1" }
+    val wired = EloquenceEngine.Companion.javaClass.getDeclaredMethod("annotate", String::class.java, Int::class.javaPrimitiveType)
+        .apply { isAccessible = true }
+    val western = wired.invoke(EloquenceEngine.Companion, "Hi there", EloquenceEngine.DIALECT_EN_US) as String
+    check(western.startsWith("`pp0 ")) { "western utterances must carry the phrase prediction prefix" }
+    val japanese = wired.invoke(EloquenceEngine.Companion, "Hi there", EloquenceEngine.DIALECT_JA_JP) as String
+    check(japanese == "Hi there") { "japanese module must receive no annotations" }
+    println("PASS speechTextFixes: spelling fixes, pause shortening, phrase prediction and dialect guard")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); speechTextFixes(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }
