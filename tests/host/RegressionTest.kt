@@ -402,6 +402,17 @@ private fun emojiSpacing() {
         check(actual == expected) { "expand($input) = $actual, expected $expected" }
     }
     println("PASS emoji spacing: names separated from adjacent text, components dropped")
+    // Flags and keycaps once had the placeholder name "emoji"; each must now speak a real name.
+    val flagUs = "\uD83C\uDDFA\uD83C\uDDF8"
+    val flagAu = "\uD83C\uDDE6\uD83C\uDDFA"
+    val keycap10 = "\uD83D\uDD1F"
+    check(EmojiExpander.expand(flagUs) == "United States") { "US flag expands to '${EmojiExpander.expand(flagUs)}'" }
+    check(EmojiExpander.expand(flagAu) == "Australia") { "AU flag expands to '${EmojiExpander.expand(flagAu)}'" }
+    check(EmojiExpander.expand(keycap10) == "keycap 10") { "keycap 10 expands to '${EmojiExpander.expand(keycap10)}'" }
+    for (table in listOf(EMOJI_01, EMOJI_02, EMOJI_03, EMOJI_04, EMOJI_05, EMOJI_06, EMOJI_07, EMOJI_08, EMOJI_09, EMOJI_10)) {
+        check(table.values.none { it == "emoji" }) { "emoji table has a placeholder name" }
+    }
+    println("PASS emoji names: flags and keycap speak real names; no placeholder 'emoji' left in tables")
 }
 
 /** Verify nonblocking stop, stale-audio rejection, listener teardown, and synthesis-only time budgeting. */
