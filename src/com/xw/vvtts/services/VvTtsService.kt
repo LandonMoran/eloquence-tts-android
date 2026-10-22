@@ -957,6 +957,19 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                             ((c == '.' || c == '．' || c == '。') && (prev.isDigit() || next.isDigit()))
                                 || ((c == ',' || c == '，') && prev.isDigit() && next.isDigit())
 
+                        /** True when the dot at [dot] belongs to an abbreviation ("e.g.", "vs."), a dotted
+                         *  acronym ("U.S.") or a single-letter initial ("J. Smith"), so it is not a sentence end. */
+                        private fun isAbbreviationDot(text: String, dot: Int): Boolean {
+                            if (dot <= 0 || dot >= text.length || text[dot] != '.') return false
+                            var s = dot
+                            while (s > 0 && !text[s - 1].isWhitespace()) s--
+                            val token = text.substring(s, dot)
+                            if (token.isEmpty()) return false
+                            if (token.lowercase() in setOf("vs", "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "approx")) return true
+                            if (token.contains('.') && Regex("([A-Za-z]\\.)*[A-Za-z]").matches(token)) return true
+                            return token.length == 1 && token[0].isUpperCase()
+                        }
+
                         private fun isNumericRunChar(c: Char): Boolean =
                             c.isDigit() || c == ':' || c == '/' || c == '-' || c == '.' || c == '．'
 
@@ -1062,7 +1075,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                         val c = text[i - 1]
                         val prev = if (i >= 2) text[i - 2] else ' '
                         val next = if (i < n) text[i] else ' '
-                        if (SENTENCE_ENDS.indexOf(c) >= 0 && !isNumericBoundary(c, prev, next)) {
+                        if (SENTENCE_ENDS.indexOf(c) >= 0 && !isNumericBoundary(c, prev, next) && !isAbbreviationDot(text, i - 1)) {
                             cut = i
                             break
                         }
@@ -1089,7 +1102,7 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                             if (isBoundary) {
                                 val prev = if (j >= 2) text[j - 2] else ' '
                                 val next = if (j < n) text[j] else ' '
-                                if (!isNumericBoundary(c, prev, next)) {
+                                if (!isNumericBoundary(c, prev, next) && !isAbbreviationDot(text, j - 1)) {
                                                                     // keep quantity/duration phrases ("20 minutes, 49 seconds")
                                                                     // intact -- splitting them into two utterances inserts a pause.
                                                                     if (!isQuantityBoundary(text, j)) {
