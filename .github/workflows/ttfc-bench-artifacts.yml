@@ -1,5 +1,11 @@
-# Build the arm64 app APK + androidTest APK for the TTFC baseline benchmark,
-# and upload both so they can be pushed to Firebase Test Lab.
+# Build the arm64 app + androidTest APKs for the TTFC baseline benchmark
+# (debug variants share the auto-generated debug signing key, which Firebase
+# Test Lab requires for app+test installs), and upload both as artifacts.
+#
+# Mirrors the proven action set from build.yml / build-apk.yml: checkout@v4,
+# setup-java@v5, inline sdkmanager (NO Docker-based actions — the runner set
+# rejects them at startup). Arm64 only: Test Lab installs on real ARM64
+# devices directly; no emulator needed.
 name: ttfc-bench-artifacts
 
 on:
@@ -12,39 +18,48 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Build app (arm64 debug) + androidTest APKs
+      - name: Install Android SDK packages
         run: |
-          # Cross-compile native .so for arm64, then assemble the androidTest
-          # bundle + the app-under-test arm64 debug APK.
+          SDK=/usr/local/lib/android/sdk
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+          [ -d "$SDK/ndk" ] || "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264"
+
+      - name: Build arm64 app + androidTest APKs (debug, same signing key)
+        run: |
           ./gradlew --no-daemon --no-build-cache \
             :assembleArm64Debug \
             :assembleArm64DebugAndroidTest \
             -PtestMinApi=${{ inputs.minApi }}
+          echo "=== app APK ==="
+          find build/outputs/apk -name 'vvtts-arm64-v8a.apk' -exec ls -lh {} \;
+          echo "=== androidTest APK ==="
+          find build/outputs/apk/androidTest -name '*.apk' -exec ls -lh {} \;
         env:
-          JAVA_TOOL_OPTIONS: "-Xmx3g"
+          ANDROID_SDK: /usr/local/lib/android/sdk
 
       - name: Upload app APK
         uses: actions/upload-artifact@v4
         with:
           name: vvtts-arm64-app
           path: build/outputs/apk/arm64/debug/*.apk
+          if-no-files-found: error
 
       - name: Upload androidTest APK
         uses: actions/upload-artifact@v4
         with:
           name: vvtts-arm64-test
           path: build/outputs/apk/androidTest/arm64/debug/*.apk
+          if-no-files-found: error
