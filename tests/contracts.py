@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 import sys
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 from types import SimpleNamespace
 from pathlib import Path
@@ -40,6 +41,33 @@ class Contracts(unittest.TestCase):
         self.assertEqual(kotlin, {int(v,16) for v in re.findall(r'case (0x[0-9a-fA-F]+):', native)})
         self.assertEqual(len(kotlin),10)
         self.assertNotIn('buildEloquenceConfig',engine)
+
+    def test_crashlytics_native_symbols_configured_and_uploaded(self):
+        """Require release symbol processing and explicit uploads for every built variant."""
+        build = (ROOT/'build.gradle').read_text()
+        ci = (ROOT/'.github/workflows/build.yml').read_text()
+        native = (ROOT/'build_native.sh').read_text()
+
+        self.assertRegex(build, r'firebaseCrashlytics\s*\{[^}]*nativeSymbolUploadEnabled\s+true')
+        # Hand-built libraries bypass AGP's native-symbol discovery; point the
+        # Crashlytics extension at each production ABI's unstripped output.
+        for abi in ('arm64-v8a', 'armeabi-v7a'):
+            self.assertIn(f'native-libs/{abi}', build)
+        # Firebase requires invoking the upload task after each native build.
+        # Discover exact plugin task names at release time; v3 docs use singular
+        # generally but plural in their accumulated flavor-directory example.
+        self.assertIn('uploadCrashlyticsSymbolFiles?${variant}', ci)
+        self.assertIn('for variant in Arm64Release Armv7Release UnivRelease', ci)
+        self.assertIn('tasks --all > "$task_listing"', ci)
+        self.assertIn("task_name=$(printf '%s\\n' \"$matches\" | awk '{print $1}')", ci)
+        self.assertIn('if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_REF" == refs/tags/v* ]]', ci)
+        self.assertIn('Upload symbols for PR builds', ci)
+        self.assertIn('gradle_tasks+=(":$task_name")', ci)
+        self.assertIn("task.name.startsWith('uploadCrashlyticsSymbolFile')", build)
+        self.assertIn("dependsOn tasks.named('buildNative')", build)
+        self.assertIn('-Wl,--build-id', native)
+        self.assertIn('llvm-readelf" -n', native)
+        self.assertIn('firebase-crashlytics-ndk', build)
 
     def test_release_signing_isolated(self):
         """Require production signing secrets to stay in the protected release workflow."""
@@ -167,7 +195,42 @@ class Contracts(unittest.TestCase):
         permission=re.search(r'INSTALL_STATUS_PERMISSION = "([^"]+)"',installer)[1]
         self.assertIn(f'android:name="{permission}"',manifest)
         self.assertIn('android:protectionLevel="signature"',manifest)
-        self.assertNotIn('android.permission.BIND_TEXT_TO_SPEECH',manifest)
+        root = ET.fromstring(manifest)
+        ns = '{http://schemas.android.com/apk/res/android}'
+        app = root.find('application')
+        tts = next(service for service in app.findall('service')
+                   if service.get(ns + 'name') == '.services.VvTtsService')
+        self.assertEqual(tts.get(ns + 'permission'), 'android.permission.BIND_TEXT_SERVICE')
+        self.assertEqual(tts.get(ns + 'exported'), 'true')
+        self.assertTrue(any(action.get(ns + 'name') == 'android.intent.action.TTS_SERVICE'
+                            for action in tts.findall('./intent-filter/action')))
+        self.assertTrue(any(meta.get(ns + 'name') == 'android.speech.tts'
+                            and meta.get(ns + 'resource') == '@xml/tts_engine'
+                            for meta in tts.findall('meta-data')))
+
+    def test_update_notification_opt_out_is_checked_at_delivery(self):
+        """The delayed local and immediate FCM delivery paths must honor the latest master opt-out."""
+        scheduler = (ROOT/'src/com/xw/vvtts/update/UpdateNotificationScheduler.kt').read_text()
+        self.assertIn('UpdateNotifPrefs.isEnabled(context) && permissionGranted', scheduler)
+        self.assertIn('if (!shouldPostNotification(context, permissionGranted)) return', scheduler)
+        receiver = (ROOT/'src/com/xw/vvtts/update/FcmUpdateReceiver.kt').read_text()
+        self.assertRegex(receiver, r'if \(!UpdateNotifPrefs\.isEnabled\(applicationContext\)\) return\s+manager\(\)\?\.notify\(id, builder\.build\(\)\)')
+
+    def test_update_notification_saves_are_checked(self):
+        """Prevent the UI from claiming an update preference saved when mirrored storage rejected it."""
+        activity = (ROOT/'src/com/xw/vvtts/ui/SettingsActivity.kt').read_text()
+        handler_start = activity.index('    private fun finalizeUpdateNotify(')
+        handler_end = activity.index('    /**', handler_start)
+        handler = activity[handler_start:handler_end]
+        self.assertRegex(handler, r'val saved = UpdateNotifPrefs\.get\(this\)\.edit')
+        self.assertIn('if (!saved)', handler)
+        self.assertIn('setUpdateToggleSilently(sw, current)', handler)
+        self.assertIn('R.string.update_settings_not_saved', handler)
+        prerelease_start = activity.index('    private fun onUpdatePrereleasesToggleChanged(')
+        prerelease_end = activity.index('    /**', prerelease_start)
+        prerelease = activity[prerelease_start:prerelease_end]
+        self.assertIn('if (!saved)', prerelease)
+        self.assertIn('setUpdateToggleSilently(sw, UpdateNotifPrefs.usesPrereleases(this))', prerelease)
 
     def test_synthesis_timing_chain_invariant(self):
         """Guard the stall-fix constants so a regression cannot re-land the two failure

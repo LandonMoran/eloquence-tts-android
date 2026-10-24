@@ -6,6 +6,8 @@ import android.os.SystemClock
 import android.util.Log
 import com.xw.vvtts.core.VvttsCore
 import com.xw.vvtts.utils.KonaVoice
+import com.xw.vvtts.utils.SpeechRate
+import com.xw.vvtts.utils.SpeechTextFixes
 import com.xw.vvtts.utils.VoiceConfig
 import com.xw.vvtts.utils.VoiceProfile
 import java.io.File
@@ -191,13 +193,12 @@ class EloquenceEngine(context: Context) {
         // Language modules actually linked in this build (matches build_native.sh LANGS)
         val SHIPPED_DIALECTS: Set<Long> = VoiceRegistry.voices.map { it.dialect.toLong() }.toSet()
         fun isShippedDialect(dialect: Int): Boolean = dialect.toLong() in SHIPPED_DIALECTS
-        // Engine's real output rate:  the enu library in eci.ini is fixed at  11025 Hz and can't be changed at runtime
-                const val ENGINE_SAMPLE_RATE = 11025
-                // Playback rate:   the JNI layer resamples the engine's 11.025k PCM
-                // natively to  44.1k (4x polyphase windowed-sinc FIR( before returning it,
-                // so we tell Android AudioTrack the truth here.  ENGINE_SAMPLE_RATE stays untouched.
-
-                const val SAMPLE_RATE = 44100
+        // Output rate the bridge hands back and the service advertises to the
+        // Android framework. The engine produces this rate itself -- every session
+        // is opened with eciSampleRate code 5 (see ensureHandle/synthesizeCore and
+        // jni/README.md) -- so the bridge only trims silence and tapers the edges;
+        // there is no Kotlin/JNI resample step to keep in sync with it.
+        const val SAMPLE_RATE = 44100
 
 
         /** Dialect -> text encoding (CJK uses its own encodings; Western uses windows-1252) */
@@ -225,6 +226,7 @@ class EloquenceEngine(context: Context) {
             // tables fix syllables/contractions the linked eci library would otherwise botch..
             var t = base.replace("\u0080", "euro").replace('|', ' ')
             t = t.replace('\u2019', '\'')
+            if (dialect != DIALECT_JA_JP && dialect != DIALECT_PL_PL) t = SpeechTextFixes.flattenWestern(t)
             if (t.isEmpty()) return t
             val overrides: List<Pair<Regex, String>> = when (dialect) {
                 DIALECT_EN_US -> ENU_SPOKEN_REGEXES
@@ -242,6 +244,12 @@ class EloquenceEngine(context: Context) {
             // 1-4 = fixed group sizes 1..4.
             t = numberGroups(t,  numberMode)
 
+            // Times (12:30 -> 12 30) and Roman numerals after a title word (Chapter IV -> Chapter 4),
+            // ported from evvdroid's Numbers.kt, so the engine does not read the colon or spell the numeral.
+            if (dialect == DIALECT_EN_US || dialect == DIALECT_EN_GB) {
+                t = readTimeAndRoman(t)
+            }
+
             // Comma-grouped magnitude expansion ( #313 followup:. The native reader
             // corrupts "1,000,000"/"$1,000,000" into "...hundred" when the trailing
             // comma-group(s( are all zeros (heading off the number-reading modes(.
@@ -254,12 +262,23 @@ class EloquenceEngine(context: Context) {
             // the factory native loadUserDictionary hook; applied after the builtin tables so
             // user overrides win ( word-boundary match - Landons intended semantics(.
             t = applyDict(t, userDict)
+            // Spelling fixes for words the engine would spell letter by letter (ported from evvdroid).
+            t = SpeechTextFixes.fixText(t)
             // Read-punctuation ( "speak_punctuation" knob in Settings → Reading tab; mirrors
             // the factory "Use punctuation" — expands ,.!?... to spoken names so a blind
             // review of typed/OCR text hears the actual punctuation ( no silent marks(.
             if (readPunct) t = expandPunct(t)
             return t
         }
+        /** Engine annotations, added after sanitize so its token rewriting never sees them:
+         *  phrase prediction off and shortened pauses (both ported from evvdroid). */
+        private fun annotate(text: String, dialect: Int): String {
+            // Only verified on the Western modules; leave the Japanese module untouched.
+            if (text.isEmpty() || dialect == DIALECT_JA_JP) return text
+            return SpeechTextFixes.phrasePredictionPrefix(false) +
+                SpeechTextFixes.shortenPauses(text, SpeechTextFixes.PAUSES_DEFAULT, last = true)
+        }
+
         // Factory voice registry: (eng,USA( -> enu pack, (eng,GBR( -> eng pack — so en-US
         // uses the 28-entry table ( "#"→" hash " is en-GB-only(. Ported verbatim from
         // the decompiled Eloquence apk language packs ( f3234b/f3232b/f3242b/f3244b/f3230b(.
@@ -318,14 +337,50 @@ class EloquenceEngine(context: Context) {
             '/' to " slash ", '*' to " asterisk ",
         )
 
-        private fun expandPunct(text: String): String {
+        private val TIME_REGEX = Regex("""\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b""")
+        private val ROMAN_CONTEXT = Regex(
+            """\b(Chapter|Part|Section|Volume|Book|Act|Scene|Room|Suite|Floor|Gate|King|Queen|Pope|Emperor|Henry|Louis|Edward|George|Charles|William|John|Paul|Richard|James|Alexander|Napoleon|Elizabeth|Tsar|Czar)\s+([IVXLCDM]+)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        private val ROMAN_SHAPE = Regex("""^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$""")
+
+        internal fun readTimeAndRoman(text: String): String {
+            val timed = TIME_REGEX.replace(text) { m ->
+                val s = m.groupValues[3]
+                if (s.isNotEmpty()) "${m.groupValues[1]} ${m.groupValues[2]} $s"
+                else "${m.groupValues[1]} ${m.groupValues[2]}"
+            }
+            return ROMAN_CONTEXT.replace(timed) { m ->
+                val roman = m.groupValues[2].uppercase()
+                val decimal = romanToDecimal(roman)
+                if (decimal != null) "${m.groupValues[1]} $decimal" else m.value
+            }
+        }
+
+        private fun romanToDecimal(roman: String): Int? {
+            if (roman.isEmpty() || !ROMAN_SHAPE.matches(roman)) return null
+            val values = mapOf('I' to 1, 'V' to 5, 'X' to 10, 'L' to 50, 'C' to 100, 'D' to 500, 'M' to 1000)
+            var total = 0
+            var prev = 0
+            for (c in roman.reversed()) {
+                val curr = values[c] ?: return null
+                total = if (curr < prev) total - curr else total + curr
+                prev = curr
+            }
+            return if (total > 0) total else null
+        }
+
+        @JvmStatic
+        fun expandPunct(text: String): String {
             val sb = StringBuilder(text.length +  24)
             var i =  0
             while (i < text.length) {
                 val c = text[i]
-                if (c == '.' && i >  0 && i +  1 < text.length &&
-                    text[i -  1].isDigit() && text[i +  1].isDigit()) {
-                    sb.append(c)  // decimal point: keep "3.14" intact
+                val betweenDigits = i >  0 && i +  1 < text.length &&
+                    text[i -  1].isDigit() && text[i +  1].isDigit()
+                if ((c == '.' || c == ',' || c == ':') && betweenDigits) {
+                    // Inside a number or a time (3.14, 1,000, 12:30): not punctuation, keep it silent.
+                    sb.append(c)
                 } else {
                     val name = punctMap[c]
                     if (name != null) sb.append(name) else sb.append(c)
@@ -647,7 +702,7 @@ class EloquenceEngine(context: Context) {
             val vp = voiceProfile
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
-            params[6] = Math.round(50.0f * uiRate / 100.0f).coerceIn(5, 250)
+            params[6] = SpeechRate.speedForPercent(50, uiRate).coerceIn(5, 250)
             if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
@@ -667,9 +722,9 @@ class EloquenceEngine(context: Context) {
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(CrashCodeDefender.sanitize(appContext,  preprocess(
+                    .encode(CharBuffer.wrap(annotate(CrashCodeDefender.sanitize(appContext,  preprocess(
                                             text,  dialect,  userDictionary.compiledDictionary(),  userDictionary.punctEnabled,
-                                            if (userDictionary.numberEnabled) userDictionary.numberModePref else -1))))
+                                            if (userDictionary.numberEnabled) userDictionary.numberModePref else -1)), dialect)))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {

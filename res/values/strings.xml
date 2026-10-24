@@ -90,6 +90,10 @@ Preset tone - tap to change</string>
     <string name="sec_voice_char">Voice character</string>
     <string name="sec_speech">Speech</string>
     <string name="sec_reading">Reading</string>
+    <string name="sec_battery">Battery</string>
+    <string name="battery_unrestricted">Battery use: unrestricted. The engine is not paused in the background.</string>
+    <string name="battery_optimised">Battery use: optimised. Android may pause speech in the background.</string>
+    <string name="battery_allow_button">Allow unrestricted battery</string>
     <string name="sec_langdetect">Language detection</string>
     <string name="sec_dictionary">Dictionary</string>
     <string name="sec_maintenance">Maintenance</string>
@@ -159,6 +163,8 @@ Tap to change the spoken language</string>
     <string name="download_install">Download and Install</string>
     <string name="update_downloading_fmt">Downloading update: %1$d%%</string>
     <string name="update_failed_fmt">Update failed: %1$s</string>
+    <string name="update_settings_not_saved">Update notification settings could not be saved. Your previous choices are still active.</string>
+    <string name="update_settings_apply_failed">Update notification settings could not be applied. Reopen Settings to retry.</string>
     <string name="update_install_ok">Update installed</string>
     <string name="update_open_release">Open release page</string>
 <string name="update_notify_toggle">Notify when updates available</string>

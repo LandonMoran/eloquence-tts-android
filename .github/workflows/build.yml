@@ -62,6 +62,10 @@ jobs:
           bash tests/vendor-openevv-test.sh
           python3 tests/contracts.py
           python3 tools/prepare_assets.py --verify
+          # Exercises the real FCM sender (JWT signing + v1 send) against a local
+          # server; the release path depends on it, so it must not go untested.
+          pip install --quiet cryptography
+          python3 .github/scripts/test_send_fcm.py
 
       # Ephemeral CI identity; release signing is isolated in release.yml.
       - name: Prepare ephemeral CI signing key
@@ -76,11 +80,32 @@ jobs:
 
       - name: Build APKs via Gradle (native + arm64/arm32/universal; x86_64 test-only)
         run: |
+          set -euo pipefail
           rm -f vvtts-arm64-v8a.apk vvtts-armeabi-v7a.apk vvtts-universal.apk vvtts-test-x86_64.apk
           # Gradle's :buildNative task runs the 3 build_native.sh ABI builds
           # (NDK cross-compile of openevv + JNI bridge), then AGP assembles each.
-          ./gradlew --no-daemon --no-build-cache \
-            :assembleArm64Release :assembleArmv7Release :assembleUnivRelease :assembleX64Release \
+          gradle_tasks=(
+            :assembleArm64Release :assembleArmv7Release :assembleUnivRelease :assembleX64Release
+          )
+          # Upload symbols for PR builds so test crashes can be symbolicated,
+          # and for release tags. Ordinary branch builds remain upload-free.
+          # Each upload task depends on buildNative and shares that build with
+          # the assembly tasks in this invocation.
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_REF" == refs/tags/v* ]]; then
+            task_listing="$RUNNER_TEMP/gradle-tasks.txt"
+            ./gradlew --no-daemon --no-build-cache --console=plain tasks --all > "$task_listing"
+            for variant in Arm64Release Armv7Release UnivRelease; do
+              matches=$(grep -E "^[[:space:]]*uploadCrashlyticsSymbolFiles?${variant}[[:space:]]" "$task_listing" || true)
+              if [[ $(printf '%s\n' "$matches" | sed '/^$/d' | wc -l) -ne 1 ]]; then
+                echo "Expected exactly one Crashlytics symbol uploader for $variant; found:" >&2
+                printf '%s\n' "$matches" >&2
+                exit 1
+              fi
+              task_name=$(printf '%s\n' "$matches" | awk '{print $1}')
+              gradle_tasks+=(":$task_name")
+            done
+          fi
+          ./gradlew --no-daemon --no-build-cache "${gradle_tasks[@]}" \
             -PtestMinApi="${TEST_MIN_API:-28}"
           # Gather the four APKs at the repo root with the exact legacy filenames
           # that audit_apk_abis.py + publish_release.py expect.

@@ -4,18 +4,8 @@ plugins {
     id 'com.android.application' version '8.9.2'
     id 'org.jetbrains.kotlin.android' version '1.9.25'
     id 'com.google.gms.google-services' version '4.4.2'
-    // Crashlytics Gradle plugin: generates a per-build Build ID and unlocks
-    // native crash capture (the firebase-crashlytics-ndk handler catches
-    // SIGSEGV/SIGABRT in libvvtts_core.so). Requires AGP 8.1+ / google-services
-    // 4.4.1+ (both satisfied).
-    //
-    // Native symbolication: the .so is deliberately NOT stripped — build_native.sh
-    // no longer runs llvm-strip, so libvvtts_core.so keeps its .symtab and native
-    // crash frames resolve to their function names in the dashboard. Do not
-    // re-add stripping: it degrades native locations to bare addresses + PC.
-    // (Firebase uploads the debug symbols when firebaseCrashlytics NDK symbol
-    // upload is enabled; keeping the .so unstripped ships exactly what the
-    // uploadSymbolsFile task needs.)
+    // Crashlytics 3.x provides the release symbol-upload tasks configured below.
+    // Requires AGP 8.1+ and Google services Gradle plugin 4.4.1+ (both satisfied).
     id 'com.google.firebase.crashlytics' version '3.0.8'
 }
 
@@ -43,10 +33,16 @@ android {
         arm64 {
             dimension 'abi'
             ndk { abiFilters 'arm64-v8a' }
+            firebaseCrashlytics {
+                unstrippedNativeLibsDir file("$projectDir/native-libs/arm64-v8a")
+            }
         }
         armv7 {
             dimension 'abi'
             ndk { abiFilters 'armeabi-v7a' }
+            firebaseCrashlytics {
+                unstrippedNativeLibsDir file("$projectDir/native-libs/armeabi-v7a")
+            }
             // Test-only override (mirrors TEST_MIN_API in the old workflow).
             def tma = rootProject.findProperty('testMinApi') ?: '28'
             minSdkVersion tma.toInteger()
@@ -54,6 +50,13 @@ android {
         univ {
             dimension 'abi'
             ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+            firebaseCrashlytics {
+                unstrippedNativeLibsDir files(
+                    "$projectDir/native-libs/arm64-v8a",
+                    "$projectDir/native-libs/armeabi-v7a",
+                    "$projectDir/native-libs/x86_64"
+                )
+            }
         }
         x64 {
             dimension 'abi'
@@ -68,6 +71,10 @@ android {
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig = resolveReleaseSigning()
+            firebaseCrashlytics {
+                // Firebase defaults this off; release variants explicitly enable it.
+                nativeSymbolUploadEnabled true
+            }
         }
         debug {
             signingConfig signingConfigs.debug
@@ -185,6 +192,14 @@ tasks.register('buildNative', Exec) {
     def abis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
     commandLine 'bash', '-c', abis.collect { "ABI=$it bash build_native.sh" }.join(' && ')
     outputs.upToDateWhen { false }
+}
+
+// Custom native builds live outside AGP's NDK task graph. Ensure every
+// Crashlytics uploader waits until buildNative has refreshed the .so files.
+tasks.configureEach { task ->
+    if (task.name.startsWith('uploadCrashlyticsSymbolFile')) {
+        task.dependsOn tasks.named('buildNative')
+    }
 }
 
 // Regenerate patched lingua-slim.jar + models.elqm when the generator/inputs

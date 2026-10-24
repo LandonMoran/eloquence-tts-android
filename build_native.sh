@@ -98,7 +98,11 @@ fi
         jni/eci_compat.c \
         jni/vv_resample.c \
         "$LIBEVV" \
-            -lm -llog
+            -Wl,--build-id -lm -llog
+
+# Crashlytics and its Gradle plugin use GNU build IDs to match uploaded
+# symbols with crash reports. Fail this native build if the linker omitted one.
+"$TC/llvm-readelf" -n "$OUT/libvvtts_core.so" | grep -q 'Build ID:'
 
 # Native stack symbolication: NO strip. Keeping .symtab lets Crashlytics
 # resolve engine-internal frames (vvtts_core_*, eci_*, delta machine) to

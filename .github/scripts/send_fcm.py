@@ -131,6 +131,9 @@ def _send(project_id: str, access_token: str, message: dict, topic: str) -> bool
     except urllib.error.HTTPError as exc:
         status = exc.code
         text = exc.read().decode("utf-8")
+    except Exception as exc:  # DNS/TLS/timeout: report the failure, never a traceback
+        print(f"ERROR: could not reach the FCM send endpoint: {exc}", file=sys.stderr)
+        return False
 
     print(f"FCM response (HTTP {status}): {text}")
     if status != 200:
@@ -152,13 +155,17 @@ def main() -> int:
     fallback_version = _get_var("FCM_VERSION", required=False)
 
     if tag:
-        version = tag.lstrip("v")
+        # removeprefix, not lstrip: lstrip('v') eats every leading "v" ("vv1.0" -> "1.0").
+        version = tag.removeprefix("v")
         topic = DEV_TOPIC if prerelease else STABLE_TOPIC
     else:
         version = fallback_version
         topic = DEV_TOPIC if prerelease else STABLE_TOPIC
     if explicit:
         topic = explicit
+        # The client uses this flag to enforce prerelease opt-outs, so keep it
+        # aligned with the actual destination when a caller overrides routing.
+        prerelease = topic == DEV_TOPIC
 
     print(f"topic   : {topic}")
     print(f"version : {version or '(none)'}")
@@ -167,7 +174,10 @@ def main() -> int:
     token = _fetch_access_token(sa, assertion)
     print("OAuth2 access token obtained")
 
-    payload = {"type": "release"}
+    # "prerelease" is authoritative for the client: a receiver cannot tell which
+    # topic a message arrived on (RemoteMessage.from is the sender, not the topic),
+    # so the channel it was sent to has to travel in the payload.
+    payload = {"type": "release", "prerelease": "true" if prerelease else "false"}
     if version:
         payload["version"] = version
     # high priority wakes the device from Doze via Play Services.

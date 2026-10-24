@@ -131,6 +131,23 @@ private fun dictionary() {
 }
 
 /** Check version ordering, shipped voice lookup, pitch mapping, and synthesis budgeting. */
+private fun limitedUpdateBody() {
+    val type = ElqUpdateChecker::class.java.declaredClasses.first { it.simpleName == "LimitedInputStream" }
+    val constructor = type.declaredConstructors.single().apply { isAccessible = true }
+    val exactBytes = "abc".byteInputStream()
+    val exact = constructor.newInstance(exactBytes, 3L) as java.io.InputStream
+    check(exact.readBytes().contentEquals("abc".toByteArray())) { "body exactly at limit must be accepted" }
+    val exactSingleByte = constructor.newInstance("a".byteInputStream(), 1L) as java.io.InputStream
+    check(exactSingleByte.read() == 'a'.code && exactSingleByte.read() == -1) { "single-byte reads at limit must observe EOF" }
+    val oversizedBytes = "abcd".byteInputStream()
+    val oversized = constructor.newInstance(oversizedBytes, 3L) as java.io.InputStream
+    checkFails { oversized.readBytes() }
+    check(oversizedBytes.read() == -1) { "overflow probe must consume no more than the first excess byte" }
+    val empty = constructor.newInstance(ByteArray(0).inputStream(), 0L) as java.io.InputStream
+    check(empty.read() == -1) { "empty body at zero-byte limit must be accepted" }
+    println("PASS updater body bounds: exact-limit responses accepted; oversized responses rejected")
+}
+
 private fun versionsAndVoices() {
     check(ElqUpdateChecker.parseSemver("1.10.0")!! > ElqUpdateChecker.parseSemver("1.9.9")!!)
     check(ElqUpdateChecker.parseSemver("v1.0") == ElqUpdateChecker.parseSemver("V1.0.0"))
@@ -207,6 +224,27 @@ private fun volumeScaling() {
     println("PASS volume scaling: unity avoids copying; other gains clamp and preserve samples")
 }
 
+/** Punctuation reading: marks inside numbers and times stay silent; real punctuation is named. */
+private fun punctuationInNumbers() {
+    fun run(text: String): String = EloquenceEngine.expandPunct(text)
+    check(run("3.14") == "3.14")
+    check(run("1,000") == "1,000")
+    check(run("12:30") == "12:30")
+    check(run("Hi, there.").contains(" comma ") && run("Hi, there.").contains(" period "))
+    println("PASS punctuation: decimals, grouped numbers, and times stay silent; prose marks are named")
+}
+
+/** Times and Roman numerals after title words are read as numbers; other text is untouched. */
+private fun timeAndRomanNumerals() {
+    check(EloquenceEngine.readTimeAndRoman("at 12:30") == "at 12 30")
+    check(EloquenceEngine.readTimeAndRoman("at 01:02:03") == "at 01 02 03")
+    check(EloquenceEngine.readTimeAndRoman("Chapter IV") == "Chapter 4")
+    check(EloquenceEngine.readTimeAndRoman("King Henry VIII") == "King Henry 8")
+    check(EloquenceEngine.readTimeAndRoman("I am here") == "I am here")
+    check(EloquenceEngine.readTimeAndRoman("Chapter LIVE") == "Chapter LIVE")
+    println("PASS time and Roman numerals: times read as numbers; numerals only after title words")
+}
+
 /** Check that compiled spoken exceptions preserve the existing replacements. */
 private fun spokenExceptions() {
     val preprocess = EloquenceEngine.Companion.javaClass.getDeclaredMethod(
@@ -271,6 +309,40 @@ private fun languagePickerSelection() {
     }
 }
 
+/** Abbreviations and initials must not end a sentence; real sentence ends still do. */
+private fun abbreviationSplitting() {
+    val chunks = VvTtsService.Companion.javaClass.getDeclaredMethod(
+        "splitSynthChunks", String::class.java,
+    ).apply { isAccessible = true }
+    // Long enough to force splitting. Abbreviations sit at chunk-cap boundaries, so a bad
+    // cut would land inside "e.g.", "U.S.", "J. Smith" or "vs.".
+    val filler = "The quick brown fox jumps over the lazy dog while the band plays on. ".repeat(3)
+    val text = filler + "Tools such as e.g. the U.S. Army and J. Smith vs. the team were mentioned. " + filler
+    @Suppress("UNCHECKED_CAST")
+    val pieces = chunks.invoke(VvTtsService.Companion, text) as List<String>
+    check(pieces.joinToString("") == text) { "Splitting changed the text" }
+    for (piece in pieces) {
+        check(!piece.trimEnd().endsWith("e.g.") && !piece.trimEnd().endsWith("U.S.") &&
+            !piece.trimEnd().endsWith("J.") && !piece.trimEnd().endsWith("vs.")) {
+            "Split inside an abbreviation: '${piece.takeLast(20)}'"
+        }
+    }
+    println("PASS abbreviation splitting: e.g., U.S., initials and vs. stay inside a chunk")
+}
+
+/** Western text is flattened so no character reaches the engine as '?' from encoding. */
+private fun westernFlatten() {
+    val input = "\u201CHi\u201D \u2014 Dvo\u0159\u00E1k\u2026 \u2264 5\u00B0 \u20AC9 caf\u00E9 \u2022 \u4E2D\u6587\u0000end"
+    val flat = SpeechTextFixes.flattenWestern(input)
+    val bytes = flat.toByteArray(java.nio.charset.Charset.forName("windows-1252"))
+    check(!bytes.any { it == '?'.code.toByte() }) { "Encoded text contains '?': '$flat'" }
+    check(flat.contains("\"Hi\"")) { "Curly quotes not mapped: '$flat'" }
+    check(flat.contains("Dvor\u00e1k")) { "Accented base letter lost: '$flat'" }
+    check(flat.contains("café")) { "Windows-1252 accent was changed: '$flat'" }
+    check(!flat.contains('\u0000')) { "NUL survived flattening" }
+    println("PASS western flatten: no '?' bytes, quotes, dashes and accents handled")
+}
+
 /** Exercise Telegram-style mixed-script, punctuation-heavy text through segmentation and chunk preprocessing. */
 private fun telegramFormattedText() {
     val text = """
@@ -315,6 +387,32 @@ private fun telegramFormattedText() {
         }
     }
     println("PASS Telegram input: mixed script and punctuation segments, chunks, and preprocess safely")
+}
+
+/** Spoken emoji names are separated from neighbouring text and whitespace, and bare components drop. */
+private fun emojiSpacing() {
+    val cases = mapOf(
+        "\uD83D\uDE00hi" to "grinning face hi",
+        "hi\uD83D\uDE00 there" to "hi grinning face there",
+        "\uD83D\uDE00 \uD83D\uDC4D" to "grinning face thumbs up",
+        "a\uD83D\uDE00\uD83D\uDC4Db" to "a grinning face thumbs up b",
+    )
+    for ((input, expected) in cases) {
+        val actual = EmojiExpander.expand(input)
+        check(actual == expected) { "expand($input) = $actual, expected $expected" }
+    }
+    println("PASS emoji spacing: names separated from adjacent text, components dropped")
+    // Flags and keycaps once had the placeholder name "emoji"; each must now speak a real name.
+    val flagUs = "\uD83C\uDDFA\uD83C\uDDF8"
+    val flagAu = "\uD83C\uDDE6\uD83C\uDDFA"
+    val keycap10 = "\uD83D\uDD1F"
+    check(EmojiExpander.expand(flagUs) == "United States") { "US flag expands to '${EmojiExpander.expand(flagUs)}'" }
+    check(EmojiExpander.expand(flagAu) == "Australia") { "AU flag expands to '${EmojiExpander.expand(flagAu)}'" }
+    check(EmojiExpander.expand(keycap10) == "keycap 10") { "keycap 10 expands to '${EmojiExpander.expand(keycap10)}'" }
+    for (table in listOf(EMOJI_01, EMOJI_02, EMOJI_03, EMOJI_04, EMOJI_05, EMOJI_06, EMOJI_07, EMOJI_08, EMOJI_09, EMOJI_10)) {
+        check(table.values.none { it == "emoji" }) { "emoji table has a placeholder name" }
+    }
+    println("PASS emoji names: flags and keycap speak real names; no placeholder 'emoji' left in tables")
 }
 
 /** Verify nonblocking stop, stale-audio rejection, listener teardown, and synthesis-only time budgeting. */
@@ -430,6 +528,55 @@ private fun warmupSerializationAndDestroy() {
 }
 
 /** Verify localized samples, Android result codes, and rejection of unsupported voice requests. */
+private fun updateNotificationSaveFailure() {
+    val context = Context()
+    val prefs = com.xw.vvtts.update.UpdateNotifPrefs.get(context)
+    check(prefs.edit {
+        it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, true)
+            .putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.USE_PRERELEASES, false)
+    })
+    check(com.xw.vvtts.update.UpdateNotificationScheduler.shouldPostNotification(context, true))
+    check(!com.xw.vvtts.update.UpdateNotificationScheduler.shouldPostNotification(context, false))
+    check(prefs.edit { it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, false) })
+    check(!com.xw.vvtts.update.UpdateNotificationScheduler.shouldPostNotification(context, true)) {
+        "a notification check already in flight must honor a later opt-out"
+    }
+    check(prefs.edit { it.putBoolean(com.xw.vvtts.update.UpdateNotifPrefs.NOTIFICATIONS_ENABLED, true) })
+    val activity = SettingsActivity()
+    val config = VoiceConfig(context)
+    set(activity, "voiceConfig", config)
+    set(activity, "pendingNotifyToggle", null)
+    val updateSwitch = android.widget.Switch(activity).apply { isChecked = true }
+    val finalize = activity.javaClass.getDeclaredMethod(
+        "finalizeUpdateNotify", Boolean::class.javaPrimitiveType, android.widget.Switch::class.java
+    ).apply { isAccessible = true }
+    val updateStoreFile = File(Context.root, "ce/shared_prefs/${com.xw.vvtts.update.UpdateNotifPrefs.PREFS_NAME}.xml")
+    android.system.Os.failRenameContaining = updateStoreFile.name
+    try {
+        updateSwitch.isChecked = false
+        finalize.invoke(activity, false, updateSwitch)
+        check(updateSwitch.isChecked) { "failed notification opt-out must restore the previous enabled state" }
+        check(com.xw.vvtts.update.UpdateNotifPrefs.isEnabled(context)) { "failed notification opt-out changed durable preference" }
+    } finally {
+        android.system.Os.failRenameContaining = null
+    }
+
+    val prereleaseSwitch = android.widget.Switch(activity).apply { isChecked = false }
+    val changePrerelease = activity.javaClass.getDeclaredMethod(
+        "onUpdatePrereleasesToggleChanged", Boolean::class.javaPrimitiveType, android.widget.Switch::class.java
+    ).apply { isAccessible = true }
+    android.system.Os.failRenameContaining = updateStoreFile.name
+    try {
+        changePrerelease.invoke(activity, true, prereleaseSwitch)
+        check(!prereleaseSwitch.isChecked) { "failed prerelease save must restore the previous switch state" }
+        check(!com.xw.vvtts.update.UpdateNotifPrefs.usesPrereleases(context)) { "failed prerelease save changed durable preference" }
+    } finally {
+        android.system.Os.failRenameContaining = null
+    }
+
+    println("PASS update notification persistence: failed saves preserve durable choices and revert switches")
+}
+
 private fun sampleActivity() {
     for ((language,country) in listOf("deu" to "DEU", "jpn" to "JPN", "fra" to "FRA", "spa" to "MEX")) {
         val activity=com.xw.vvtts.ui.GetSampleText()
@@ -1561,9 +1708,42 @@ private fun crashlyticsColdStartFailClosed() {
     println("PASS crashlyticsColdStartFailClosed: manifest disables Crashlytics collection at cold start until consent is applied")
 }
 
+/** Port of evvdroid's text fixes, pause shortening and phrase prediction annotation. */
+private fun speechTextFixes() {
+    check(SpeechTextFixes.fixText("teamtalk5") == "teamtalk 5") { "letter-before-digit must be split" }
+    check(SpeechTextFixes.fixText("3.14") == "3.14") { "decimal point must be left alone" }
+    check(SpeechTextFixes.fixText("books (s)") == "books(s)") { "loose (s) suffix must close up" }
+    check(SpeechTextFixes.fixText("1,000,000") == "1000000") { "round thousand groups must be joined" }
+    check(SpeechTextFixes.fixText("12,345") == "12,345") { "non-round thousand groups must be kept" }
+    check(SpeechTextFixes.shortenPauses("One, two.", SpeechTextFixes.PAUSES_ALL, last = true) == "One `p1, two `p1.") { "all-pause shortening must annotate marks and the end" }
+    check(SpeechTextFixes.shortenPauses("Navigate up", SpeechTextFixes.PAUSES_END_ONLY, last = true) == "Navigate up `p100") { "end-only must annotate the end gap only" }
+    check(!SpeechTextFixes.shortenPauses("Wait...", SpeechTextFixes.PAUSES_ALL, last = true).contains("`p100")) { "a trailing mark must not get a second end pause" }
+    check(SpeechTextFixes.shortenPauses("3.14", SpeechTextFixes.PAUSES_ALL, last = false) == "3.14") { "decimal point must not be shortened" }
+    check(SpeechTextFixes.shortenPauses("Keep me", SpeechTextFixes.PAUSES_KEEP, last = true) == "Keep me") { "keep mode must not change text" }
+    check(SpeechTextFixes.phrasePredictionPrefix(false) == "`pp0 ") { "phrase prediction must be off by default" }
+    check(SpeechTextFixes.phrasePredictionPrefix(true) == "`pp1 ") { "phrase prediction on must send pp1" }
+    val wired = EloquenceEngine.Companion.javaClass.getDeclaredMethod("annotate", String::class.java, Int::class.javaPrimitiveType)
+        .apply { isAccessible = true }
+    val western = wired.invoke(EloquenceEngine.Companion, "Hi there", EloquenceEngine.DIALECT_EN_US) as String
+    check(western.startsWith("`pp0 ")) { "western utterances must carry the phrase prediction prefix" }
+    val japanese = wired.invoke(EloquenceEngine.Companion, "Hi there", EloquenceEngine.DIALECT_JA_JP) as String
+    check(japanese == "Hi there") { "japanese module must receive no annotations" }
+    println("PASS speechTextFixes: spelling fixes, pause shortening, phrase prediction and dialect guard")
+}
+
+/** Port of evvdroid's SpeechRate: percent rates map through the measured non-linear curve. */
+private fun speechRateCurve() {
+    check(SpeechRate.speedForPercent(50, 100) == 50) { "100% must leave the voice alone" }
+    check(SpeechRate.speedForPercent(50, 400) in 110..125) { "400% must be about four times normal, not sixteen" }
+    check(SpeechRate.speedForPercent(50, 0) == 0) { "0% must map to the slowest speed" }
+    check(SpeechRate.speedForPercent(50, 300) > SpeechRate.speedForPercent(50, 200)) { "rate must rise with percent" }
+    check(SpeechRate.speedForPercent(50, 10000) <= 250) { "speed must stay within the engine ceiling" }
+    println("PASS speechRateCurve: measured speed curve keeps high rates near four times normal")
+}
+
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); abbreviationSplitting(); westernFlatten(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

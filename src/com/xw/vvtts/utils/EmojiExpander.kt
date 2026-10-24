@@ -6,10 +6,9 @@ package com.xw.vvtts.utils
  * otherwise stays silent. Applied in onSynthesizeText before segmentation.
  *
  * Matches longest full sequences first (ZWJ families, flags, skin-tone
- * variants, variation-selected forms); unknown emoji-block codepoints
- * and bare components (ZWJ, VS16, skin tones) are dropped so they do not
- * reach the engine as unmappable bytes. Table regenerated from Unicode
- * emoji-test.txt + CLDR annotations (English tts.))
+ * variants, variation-selected forms). Bare components (ZWJ, VS16/VS15,
+ * skin tones) are dropped. Emoji with no table entry pass through unchanged.
+ * Table generated from Unicode emoji-test.txt + CLDR English annotations.
  */
 class EmojiExpander {
     companion object {
@@ -96,6 +95,8 @@ class EmojiExpander {
                 if (matched) continue
                 i += Character.charCount(cp)
                 if (isEmojiComponent(cp)) continue
+                // Separate a spoken name from the text that follows it ("😀hi" -> "grinning face hi").
+                if (lastWasName && !Character.isWhitespace(cp)) sb.append(' ')
                 sb.appendCodePoint(cp)
                 lastWasName = false
             }

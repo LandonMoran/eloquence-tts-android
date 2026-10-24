@@ -6,8 +6,17 @@ set -euo pipefail
 
 SDK="${ANDROID_SDK_ROOT:-$HOME/android-sdk}"
 ADB="$SDK/platform-tools/adb"
-PKG=$(grep -oE 'package="[^"]*"' AndroidManifest.xml | head -1 | sed -E 's/.*"([^"]*)".*/\1/')
+# The Gradle migration moved the app id from the manifest's package= attribute to
+# build.gradle's namespace; derive it there, falling back to the legacy manifest
+# attr. A manifest-only grep yields an empty id now, which made every
+# "am start -n /.ui.SettingsActivity" below fail with set -e.
+PKG=$(grep -oE "namespace[[:space:]]+['\"][^'\"]+['\"]" build.gradle | head -1 | sed -E "s/.*['\"]([^'\"]+)['\"].*/\1/")
+if [ -z "$PKG" ]; then
+  PKG=$(grep -oE 'package="[^"]*"' AndroidManifest.xml | head -1 | sed -E 's/.*"([^"]*)".*/\1/')
+fi
+[ -n "$PKG" ] || { echo "cannot determine package id" >&2; exit 1; }
 APK=$(ls *_signed.apk 2>/dev/null | head -1)
+[ -n "$APK" ] || { echo "no *_signed.apk staged" >&2; exit 1; }
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UIDUMP=/tmp/ui_stress.xml
 echo "pkg=$PKG apk=$APK"

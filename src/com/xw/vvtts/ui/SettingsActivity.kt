@@ -7,7 +7,11 @@ import android.app.Activity
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
+import android.provider.Settings
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -73,14 +77,22 @@ class SettingsActivity : Activity() {
     private var charSection: LinearLayout? = null
     private var punctBtn: Button? = null
     private var numberBtn: Button? = null
+    private var batteryStatusView: TextView? = null
     private val REQ_PROFILE = 701
     private val REQ_DICT_OPEN = 702
     private val REQ_DICT_CREATE = 703
     private val REQ_POST_NOTIFICATIONS = 704
     /** Switch awaiting the POST_NOTIFICATIONS permission result, null when idle. */
     private var pendingNotifyToggle: Switch? = null
+    /** Avoid re-entering update-preference callbacks when reverting a failed save. */
+    private var suppressUpdateToggleCallbacks = false
     /** Guards the launch auto-update dialog so it surfaces at most once per process. */
     @Volatile private var launchUpdateDialogShown = false
+    override fun onResume() {
+        super.onResume()
+        refreshBatteryStatus()
+    }
+
     /** Initializes settings and the shared engine, builds the settings screen and schedules requested autotests. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -216,6 +228,18 @@ class SettingsActivity : Activity() {
         numberBtn = numberBtnLocal
         numberBtnLocal.setOnClickListener { showNumberDialog() }
         refreshNumberButton(numberBtnLocal)
+
+        // ===== BATTERY SECTION =====
+        addSectionHeader(mainContainer, R.string.sec_battery)
+        val batteryStatus = TextView(this)
+        batteryStatus.textSize = 14f
+        batteryStatus.setTextColor(getColor(R.color.m3_on_surface))
+        mainContainer.addView(batteryStatus)
+        batteryStatusView = batteryStatus
+        val batteryBtn = addRow(this, mainContainer)
+        batteryBtn.text = getString(R.string.battery_allow_button)
+        batteryBtn.setOnClickListener { requestUnrestrictedBattery() }
+        refreshBatteryStatus()
         
         // ===== LANGUAGE / DICTIONARY SECTION =====
         addSectionHeader(mainContainer, R.string.sec_dictionary)
@@ -243,14 +267,15 @@ class SettingsActivity : Activity() {
             mainContainer,
             getString(R.string.update_notify_toggle),
             UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
-        ) { on -> onUpdateNotifyToggleChanged(on, updateNotifySwitch) }
-        addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
-            UpdateNotifPrefs.usesPrereleases(this)) { on ->
-            UpdateNotifPrefs.get(this).edit { e ->
-                e.putBoolean(UpdateNotifPrefs.USE_PRERELEASES, on)
-            }
-            syncFcmTopics(this)
+        ) { on ->
+            if (!suppressUpdateToggleCallbacks) onUpdateNotifyToggleChanged(on, updateNotifySwitch)
         }
+        var prereleaseSwitch: Switch? = null
+        prereleaseSwitch = addSwitchRow(mainContainer, getString(R.string.update_notif_prereleases),
+            UpdateNotifPrefs.usesPrereleases(this)) { on ->
+            onUpdatePrereleasesToggleChanged(on, prereleaseSwitch)
+        }
+
         
         // ===== ADVANCED SECTION =====
         addSectionHeader(mainContainer, R.string.sec_advanced)
@@ -664,6 +689,33 @@ maybeShowLaunchUpdateDialog()
 
     private fun dp(px: Int): Int = (px * resources.displayMetrics.density).toInt()
 
+    /** Whether Android has excused the app from battery optimisation. */
+    private fun isBatteryUnrestricted(): Boolean {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return power.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /** Shows whether battery optimisation is on for the app. */
+    private fun refreshBatteryStatus() {
+        batteryStatusView?.text = getString(
+            if (isBatteryUnrestricted()) R.string.battery_unrestricted else R.string.battery_optimised
+        )
+    }
+
+    /** Asks Android to exempt the app from battery optimisation; falls back to the list if refused. */
+    private fun requestUnrestrictedBattery() {
+        if (isBatteryUnrestricted()) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            return
+        }
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
     private fun refreshLanguageUi() {
         langSwitch?.isChecked = LanguageDetector.isDetectionEnabled()
     }
@@ -1057,8 +1109,14 @@ maybeShowLaunchUpdateDialog()
     private fun finalizeUpdateNotify(on: Boolean, sw: Switch?) {
         try {
             // FCM mirror is the master flag driving topic subscriptions.
-            UpdateNotifPrefs.get(this).edit { e ->
+            val saved = UpdateNotifPrefs.get(this).edit { e ->
                 e.putBoolean(UpdateNotifPrefs.NOTIFICATIONS_ENABLED, on)
+            }
+            if (!saved) {
+                val current = UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
+                setUpdateToggleSilently(sw, current)
+                Toast.makeText(this, R.string.update_settings_not_saved, Toast.LENGTH_LONG).show()
+                return
             }
             if (on) {
                 maybeRequestNotifPermission()
@@ -1080,8 +1138,44 @@ maybeShowLaunchUpdateDialog()
             }
         } catch (t: Throwable) {
             Log.e("SettingsActivity", "failed to update background notifications", t)
-            sw?.isChecked = !on
+            val current = try {
+                UpdateNotifPrefs.isEnabled(this) || UpdateNotificationScheduler.isEnabled(this)
+            } catch (_: Throwable) {
+                !on
+            }
+            setUpdateToggleSilently(sw, current)
+            Toast.makeText(this, R.string.update_settings_apply_failed, Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** Persist prerelease preference before syncing topics; revert the UI on a failed save. */
+    private fun onUpdatePrereleasesToggleChanged(on: Boolean, sw: Switch?) {
+        if (suppressUpdateToggleCallbacks) return
+        val saved = try {
+            UpdateNotifPrefs.get(this).edit { e -> e.putBoolean(UpdateNotifPrefs.USE_PRERELEASES, on) }
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "failed to update prerelease preference", t)
+            false
+        }
+        if (!saved) {
+            setUpdateToggleSilently(sw, UpdateNotifPrefs.usesPrereleases(this))
+            Toast.makeText(this, R.string.update_settings_not_saved, Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            syncFcmTopics(this)
+        } catch (t: Throwable) {
+            Log.e("SettingsActivity", "failed to synchronize prerelease notifications", t)
+            Toast.makeText(this, R.string.update_settings_apply_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Restore a failed update switch save without recursively invoking its listener. */
+    private fun setUpdateToggleSilently(sw: Switch?, checked: Boolean) {
+        if (sw == null || sw.isChecked == checked) return
+        val wasSuppressing = suppressUpdateToggleCallbacks
+        suppressUpdateToggleCallbacks = true
+        try { sw.isChecked = checked } finally { suppressUpdateToggleCallbacks = wasSuppressing }
     }
 
     /**
