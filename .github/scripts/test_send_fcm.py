@@ -134,6 +134,21 @@ def main():
     assert msg["android"] == {"priority": "high"}
     assert "projects/fake-project/messages:send" in sends[0]["path"]
 
+    # An explicit dev-topic override must still carry the opt-in flag, or the
+    # receiver could display a prerelease notification to a stable-only user.
+    Handler.captured.clear()
+    override = dict(env)
+    override.pop("RELEASE_TAG")
+    override["FCM_TOPIC"] = "eloquence_updates_dev"
+    override["IS_PRERELEASE"] = "false"
+    override["FCM_VERSION"] = "9.9.0-beta"
+    overridden = subprocess.run([sys.executable, SCRIPT], env=override, capture_output=True, text=True)
+    assert overridden.returncode == 0, overridden.stdout + overridden.stderr
+    override_sends = [c for c in Handler.captured if c["path"].endswith("/messages:send")]
+    assert len(override_sends) == 1
+    assert override_sends[0]["body"]["message"]["topic"] == "eloquence_updates_dev"
+    assert override_sends[0]["body"]["message"]["data"]["prerelease"] == "true"
+
     # re-run with IS_PRERELEASE=true -> dev topic
     Handler.captured.clear()
     env2 = dict(env)

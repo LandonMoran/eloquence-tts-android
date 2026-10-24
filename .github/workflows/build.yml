@@ -95,7 +95,7 @@ jobs:
             task_listing="$RUNNER_TEMP/gradle-tasks.txt"
             ./gradlew --no-daemon --no-build-cache --console=plain tasks --all > "$task_listing"
             for variant in Arm64Release Armv7Release UnivRelease; do
-              matches=$(grep -E "^[[:space:]]+uploadCrashlyticsSymbolFiles?${variant}[[:space:]]" "$task_listing" || true)
+              matches=$(grep -E "^[[:space:]]*uploadCrashlyticsSymbolFiles?${variant}[[:space:]]" "$task_listing" || true)
               if [[ $(printf '%s\n' "$matches" | sed '/^$/d' | wc -l) -ne 1 ]]; then
                 echo "Expected exactly one Crashlytics symbol uploader for $variant; found:" >&2
                 printf '%s\n' "$matches" >&2

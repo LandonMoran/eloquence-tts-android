@@ -163,6 +163,9 @@ def main() -> int:
         topic = DEV_TOPIC if prerelease else STABLE_TOPIC
     if explicit:
         topic = explicit
+        # The client uses this flag to enforce prerelease opt-outs, so keep it
+        # aligned with the actual destination when a caller overrides routing.
+        prerelease = topic == DEV_TOPIC
 
     print(f"topic   : {topic}")
     print(f"version : {version or '(none)'}")
