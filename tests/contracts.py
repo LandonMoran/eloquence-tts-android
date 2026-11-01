@@ -39,7 +39,7 @@ class Contracts(unittest.TestCase):
         kotlin = {int(constants[key],16) for key in re.findall(r'EloquenceEngine\.(DIALECT_\w+)',registry)}
         native = (ROOT/'jni/vvtts_core.c').read_text().split('static int vv_dialect_shipped')[1].split('JNIEXPORT jlong')[0]
         self.assertEqual(kotlin, {int(v,16) for v in re.findall(r'case (0x[0-9a-fA-F]+):', native)})
-        self.assertEqual(len(kotlin),10)
+        self.assertEqual(len(kotlin),12)
         self.assertNotIn('buildEloquenceConfig',engine)
 
     def test_crashlytics_native_symbols_configured_and_uploaded(self):
@@ -68,6 +68,24 @@ class Contracts(unittest.TestCase):
         self.assertIn('-Wl,--build-id', native)
         self.assertIn('llvm-readelf" -n', native)
         self.assertIn('firebase-crashlytics-ndk', build)
+
+    def test_registry_matches_upstream_modules(self):
+        """Require every upstream openevv language module to be exposed by Android."""
+        registry = (ROOT/'src/com/xw/vvtts/engine/VoiceRegistry.kt').read_text()
+        engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
+        constants = dict(re.findall(r'const val (DIALECT_\w+)\s*=\s*(0x[0-9a-fA-F]+)', engine))
+        kotlin = {
+            int(constants[key], 16)
+            for key in re.findall(r'EloquenceEngine\.(DIALECT_\w+)', registry)
+        }
+        upstream = set()
+        for path in (ROOT/'native/openevv/lang').glob('*/eci_ini_*.c'):
+            text = path.read_text()
+            match = re.search(r'const int32_t \w+_eci_library_lang\s*=\s*(0x[0-9a-fA-F]+)', text)
+            self.assertIsNotNone(match, path)
+            upstream.add(int(match.group(1), 16))
+        self.assertEqual(kotlin, upstream)
+        self.assertEqual(len(re.findall(r'CapableVoice\("', registry)), 13)
 
     def test_release_signing_isolated(self):
         """Require production signing secrets to stay in the protected release workflow."""

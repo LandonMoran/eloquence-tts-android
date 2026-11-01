@@ -172,6 +172,7 @@ class VoiceConfig(private val context: Context) {
             Lang("en-US", "English (US)", 0, 0x10000L),
             Lang("en-GB", "English (UK)", 1, 0x10001L),
             Lang("es-ES", "Spanish (Spain)", 2, 0x20000L),
+            Lang("es-US", "Spanish (US)", 10, 0x20001L),
             Lang("es-MX", "Spanish (Mexico)", 3, 0x20001L),
             Lang("fr-FR", "French (France)", 4, 0x30000L),
             Lang("fr-CA", "French (Canada)", 5, 0x30001L),
@@ -179,6 +180,8 @@ class VoiceConfig(private val context: Context) {
             Lang("it-IT", "Italian", 7, 0x50000L),
             Lang("ja-JP", "Japanese", 8, 0x80000L),
             Lang("pl-PL", "Polish", 9, 0x110000L), // plpl module
+            Lang("pt-BR", "Portuguese (Brazil)", 10, 0x70000L),
+            Lang("fi-FI", "Finnish", 11, 0x90000L),
         )
 
         fun findLang(code: String?): Lang {

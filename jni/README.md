@@ -33,10 +33,11 @@ are statically linked into one `libvvtts_core.so` for each packaged ABI.
 - A fully silent engine result (no sample beyond the ±700 speech floor) is a
   failure, not speech: the framework must never advance progress over an
   empty waveform.
-- The 10 shipped locales (12 once `es-US`, `pt-BR`, `fi-FI` are re-added on the
-  next engine resync) must match `VoiceRegistry.kt`; `tests/contracts.py`
-  checks parity. Korean is removed from this build (dispatch, detection,
-  language-model, and engine `lang/kor` sources).
+- The 13 shipped locale voices cover all 12 native modules:
+  `en-US`, `en-GB`, `de-DE`, `fr-FR`, `fr-CA`, `es-ES`, `es-US`, `es-MX`,
+  `it-IT`, `ja-JP`, `pl-PL`, `pt-BR`, and `fi-FI`. `es-US` and `es-MX` share
+  the `esus` module. The registry/native dialect parity is checked by
+  `tests/contracts.py`. Korean is not shipped by this build.
 
 ## Build and verification
 

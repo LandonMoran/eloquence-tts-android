@@ -341,6 +341,8 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
         if (lang.startsWith("es")) return if (c == "MX" || c == "MEX") "es-MX" else "es-ES"
         if (lang.startsWith("it")) return "it-IT"
+        if (lang.startsWith("pt")) return "pt-BR"
+        if (lang.startsWith("fi")) return "fi-FI"
         if (lang.startsWith("ja")) return "ja-JP"
         if (lang.startsWith("pl")) return "pl-PL"
         return "en-US"
