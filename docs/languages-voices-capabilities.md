@@ -1,15 +1,14 @@
 # Languages, voices, and capabilities
 
 [`VoiceRegistry.kt`](../src/com/xw/vvtts/engine/VoiceRegistry.kt) is the
-executable source of truth for the Android locales advertised as available.
-[`KonaVoice.kt`](../src/com/xw/vvtts/utils/KonaVoice.kt) defines the eight
-named voice presets and their base parameter values. Native locale parity is
-checked by [`tests/contracts.py`](../tests/contracts.py).
+executable source of truth for the Android locales advertised by the app.
+[`KonaVoice.kt`](../src/com/xw/vvtts/utils/KonaVoice.kt) defines the eight named
+voice presets and their base parameter values. Native locale parity is checked by
+[`tests/contracts.py`](../tests/contracts.py).
 
 ## Shipped locales
 
-The engine submodule carries **12 languages**. The Android app currently
-advertises **10**:
+The app currently advertises 10 locales:
 
 | Locale | Language | Native dialect |
 | --- | --- | --- |
@@ -24,20 +23,16 @@ advertises **10**:
 | `ja-JP` | Japanese (Japan) | `0x80000` |
 | `pl-PL` | Polish (Poland) | `0x110000` |
 
-The other engine languages — **`es-US`, `pt-BR`, and `fi-FI`** — are held by the
-native engine submodule (tracking upstream `openevv`) and will be brought into
-`VoiceRegistry.kt` when the engine is resynced, bringing the advertised count
-to **12**. Korean is fully removed from this build: the korean user model
-(`language-models/ko`) is pruned, there is no `ko-KR` dialect in `VoiceRegistry.kt`,
-and the app neither advertises nor synthesizes Korean.
+The upstream `openevv` submodule still contains additional engine languages such as
+`es-US`, `pt-BR`, and `fi-FI`, but they are not in the Android registry in this
+build. Korean is not shipped or advertised; the app does not register a `ko-KR`
+voice or synthesize Korean text.
 
 ## Voice presets and parameters
 
 The app defines eight named presets: Reed, Shelley, Sandy, Rocko, Flo, Grandma,
-Grandpa, and Eddy. The selected preset supplies a standard voice row and a
-baseline parameter set; a user voice profile can override parameter values.
-The native mapping explicitly accounts for Eddy's different row number in
-`openevv`.
+Grandpa, and Eddy. The selected preset supplies a standard voice row and a base
+parameter set; a user voice profile can override parameter values.
 
 The eight ECI voice parameters are:
 
@@ -50,24 +45,23 @@ The eight ECI voice parameters are:
 7. speed
 8. volume
 
-Parameter ranges and language-specific native behavior are defined by
+Parameter ranges and language-specific native behavior are defined in
 [`EloquenceEngine.kt`](../src/com/xw/vvtts/engine/EloquenceEngine.kt),
 [`KonaVoice.kt`](../src/com/xw/vvtts/utils/KonaVoice.kt), and the native
-[`jni/README.md`](../jni/README.md). The preset list is not a promise that
-every locale has identical sound or supports identical native data.
+[`jni/README.md`](../jni/README.md).
 
 ## Runtime capabilities
 
 - The language detector uses Unicode rules, an in-memory n-gram model, and
   Lingua classification. Mixed-language text is segmented before synthesis.
-- The local engine has no speech-service network round trip.
-- Android system TTS supplies speech rate and pitch; app settings supply voice
-  and volume options. Voice profile controls tune the ECI parameters.
+- Synthesis is local to the device; the app does not send speech text to a remote
+  service.
+- Android TTS supplies speech rate and pitch controls; app settings expose voice
+  and volume controls. Voice profile controls tune the ECI parameter set.
 - Direct Boot is supported by the TTS service declaration and device-protected
-  engine/settings storage. See `AndroidManifest.xml` and
-  `src/com/xw/vvtts/services/VvTtsService.kt`.
-- The update checker uses GitHub Releases and ABI-specific APK names. Its exact
+  storage. See `AndroidManifest.xml` and `src/com/xw/vvtts/services/VvTtsService.kt`.
+- The update checker uses GitHub Releases and ABI-specific APK names. Exact
   version metadata and signing requirements are in [`RELEASES.md`](../RELEASES.md).
 
-When this list changes, update the registry and its native parity checks first,
-then keep user-facing documentation and release notes in sync.
+When these capabilities change, update the registry and its native parity checks
+first, then keep user-facing documentation and release notes in sync.
