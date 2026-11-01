@@ -2,15 +2,15 @@
 
 ## Current release notes
 
-This project currently ships a 10-locale Android TTS build. The advertised
+This project currently ships a 13-locale-voice Android TTS build backed by all
+12 native language modules. The advertised
 locales are defined by [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt)
 and are:
-`en-US`, `en-GB`, `de-DE`, `fr-FR`, `fr-CA`, `es-ES`, `es-MX`, `it-IT`, `ja-JP`,
-and `pl-PL`.
+`en-US`, `en-GB`, `de-DE`, `fr-FR`, `fr-CA`, `es-ES`, `es-US`, `es-MX`, `it-IT`,
+`ja-JP`, `pl-PL`, `pt-BR`, and `fi-FI`.
 
-The native `openevv` submodule still contains additional engine languages, but
-those are not part of the Android app's shipped registry in this build. Korean is
-not included in the Android locale list or the packaged language model.
+`es-US` and `es-MX` share the upstream `esus` module. Korean is not included in
+the Android locale list or the packaged language model.
 
 ## Version and publication
 

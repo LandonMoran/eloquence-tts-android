@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream
  * Fast in-RAM Latin detection over the shipped pruned n-gram tables
  * (assets/ngram_uni_bi.tsv.gz, generated from the language-models JSON files).
  * The index order MUST match LanguageDetector.getEnabledLanguageEnums():
- * EN, DE, FR, ES, IT, PL.
+ * EN, DE, FR, ES, IT, PT, FI, PL.
  *
  * Primary path on the delivery thread; Lingua is demoted to ambiguous-only
  * fallback. Scores are sum-of-frequencies over present n-grams, normalized
@@ -40,7 +40,7 @@ object NgramScorer {
     private const val BACKOFF_BASE_MS = 1000L
     private const val BACKOFF_MAX_MS = 60_000L
 
-    private val LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pl")
+    private val LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pt", "fi", "pl")
 
     /** Immutable published scoring tables. All maps are read-only views; never mutate in place. */
     private class Snapshot(

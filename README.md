@@ -7,13 +7,14 @@
 
   ## Current capability
 
-  The app currently advertises 10 shipped locales through
+  The app currently advertises 13 shipped locale voices through
   [`VoiceRegistry.kt`](src/com/xw/vvtts/engine/VoiceRegistry.kt):
-  `en-US`, `en-GB`, `de-DE`, `fr-FR`, `fr-CA`, `es-ES`, `es-MX`, `it-IT`, `ja-JP`,
-  and `pl-PL`.
+  `en-US`, `en-GB`, `de-DE`, `fr-FR`, `fr-CA`, `es-ES`, `es-US`, `es-MX`,
+  `it-IT`, `ja-JP`, `pl-PL`, `pt-BR`, and `fi-FI`. The `es-US` and `es-MX`
+  voices use the same upstream `esus` engine module.
 
-  The native `openevv` submodule carries additional engine languages, but Korean is
-  not shipped or advertised in this Android build. See
+  These voices cover all 12 language modules linked by the native `openevv`
+  submodule. Korean is not shipped or advertised in this Android build. See
   [docs/languages-voices-capabilities.md](docs/languages-voices-capabilities.md) for
   voice presets and locale mapping.
 

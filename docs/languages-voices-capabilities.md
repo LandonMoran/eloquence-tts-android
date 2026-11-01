@@ -8,7 +8,8 @@ voice presets and their base parameter values. Native locale parity is checked b
 
 ## Shipped locales
 
-The app currently advertises 10 locales:
+The app currently advertises 13 locale voices backed by all 12 native language
+modules:
 
 | Locale | Language | Native dialect |
 | --- | --- | --- |
@@ -18,15 +19,17 @@ The app currently advertises 10 locales:
 | `fr-FR` | French (France) | `0x30000` |
 | `fr-CA` | French (Canada) | `0x30001` |
 | `es-ES` | Spanish (Spain) | `0x20000` |
-| `es-MX` | Spanish (Mexico) | `0x20002` |
+| `es-US` | Spanish (United States) | `0x20001` |
+| `es-MX` | Spanish (Mexico) | `0x20001` |
 | `it-IT` | Italian (Italy) | `0x50000` |
 | `ja-JP` | Japanese (Japan) | `0x80000` |
 | `pl-PL` | Polish (Poland) | `0x110000` |
+| `pt-BR` | Portuguese (Brazil) | `0x70000` |
+| `fi-FI` | Finnish (Finland) | `0x90000` |
 
-The upstream `openevv` submodule still contains additional engine languages such as
-`es-US`, `pt-BR`, and `fi-FI`, but they are not in the Android registry in this
-build. Korean is not shipped or advertised; the app does not register a `ko-KR`
-voice or synthesize Korean text.
+`es-US` and `es-MX` share the upstream `esus` module (`0x20001`). Korean is not
+shipped or advertised; the app does not register a `ko-KR` voice or synthesize
+Korean text.
 
 ## Voice presets and parameters
 

@@ -27,22 +27,26 @@ class LanguageDetector {
         const val DIALECT_EN_US  =  0x10000
         const val DIALECT_EN_GB  =  0x10001
         const val DIALECT_ES_ES  =  0x20000
-        const val DIALECT_ES_MX  =  0x20001
+        const val DIALECT_ES_US  =  0x20001
+        const val DIALECT_ES_MX  = DIALECT_ES_US
         const val DIALECT_FR_FR  =  0x30000
         const val DIALECT_FR_CA  =  0x30001
         const val DIALECT_DE_DE  =  0x40000
         const val DIALECT_IT_IT  =  0x50000
         const val DIALECT_JA_JP  =  0x80000
         const val DIALECT_PL_PL  =  0x110000
+        const val DIALECT_PT_BR  =  0x70000
+        const val DIALECT_FI_FI  = 0x90000
 
         // Special value for "unspecified default language"
         const val DEFAULT_UNSPECIFIED = -1
 
             // all supported language codes(for the settings multi-select)
         // Only languages actually linked in this build (see build_native.sh LANGS).
-        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "ja", "pl")
+        val ALL_LANG_CODES = arrayOf("en", "de", "fr", "es", "it", "pt", "fi", "ja", "pl")
         val ALL_LANG_NAMES = arrayOf(
-            "English", "German", "French", "Spanish", "Italian", "Japanese", "Polish",
+            "English", "German", "French", "Spanish", "Italian", "Portuguese", "Finnish",
+            "Japanese", "Polish",
         )
 
             // settings key
@@ -265,6 +269,8 @@ class LanguageDetector {
             allLatin.add(Language.FRENCH)
             allLatin.add(Language.SPANISH)
             allLatin.add(Language.ITALIAN)
+            allLatin.add(Language.PORTUGUESE)
+            allLatin.add(Language.FINNISH)
             allLatin.add(Language.POLISH)
 
             val en = enabledLanguages
@@ -289,6 +295,8 @@ class LanguageDetector {
             if (lang == Language.FRENCH) return "fr"
             if (lang == Language.SPANISH) return "es"
             if (lang == Language.ITALIAN) return "it"
+            if (lang == Language.PORTUGUESE) return "pt"
+            if (lang == Language.FINNISH) return "fi"
             if (lang == Language.POLISH) return "pl"
             return "en"
         }
@@ -299,6 +307,8 @@ class LanguageDetector {
             if (lang == Language.FRENCH) return frenchDialect
             if (lang == Language.SPANISH) return spanishDialect
             if (lang == Language.ITALIAN) return DIALECT_IT_IT
+            if (lang == Language.PORTUGUESE) return DIALECT_PT_BR
+            if (lang == Language.FINNISH) return DIALECT_FI_FI
             if (lang == Language.POLISH) return DIALECT_PL_PL
             return englishDialect
         }
@@ -445,7 +455,7 @@ class LanguageDetector {
             return when (d) {
                 DIALECT_EN_US, DIALECT_EN_GB, DIALECT_ES_ES, DIALECT_ES_MX,
                 DIALECT_FR_FR, DIALECT_FR_CA, DIALECT_DE_DE, DIALECT_IT_IT,
-                DIALECT_JA_JP, DIALECT_PL_PL -> true
+                DIALECT_PT_BR, DIALECT_FI_FI, DIALECT_JA_JP, DIALECT_PL_PL -> true
                 else -> false
             }
         }
@@ -718,7 +728,9 @@ class LanguageDetector {
                     2 -> frenchDialect
                     3 -> spanishDialect
                     4 -> DIALECT_IT_IT
-                    5 -> DIALECT_PL_PL
+                    5 -> DIALECT_PT_BR
+                    6 -> DIALECT_FI_FI
+                    7 -> DIALECT_PL_PL
                     else -> -1
                 }
                 if (dialect >=0) {
@@ -777,6 +789,8 @@ class LanguageDetector {
                 "fr" -> frenchDialect
                 "es" -> spanishDialect
                 "it" -> DIALECT_IT_IT
+                "pt" -> DIALECT_PT_BR
+                "fi" -> DIALECT_FI_FI
                 "pl" -> DIALECT_PL_PL
                 else -> -1
             }
@@ -789,6 +803,7 @@ class LanguageDetector {
                 || dialect == DIALECT_FR_FR || dialect == DIALECT_FR_CA
                 || dialect == DIALECT_ES_ES || dialect == DIALECT_ES_MX
                 || dialect == DIALECT_IT_IT
+                || dialect == DIALECT_PT_BR || dialect == DIALECT_FI_FI
                 || dialect == DIALECT_PL_PL
         }
 
