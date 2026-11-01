@@ -28,6 +28,16 @@
   - `tools/` — asset generation, APK audit, and release helpers
   - `.github/workflows/` — CI and release automation
 
+  ## Architecture
+
+  Android's `TextToSpeechService` in `src/` selects and segments text, applies
+  normalization and voice settings, then serializes synthesis work through
+  `EloquenceEngine`. The engine calls the JNI bridge in `jni/`, which statically
+  links the C `openevv` engine and exposes a single `libvvtts_core.so` per ABI.
+  The bridge returns signed 16-bit mono PCM at 44,100 Hz. The engine's own
+  converter produces that output rate; the bridge trims silence and tapers the
+  PCM edges before Android playback.
+
   ## Build and validation
 
   Android SDK/NDK builds are run in GitHub Actions. The main CI workflow is

@@ -85,16 +85,19 @@ object UpdateNotificationScheduler {
         }
     }
 
+    /** Recheck the master opt-out at delivery time, after an asynchronous update check. */
+    internal fun shouldPostNotification(context: Context, permissionGranted: Boolean): Boolean =
+        UpdateNotifPrefs.isEnabled(context) && permissionGranted
+
     /**
-     * Posts the high-importance "new version available" notification. No-ops on API 33+
-     * when POST_NOTIFICATIONS is not granted. Tap opens SettingsActivity with the update
-     * dialog (the release page remains the dialog's secondary button).
+     * Posts the high-importance "new version available" notification. No-ops when
+     * the user has opted out or POST_NOTIFICATIONS is not granted. Tap opens SettingsActivity
+     * with the update dialog (the release page remains the dialog's secondary button).
      */
     fun postNotification(context: Context, versionTag: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            context.checkSelfPermission(PERMISSION_POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
+        val permissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            context.checkSelfPermission(PERMISSION_POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (!shouldPostNotification(context, permissionGranted)) return
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         try {
             val builder = Notification.Builder(context, CHANNEL_ID)

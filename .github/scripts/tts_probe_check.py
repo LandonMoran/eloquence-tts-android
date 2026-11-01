@@ -1,55 +1,71 @@
 # Judge the TTS engine probe results from a filtered logcat capture.
 # Input: a file of logcat -v time lines filtered to TTSProbe / seg dialect / crashes.
+#
+# Every check below is required: a log that is missing a marker is a failed run,
+# not a pass with a note (a probe that never locked the device or never fired the
+# second utterance proves nothing about the locked-screen path).
 import re
 import sys
+
+SEG_RE = re.compile(r'seg dialect=0x([0-9a-fA-F]+)')
+# "com\.xw" (a real dot), not "com\\.xw": the double escape in a raw string
+# matched a literal backslash and never matched an ActivityManager line.
+BAD_RE = re.compile(
+    r'(SecurityException|FATAL EXCEPTION|IllegalStateException|StorageNotReady'
+    r'|Process .*com\.xw.*died|UNEXPECTED TOP-LEVEL)')
 
 
 def main():
     if len(sys.argv) < 2:
         print("CHECK_RESULT=FAIL no log file")
-        sys.exit(1)
-    lines = open(sys.argv[1]).read().splitlines()
-    seg_re = re.compile(r'seg dialect=0x([0-9a-fA-F]+)')
-    dial = [(m.group(1), i) for i, l in enumerate(lines) if (m := seg_re.search(l))]
-    first = dial[0][0] if dial else ""
-    has_zh = any(h.startswith("6") for h, _ in dial)
-    locked_i = next((i for i, l in enumerate(lines) if "CHECKPOINT_LOCKED" in l), None)
-    unlocked_i = next((i for i, l in enumerate(lines) if "CHECKPOINT_UNLOCKED" in l), None)
-    speak2_i = next((i for i, l in enumerate(lines) if "PROBE_SPEAK2_FIRED" in l), None)
-    bad_re = re.compile(r'(SecurityException|FATAL EXCEPTION|IllegalStateException|StorageNotReady|Process.*com\\.xw.*died|UNEXPECTED TOP-LEVEL)')
-    post = lines[speak2_i:] if speak2_i is not None else []
-    bad = [l for l in post if bad_re.search(l)]
-    err = []
-    ok = True
-    if not dial:
-        ok = False
-        err.append("no seg dialect markers")
+        return 1
+    try:
+        with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError as exc:
+        print(f"CHECK_RESULT=FAIL cannot read log: {exc}")
+        return 1
+
+    dialect = [(m.group(1), i) for i, line in enumerate(lines)
+               if (m := SEG_RE.search(line))]
+    locked_i = next((i for i, line in enumerate(lines) if "CHECKPOINT_LOCKED" in line), None)
+    unlocked_i = next((i for i, line in enumerate(lines) if "CHECKPOINT_UNLOCKED" in line), None)
+    speak2_i = next((i for i, line in enumerate(lines) if "PROBE_SPEAK2_FIRED" in line), None)
+
+    errors = []
+
+    if not dialect:
+        errors.append("no seg dialect markers")
     else:
+        first = dialect[0][0]
         if first.startswith("6"):
-            ok = False
-            err.append("first latin segment resolved to zh dialect 0x" + first)
-        if not has_zh:
-            ok = False
-            err.append("no zh sanity segment (0x6..( found")
+            errors.append("first latin segment resolved to zh dialect 0x" + first)
+        if not any(d.startswith("6") for d, _ in dialect):
+            errors.append("no zh sanity segment (0x6..) found")
+
     if locked_i is None:
-        err.append("no CHECKPOINT_LOCKED marker")
+        errors.append("no CHECKPOINT_LOCKED marker")
+
     if speak2_i is None:
-        err.append("speak2 never fired")
+        errors.append("speak2 never fired")
     else:
         if locked_i is not None and speak2_i < locked_i:
-            err.append("speak2 fired before device locked")
-        lockwin = [h for h, i in dial if locked_i is not None and i > locked_i and (unlocked_i is None or i < unlocked_i)]
-        if not lockwin:
-            err.append("no synthesis segments in the locked window")
+            errors.append("speak2 fired before device locked")
+        lock_window = [d for d, i in dialect
+                       if locked_i is not None and i > locked_i
+                       and (unlocked_i is None or i < unlocked_i)]
+        if not lock_window:
+            errors.append("no synthesis segments in the locked window")
+        bad = [line for line in lines[speak2_i:] if BAD_RE.search(line)]
         if bad:
-            ok = False
-            err.append("post-speak2 errors: " + " | ".join(bad[:3]))
-    if ok:
-        print("CHECK_RESULT=PASS")
-    else:
-        print("CHECK_RESULT=FAIL " + "; ".join(err))
-        sys.exit(1)
+            errors.append("post-speak2 errors: " + " | ".join(bad[:3]))
+
+    if errors:
+        print("CHECK_RESULT=FAIL " + "; ".join(errors))
+        return 1
+    print("CHECK_RESULT=PASS")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

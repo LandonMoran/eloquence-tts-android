@@ -429,7 +429,7 @@ internal val EMOJI_10: Map<String, String> = mapOf(
                 "\\u27B0" to "curly loop",
                 "\\u27BF" to "double curly loop",
                 "\\uD83E\\uDEDF" to "splatter",
-                "\\uD83D\\uDD1F" to "emoji",
+                "\\uD83D\\uDD1F" to "keycap 10",
                 "\\uD83D\\uDD20" to "input latin uppercase",
                 "\\uD83D\\uDD21" to "input latin lowercase",
                 "\\uD83D\\uDD22" to "input numbers",

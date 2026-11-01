@@ -12,13 +12,14 @@ import os
 import subprocess
 import sys
 import threading
-import base64
 import tempfile
+from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
-SCRIPT = "/tmp/evvfix/gradle-mig/.github/scripts/send_fcm.py"
+# Resolve next to this file: an absolute path would only work on one machine.
+SCRIPT = str(Path(__file__).resolve().parent / "send_fcm.py")
 # Get an ephemeral port so repeated harness runs never collide.
 _tmp_sock = socketserver.TCPServer(("127.0.0.1", 0), None)
 PORT = _tmp_sock.server_address[1]
@@ -129,9 +130,24 @@ def main():
     assert sends[0]["auth"] == "Bearer FAKE_TOKEN_123", "uses the OAuth token"
     msg = sends[0]["body"]["message"]
     assert msg["topic"] == "eloquence_updates"
-    assert msg["data"] == {"type": "release", "version": "1.0.10"}, msg["data"]
+    assert msg["data"] == {"type": "release", "prerelease": "false", "version": "1.0.10"}, msg["data"]
     assert msg["android"] == {"priority": "high"}
     assert "projects/fake-project/messages:send" in sends[0]["path"]
+
+    # An explicit dev-topic override must still carry the opt-in flag, or the
+    # receiver could display a prerelease notification to a stable-only user.
+    Handler.captured.clear()
+    override = dict(env)
+    override.pop("RELEASE_TAG")
+    override["FCM_TOPIC"] = "eloquence_updates_dev"
+    override["IS_PRERELEASE"] = "false"
+    override["FCM_VERSION"] = "9.9.0-beta"
+    overridden = subprocess.run([sys.executable, SCRIPT], env=override, capture_output=True, text=True)
+    assert overridden.returncode == 0, overridden.stdout + overridden.stderr
+    override_sends = [c for c in Handler.captured if c["path"].endswith("/messages:send")]
+    assert len(override_sends) == 1
+    assert override_sends[0]["body"]["message"]["topic"] == "eloquence_updates_dev"
+    assert override_sends[0]["body"]["message"]["data"]["prerelease"] == "true"
 
     # re-run with IS_PRERELEASE=true -> dev topic
     Handler.captured.clear()
@@ -144,7 +160,10 @@ def main():
     assert "topic   : eloquence_updates_dev" in pr.stdout
     assert "version : 9.9.9-beta" in pr.stdout
     s2 = [c for c in Handler.captured if c["path"].endswith("/messages:send")]
-    assert s2[0]["body"]["message"]["data"] == {"type": "release", "version": "9.9.9-beta"}
+    # The client cannot infer the topic, so the payload must say it was a prerelease.
+    assert s2[0]["body"]["message"]["data"] == {
+        "type": "release", "prerelease": "true", "version": "9.9.9-beta"
+    }, s2[0]["body"]["message"]["data"]
 
     # missing required env -> nonzero
     bad = subprocess.run([sys.executable, SCRIPT], env={}, capture_output=True, text=True)

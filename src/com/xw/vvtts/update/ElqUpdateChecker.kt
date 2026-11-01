@@ -230,23 +230,30 @@ object ElqUpdateChecker {
      * and the decompressed payload, so a malformed/compromised/oversized response
      * can never exhaust memory or stall parsing on a giant JSONArray.
      */
-    private class LimitedInputStream(
+    internal class LimitedInputStream(
         private val source: InputStream,
         private val limit: Long,
     ) : InputStream() {
         private var count: Long = 0L
 
         override fun read(): Int {
-            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
             val b = source.read()
-            if (b >= 0) count++
+            if (b < 0) return -1
+            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
+            count++
             return b
         }
 
         override fun read(b: ByteArray, off: Int, len: Int): Int {
             if (len == 0) return 0
-            if (count >= limit) throw IOException("GitHub releases response exceeds $limit bytes")
-            val n = source.read(b, off, minOf(len.toLong(), limit - count).toInt())
+            val remaining = limit - count
+            if (remaining <= 0L) {
+                // A response exactly at the cap is valid. Probe one byte only to
+                // distinguish EOF from an oversized body; never return that byte.
+                if (source.read() < 0) return -1
+                throw IOException("GitHub releases response exceeds $limit bytes")
+            }
+            val n = source.read(b, off, minOf(len.toLong(), remaining).toInt())
             if (n > 0) count += n
             return n
         }

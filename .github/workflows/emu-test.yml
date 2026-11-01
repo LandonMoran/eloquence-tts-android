@@ -121,7 +121,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: emulator-logcat
+          # crash_test.sh writes two snapshots (native-stacks-a.txt / -b.txt);
+          # the old single name never existed, so the dumps were silently dropped.
           path: |
             logcat-full.txt
-            native-stacks.txt
+            native-stacks-*.txt
+            elq-diff.txt
           if-no-files-found: warn

@@ -42,9 +42,20 @@ free Firebase Crashlytics crash analytics.
   injects from google-services.json (no Application subclass or manual init
   needed).
 - Project has no billing account linked, so Crashlytics cannot incur a charge.
-- The Crashlytics Gradle plugin (symbol/mapping upload) is intentionally NOT
-  applied: our .so is hand-built, so native-symbol upload has nothing to map,
-  and the JVM/Kotlin crash path (the useful one here) works without it.
+- The Crashlytics Gradle plugin is applied. Native symbol uploads are enabled
+  for release variants, and their tasks read the unstripped phone-ABI libraries
+  produced by `build_native.sh`. The release CI explicitly invokes each phone
+  release variant's symbol-upload task. Firebase's Crashlytics NDK guide
+  requires upload to be enabled and the `uploadCrashlyticsSymbolFileBUILD_VARIANT`
+  task to run after the native library is built; the custom native build is
+  explicitly wired as a dependency of those tasks. Test-only x86_64 symbols are
+  not uploaded.
+- `build_native.sh` links GNU build IDs and verifies each `.so` contains one;
+  Crashlytics uses those IDs to match symbols to native crash reports.
+- Release CI needs no separate service-account credential for the Gradle
+  uploader; it uses the Firebase app configuration from `google-services.json`.
+  Confirm symbolication end-to-end with a native crash report in the Firebase
+  Crashlytics dashboard.
 
 ## CI
 
