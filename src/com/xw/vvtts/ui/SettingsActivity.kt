@@ -1162,6 +1162,8 @@ maybeShowLaunchUpdateDialog()
             getString(R.string.lang_french),
             getString(R.string.lang_spanish),
             getString(R.string.lang_italian),
+            getString(R.string.lang_portuguese),
+            getString(R.string.lang_finnish),
             getString(R.string.lang_japanese),
             getString(R.string.lang_polish),
         )
@@ -1173,6 +1175,8 @@ maybeShowLaunchUpdateDialog()
             LanguageDetector.getFrenchDialect(),      // French (accent setting picks France/Canada)
             LanguageDetector.getSpanishDialect(),     // Spanish (accent setting picks Spain/Mexico)
             LanguageDetector.DIALECT_IT_IT,
+            LanguageDetector.DIALECT_PT_BR,
+            LanguageDetector.DIALECT_FI_FI,
             LanguageDetector.DIALECT_JA_JP,
             LanguageDetector.DIALECT_PL_PL,
         )

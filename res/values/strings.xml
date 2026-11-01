@@ -119,6 +119,8 @@ Tap to change the spoken language</string>
     <string name="lang_french">French</string>
     <string name="lang_spanish">Spanish</string>
     <string name="lang_italian">Italian</string>
+    <string name="lang_portuguese">Portuguese</string>
+    <string name="lang_finnish">Finnish</string>
     <string name="lang_japanese">Japanese</string>
     <string name="lang_polish">Polish</string>
     <string name="ok">OK</string>
