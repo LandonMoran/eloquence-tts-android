@@ -148,6 +148,28 @@ class Contracts(unittest.TestCase):
             upload=next(i for i,c in enumerate(calls) if c[:3]==('gh','release','upload'))
             self.assertIn('--draft',calls[create]); self.assertIn('--verify-tag',calls[create])
             self.assertLess(create,upload)
+            calls.clear()
+            release_badging = "package: name='com.xw.vvtts' versionCode='13' versionName='2.0.1'"
+            def versioned_command(*args):
+                """Verify a versioned notes file is used for a new release."""
+                calls.append(args)
+                if args[0]=='aapt': return release_badging
+                if args[:3]==('gh','release','create'):
+                    self.assertIn('--notes-file',args)
+                    self.assertEqual(Path(args[args.index('--notes-file')+1]),
+                                     Path(publisher.__file__).with_name('release-notes-v2.0.1.md'))
+                if args[:3]==('gh','release','edit'):
+                    notes=Path(args[args.index('--notes-file')+1]).read_text()
+                    self.assertIn('Updated the OpenEVV engine to 0.6.1',notes)
+                    self.assertEqual(notes.count('android-version-code:'),1)
+                    self.assertIn('android-version-code: 13',notes)
+                return ''
+            with patch.object(publisher,'run',side_effect=versioned_command):
+                publisher.publish('v2.0.1','signed','aapt')
+            self.assertLess(
+                next(i for i,c in enumerate(calls) if c[:3]==('gh','release','create')),
+                next(i for i,c in enumerate(calls) if c[:3]==('gh','release','upload'))
+            )
 
     def test_release_publication_integration(self):
         """Verify that publication depends on signing and has narrowly scoped write permission."""
@@ -160,6 +182,10 @@ class Contracts(unittest.TestCase):
         self.assertIn('needs: sign',publish)
         self.assertIn('name: release-signed-apks',publish)
         self.assertIn('path: signed',publish)
+        self.assertIn('"build-tools;35.0.0"',sign)
+        self.assertIn('ANDROID_HOME/build-tools/35.0.0/apksigner',sign)
+        self.assertIn("java-version: '17'",publish)
+        self.assertIn('"build-tools;35.0.0"',publish)
         # It runs the helper with the tag, the signed directory and the aapt path.
         self.assertIn('python3 tools/publish_release.py "$RELEASE_TAG" signed "$ANDROID_HOME/build-tools/35.0.0/aapt"',publish)
         self.assertIn('GH_TOKEN: ${{ github.token }}',publish)
@@ -180,6 +206,12 @@ class Contracts(unittest.TestCase):
         # upload path: no APK name is hard-coded in the publication job.
         self.assertFalse(re.findall(r'vvtts-[a-z0-9-]*\.apk',publish))
         self.assertEqual(workflow.count('release-signed-apks'),2)  # sign upload + publish download
+
+    def test_rate_regression_uses_host_engine_archive(self):
+        workflow=(ROOT/'.github/workflows/build.yml').read_text()
+        build='make -C native/openevv LANGS="lang/enus" RULES=c build/libevv.a'
+        self.assertIn(build,workflow)
+        self.assertLess(workflow.index(build),workflow.index('bash tests/native/run.sh'))
 
     def test_apk_exact_abis(self):
         """Accept exact ABI contents for each APK asset and reject additional native libraries."""

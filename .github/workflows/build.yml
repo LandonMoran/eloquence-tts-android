@@ -58,6 +58,8 @@ jobs:
           curl -fsSL -o /tmp/annotations-24.1.0.jar https://repo1.maven.org/maven2/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar
           curl -fsSL https://repo1.maven.org/maven2/net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar -o "$KXML_JAR"
           bash tests/host/run.sh
+          # Build the host archive so rate_test exercises the engine instead of skipping.
+          make -C native/openevv LANGS="lang/enus" RULES=c build/libevv.a
           bash tests/native/run.sh
           bash tests/vendor-openevv-test.sh
           python3 tests/contracts.py

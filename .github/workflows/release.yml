@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     # Configure required reviewers and restrict this environment to protected v* tags.
     environment: release
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,6 +26,10 @@ jobs:
         with:
           name: vvtts-signed-apk
           path: unsigned
+      - name: Install Android build tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
       - name: Audit release input ABIs
         run: python3 tools/audit_apk_abis.py unsigned/vvtts-*.apk
       - name: Sign with release identity
@@ -40,7 +46,7 @@ jobs:
           trap 'rm -f "$key"' EXIT
           umask 077
           printf '%s' "$RELEASE_KEYSTORE_B64" | base64 -d > "$key"
-          signer="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -perm -111 | sort -V | tail -1)"
+          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           test -x "$signer"
           mkdir signed
           for apk in unsigned/*.apk; do
@@ -59,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +75,14 @@ jobs:
         with:
           name: release-signed-apks
           path: signed
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
       - name: Publish signed APKs and Android version metadata
         env:
           GH_TOKEN: ${{ github.token }}

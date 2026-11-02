@@ -181,6 +181,7 @@ private fun versionsAndVoices() {
     check(VoiceRegistry.find("spa")?.voiceName=="es-ES")
     check(VoiceRegistry.find("spa", "")?.voiceName=="es-ES")
     check(VoiceRegistry.find("spa", "mex")?.voiceName=="es-MX")
+    check(VoiceRegistry.find("spa", "USA")?.voiceName=="es-US")
     val engine=EloquenceEngine(Context())
     val pitch=engine.javaClass.getDeclaredMethod("mapUiPitchToKona",Int::class.java,Int::class.java).apply { isAccessible=true }
     check(KonaVoice.VOICES.map { it.nativeVoiceNumber } == listOf(1,2,3,4,6,7,8,5))
@@ -327,19 +328,28 @@ private fun abbreviationSplitting() {
             "Split inside an abbreviation: '${piece.takeLast(20)}'"
         }
     }
+    val boundaryText = "word ".repeat(13) + "e.g. " + "word ".repeat(20)
+    @Suppress("UNCHECKED_CAST")
+    val boundaryPieces = chunks.invoke(VvTtsService.Companion, boundaryText) as List<String>
+    check(boundaryPieces.joinToString("") == boundaryText) { "Boundary splitting changed the text" }
+    check(boundaryPieces.none { it.trimEnd().endsWith("e.") }) {
+        "Split after the first dot in e.g.: '${boundaryPieces.first().takeLast(12)}'"
+    }
     println("PASS abbreviation splitting: e.g., U.S., initials and vs. stay inside a chunk")
 }
 
 /** Western text is flattened so no character reaches the engine as '?' from encoding. */
 private fun westernFlatten() {
-    val input = "\u201CHi\u201D \u2014 Dvo\u0159\u00E1k\u2026 \u2264 5\u00B0 \u20AC9 caf\u00E9 \u2022 \u4E2D\u6587\u0000end"
+    val input = "\u201CHi\u201D \u2014 Dvo\u0159\u00E1k\u2026 \u2264 5\u00B0 \u20AC9 caf\u00E9 c\u0153ur \u0152UVRE \u2022 \u4E2D\u6587\u0000\u0081end"
     val flat = SpeechTextFixes.flattenWestern(input)
     val bytes = flat.toByteArray(java.nio.charset.Charset.forName("windows-1252"))
     check(!bytes.any { it == '?'.code.toByte() }) { "Encoded text contains '?': '$flat'" }
     check(flat.contains("\"Hi\"")) { "Curly quotes not mapped: '$flat'" }
     check(flat.contains("Dvor\u00e1k")) { "Accented base letter lost: '$flat'" }
     check(flat.contains("café")) { "Windows-1252 accent was changed: '$flat'" }
+    check(flat.contains("c\u0153ur \u0152UVRE")) { "Windows-1252 ligatures were lost: '$flat'" }
     check(!flat.contains('\u0000')) { "NUL survived flattening" }
+    check(!flat.contains('\u0081')) { "Unmappable control survived flattening" }
     println("PASS western flatten: no '?' bytes, quotes, dashes and accents handled")
 }
 
@@ -682,6 +692,12 @@ private fun talkbackDefaultVoiceDialect() {
         }
         check(resolveFor("eng", "USA") == "en-US")
         check(resolveFor("en", "GB") == "en-GB")
+        check(resolveFor("spa", "USA") == "es-US") {
+            "US Spanish request must resolve to es-US"
+        }
+        check(resolveFor("es", "US") == "es-US")
+        check(resolveFor("spa", "MEX") == "es-MX")
+        check(resolveFor("spa", "ESP") == "es-ES")
         // [review] A stored voice the registry does not advertise must never be returned
         // (setVoice does not validate; resolving it would make setLanguage report
         // LANG_NOT_SUPPORTED). Fall through to the shipped default instead.
