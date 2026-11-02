@@ -36,6 +36,8 @@ def publish(tag, directory, aapt):
     if not match:
         raise ValueError('Release tag must be vMAJOR.MINOR[.PATCH]')
     tag_version = tuple(int(v or 0) for v in match.groups())
+    notes_file = Path(__file__).with_name(f'release-notes-{tag}.md')
+    versioned_notes = notes_file.read_text(encoding='utf-8').rstrip() if notes_file.is_file() else None
     apks = [Path(directory) / name for name in ASSETS]
     versions = set()
     for apk in apks:
@@ -52,17 +54,21 @@ def publish(tag, directory, aapt):
     if result.returncode:
         if 'release not found' not in result.stderr.lower():
             raise RuntimeError(result.stderr)
-        run('gh', 'release', 'create', tag, '--verify-tag', '--draft', '--title', tag, '--notes', '')
-        notes = ''
+        if versioned_notes is None:
+            run('gh', 'release', 'create', tag, '--verify-tag', '--draft', '--title', tag, '--notes', '')
+            notes = ''
+        else:
+            run('gh', 'release', 'create', tag, '--verify-tag', '--draft', '--title', tag, '--notes-file', str(notes_file))
+            notes = versioned_notes
     else:
-        notes = json.loads(result.stdout)['body'] or ''
+        notes = versioned_notes if versioned_notes is not None else (json.loads(result.stdout)['body'] or '')
     notes = re.sub(r'<!-- android-version-code: .*? -->', '', notes).rstrip()
     notes += f'\n\n<!-- android-version-code: {code} -->\n'
     # New releases stay draft until all uploads succeed. Reruns replace the same assets.
     run('gh', 'release', 'upload', tag, *(str(apk) for apk in apks), '--clobber')
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / 'notes.md'
-        path.write_text(notes)
+        path.write_text(notes, encoding='utf-8')
         run('gh', 'release', 'edit', tag, '--notes-file', str(path), '--draft=false')
 
 

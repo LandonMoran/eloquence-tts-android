@@ -1,5 +1,7 @@
 package com.xw.vvtts.utils
 
+import java.nio.charset.CharsetEncoder
+
 /**
  * Text fixes applied before text reaches the Eloquence engine. Ported from
  * trypsynth/evvdroid (TextFixes, Pauses and Prosody), which credits davidacm's
@@ -58,6 +60,7 @@ object SpeechTextFixes {
     fun flattenWestern(text: String): String {
         if (text.isEmpty()) return text
         val out = StringBuilder(text.length)
+        val windows1252 = WINDOWS_1252.newEncoder()
         var i = 0
         while (i < text.length) {
             val c = text[i]
@@ -65,13 +68,15 @@ object SpeechTextFixes {
             when {
                 plain != null -> out.append(plain)
                 c.code == 0 -> out.append(' ')
-                c.code <= 0xFF -> out.append(c)
-                else -> out.append(stripWestern(text, i))
+                windows1252.canEncode(c) -> out.append(c)
+                else -> out.append(stripWestern(text, i, windows1252))
             }
             i += if (Character.isHighSurrogate(c) && i + 1 < text.length) 2 else 1
         }
         return out.toString()
     }
+
+    private val WINDOWS_1252 = java.nio.charset.Charset.forName("windows-1252")
 
     private val PLAIN_WESTERN: Map<Char, String> = mapOf(
         '\u2018' to "'", '\u2019' to "'", '\u201A' to "'", '\u201B' to "'",
@@ -91,7 +96,7 @@ object SpeechTextFixes {
     )
 
     /** Keep the base letter of an accented character outside the byte set, else a space. */
-    private fun stripWestern(text: String, at: Int): String {
+    private fun stripWestern(text: String, at: Int, windows1252: CharsetEncoder): String {
         val c = text[at]
         val one = if (Character.isHighSurrogate(c) && at + 1 < text.length) {
             text.substring(at, at + 2)
@@ -99,7 +104,7 @@ object SpeechTextFixes {
             c.toString()
         }
         val base = java.text.Normalizer.normalize(one, java.text.Normalizer.Form.NFD)
-            .filter { it.code <= 0xFF && !isCombiningMark(it) }
+            .filter { !isCombiningMark(it) && windows1252.canEncode(it) }
         return if (base.isEmpty()) " " else base
     }
 

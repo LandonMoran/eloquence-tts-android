@@ -6,8 +6,8 @@
  * up-samples to 44,100 itself, so this asserts the invariants the bridge and
  * the "same file, no matter what" claim rest on:
  *
- *   1. 44,100/11,025 length ratio is exactly 4.0x (wrong rate or a broken
- *      engine converter would break it),
+ *   1. 44,100 output is 4x the native stream plus the converter's documented
+ *      end-of-run flush tail (wrong rate or an unbounded tail would break it),
  *   2. engine 44,100 == our own 4x sinc of the engine's 11,025, after the
  *      converter's fixed group delay -- bounded agreement (correlation and
  *      SNR), i.e. the resampler being OURS or the LIBRARY's yields the same
@@ -25,6 +25,7 @@
 #include <math.h>
 
 #include "eci.h"
+#include "eci/sound/eci_pcm.h"
 #include "vv_resample.h"
 extern int et_addText(void *h, const char *text);   /* engine text shim (eci_compat.c) */
 extern int et_insertIndex(void *h, int index);
@@ -122,17 +123,26 @@ int main(void) {
     static const char *sentence = "Hello, this is a regression test of the audio pipeline.";
     static const char *shorty   = "Hello.";
 
-    /* A) engine-only: determinism + exact 4x ratio on a sentence */
+    /* A) engine-only: determinism + exact 4x ratio and converter flush tail */
     Pcm n  = synth(sentence, R_11025);
     Pcm f1 = synth(sentence, R_44100);
     Pcm f2 = synth(sentence, R_44100);
+    size_t tail = 0;
+    PcmResampler converter;
     fprintf(stderr, "debug: n1=%zu 44.1k=%zu ratio=%.6f\n", n.n, f1.n,
             (double)f1.n / (double)n.n);
     CHECK(n.n > 0 && f1.n > 0, "non-empty synthesis");
     CHECK(f1.n == f2.n && memcmp(f1.p, f2.p, f1.n * sizeof(short)) == 0,
           "44,100 output byte-deterministic run to run");
-    CHECK(fabs((double)f1.n / (double)n.n - 4.0) < 0.005,
-          "44,100/11,025 length ratio is 4.0x");
+    if (pcm_resample_start(&converter, 11025, 44100, CVT_SINC)) {
+        /* stb_flushTail sends twice the sinc delay through the 4x converter. */
+        tail = 2 * (size_t)pcm_resample_delay(&converter) * 4;
+        pcm_resample_end(&converter);
+    } else {
+        CHECK(0, "could not initialize the expected 44,100 Hz converter");
+    }
+    CHECK(f1.n == n.n * 4 + tail,
+          "44,100 output is native 4x plus the converter's flush tail");
 
     /* B) our 4x sinc of the 11,025 must reproduce the engine 44,100 */
     {
@@ -170,6 +180,6 @@ int main(void) {
     free(n.p); free(f1.p); free(f2.p);
 
     if (fails) { fprintf(stderr, "RATE TEST FAIL: %d assertion(s)\n", fails); return 1; }
-    printf("RATE TEST OK: 44,100 output 4.0x, deterministic, agrees with our sinc, short intact\n");
+    printf("RATE TEST OK: 44,100 output 4x plus flush tail, deterministic, agrees with our sinc, short intact\n");
     return 0;
 }

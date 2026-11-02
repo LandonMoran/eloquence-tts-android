@@ -29,9 +29,8 @@ import java.util.Locale
 
 /**
  * Eloquence TTS service (openevv port, single engine).
- * 10 dialects are linked in this build (build_native.sh LANGS): en-US/en-GB/
- * de-DE/fr-FR/fr-CA/es-ES/es-MX/it-IT/ja-JP/pl-PL,
- * matching the voices advertised in onGetVoices().
+ * 12 OpenEVV language modules are linked (build_native.sh LANGS); their 13
+ * locale voices are advertised in onGetVoices(), with es-US and es-MX sharing Spanish.
  */
 class VvTtsService : TextToSpeechService() {
     private var engine: EloquenceEngine? = null     // openevv ECI engine (linked dialects only)
@@ -339,7 +338,11 @@ class VvTtsService : TextToSpeechService() {
         if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
-        if (lang.startsWith("es")) return if (c == "MX" || c == "MEX") "es-MX" else "es-ES"
+        if (lang.startsWith("es")) return when (c) {
+            "MX", "MEX" -> "es-MX"
+            "US", "USA" -> "es-US"
+            else -> "es-ES"
+        }
         if (lang.startsWith("it")) return "it-IT"
         if (lang.startsWith("pt")) return "pt-BR"
         if (lang.startsWith("fi")) return "fi-FI"
@@ -968,6 +971,8 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
                             val token = text.substring(s, dot)
                             if (token.isEmpty()) return false
                             if (token.lowercase() in setOf("vs", "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "approx")) return true
+                            if (token.length == 1 && token[0].isLetter() && dot + 2 < text.length &&
+                                text[dot + 1].isLetter() && text[dot + 2] == '.') return true
                             if (token.contains('.') && Regex("([A-Za-z]\\.)*[A-Za-z]").matches(token)) return true
                             return token.length == 1 && token[0].isUpperCase()
                         }

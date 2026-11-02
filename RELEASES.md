@@ -17,6 +17,8 @@ the Android locale list or the packaged language model.
 - GitHub Releases are the source of build publication metadata.
 - Release tags follow `vMAJOR.MINOR[.PATCH]` and the APK `versionName` must match
   the tag, as validated by `tools/publish_release.py`.
+- Versioned release notes live in `tools/release-notes-v<TAG>.md`; the release
+  publisher uses the matching file when it creates or updates a release.
 - Android `versionCode` is kept independent from the tag and must increase for a
   new release.
 - Production signing takes place in the protected GitHub `release` environment.
