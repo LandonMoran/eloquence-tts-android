@@ -42,6 +42,13 @@ class Contracts(unittest.TestCase):
         self.assertEqual(len(kotlin),12)
         self.assertNotIn('buildEloquenceConfig',engine)
 
+    def test_synthesis_does_not_inject_eci_markers(self):
+        """Do not append inline control markers that the engine may speak as words."""
+        engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
+        self.assertNotIn('annotate(', engine)
+        self.assertNotIn('SpeechTextFixes.shortenPauses', engine)
+        self.assertNotIn('SpeechTextFixes.phrasePredictionPrefix', engine)
+
     def test_crashlytics_native_symbols_configured_and_uploaded(self):
         """Require release symbol processing and explicit uploads for every built variant."""
         build = (ROOT/'build.gradle').read_text()
@@ -149,7 +156,7 @@ class Contracts(unittest.TestCase):
             self.assertIn('--draft',calls[create]); self.assertIn('--verify-tag',calls[create])
             self.assertLess(create,upload)
             calls.clear()
-            release_badging = "package: name='com.xw.vvtts' versionCode='13' versionName='2.0.1'"
+            release_badging = "package: name='com.xw.vvtts' versionCode='14' versionName='2.0.2'"
             def versioned_command(*args):
                 """Verify a versioned notes file is used for a new release."""
                 calls.append(args)
@@ -157,15 +164,15 @@ class Contracts(unittest.TestCase):
                 if args[:3]==('gh','release','create'):
                     self.assertIn('--notes-file',args)
                     self.assertEqual(Path(args[args.index('--notes-file')+1]),
-                                     Path(publisher.__file__).with_name('release-notes-v2.0.1.md'))
+                                     Path(publisher.__file__).with_name('release-notes-v2.0.2.md'))
                 if args[:3]==('gh','release','edit'):
                     notes=Path(args[args.index('--notes-file')+1]).read_text()
-                    self.assertIn('Updated the OpenEVV engine to 0.6.1',notes)
+                    self.assertIn('Removed inline pause and phrase-prediction annotations',notes)
                     self.assertEqual(notes.count('android-version-code:'),1)
-                    self.assertIn('android-version-code: 13',notes)
+                    self.assertIn('android-version-code: 14',notes)
                 return ''
             with patch.object(publisher,'run',side_effect=versioned_command):
-                publisher.publish('v2.0.1','signed','aapt')
+                publisher.publish('v2.0.2','signed','aapt')
             self.assertLess(
                 next(i for i,c in enumerate(calls) if c[:3]==('gh','release','create')),
                 next(i for i,c in enumerate(calls) if c[:3]==('gh','release','upload'))
