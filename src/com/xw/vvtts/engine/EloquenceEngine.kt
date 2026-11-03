@@ -273,15 +273,6 @@ class EloquenceEngine(context: Context) {
             if (readPunct) t = expandPunct(t)
             return t
         }
-        /** Engine annotations, added after sanitize so its token rewriting never sees them:
-         *  phrase prediction off and shortened pauses (both ported from evvdroid). */
-        private fun annotate(text: String, dialect: Int): String {
-            // Only verified on the Western modules; leave the Japanese module untouched.
-            if (text.isEmpty() || dialect == DIALECT_JA_JP) return text
-            return SpeechTextFixes.phrasePredictionPrefix(false) +
-                SpeechTextFixes.shortenPauses(text, SpeechTextFixes.PAUSES_DEFAULT, last = true)
-        }
-
         // Factory voice registry: (eng,USA( -> enu pack, (eng,GBR( -> eng pack — so en-US
         // uses the 28-entry table ( "#"→" hash " is en-GB-only(. Ported verbatim from
         // the decompiled Eloquence apk language packs ( f3234b/f3232b/f3242b/f3244b/f3230b(.
@@ -722,12 +713,20 @@ class EloquenceEngine(context: Context) {
             val cs = charsetForDialect(dialect)
             val encoded: ByteArray
             try {
+                val engineText = CrashCodeDefender.sanitize(
+                    appContext,
+                    preprocess(
+                        text,
+                        dialect,
+                        userDictionary.compiledDictionary(),
+                        userDictionary.punctEnabled,
+                        if (userDictionary.numberEnabled) userDictionary.numberModePref else -1
+                    )
+                )
                 val bb: ByteBuffer = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .encode(CharBuffer.wrap(annotate(CrashCodeDefender.sanitize(appContext,  preprocess(
-                                            text,  dialect,  userDictionary.compiledDictionary(),  userDictionary.punctEnabled,
-                                            if (userDictionary.numberEnabled) userDictionary.numberModePref else -1)), dialect)))
+                    .encode(CharBuffer.wrap(engineText))
                 encoded = ByteArray(bb.remaining())
                 bb.get(encoded)
             } catch (e: Exception) {
