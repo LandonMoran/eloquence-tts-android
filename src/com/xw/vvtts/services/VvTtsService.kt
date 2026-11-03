@@ -592,12 +592,11 @@ synchronized(synthesisLock) {
             // Android passes speech rate/pitch as PERCENTS where 100 = normal
             // (SynthesisRequest.getSpeechRate()/getPitch()). System TTS rate is THE
             // single source of truth (in-app rate slider was removed to avoid offset
-            // between app % and system %);engine scale is 100 = neutral, so pass the
-            // request rate through directly: TalkBack's speed slider now maps 1:1.
-            val sysRate = request.speechRate.takeIf { it > 0 } ?: 100
+            // between app % and system %); preserve the request percentage and let
+            // SpeechRate map it to the engine's non-linear 0-250 speed range.
+            val rate = request.speechRate.takeIf { it > 0 } ?: 100
             val sysPitch = request.pitch.takeIf { it > 0 } ?: 100
 
-            val rate = clamp(sysRate, 1, 300)
             // 100% (normal) -> engine-neutral 50; TalkBack pitch slider
             // 50-200 -> 25-100 (spans the engine's full +/-30 kona range).
             val cfgVolume = voiceConfig?.volume ?: 100
