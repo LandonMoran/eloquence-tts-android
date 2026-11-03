@@ -1736,8 +1736,12 @@ private fun speechTextFixes() {
 
 /** Port of evvdroid's SpeechRate: percent rates map through the measured non-linear curve. */
 private fun speechRateCurve() {
-    check(SpeechRate.speedForPercent(50, 100) == 50) { "100% must leave the voice alone" }
+    for (base in listOf(0, 25, 50, 70, 100, 250)) {
+        check(SpeechRate.speedForPercent(base, 100) == base) { "100% must preserve base speed $base" }
+    }
     check(SpeechRate.speedForPercent(50, 400) in 110..125) { "400% must be about four times normal, not sixteen" }
+    val fourTimes = SpeechRate.timesFor(SpeechRate.speedForPercent(50, 400))
+    check(fourTimes in 3.8..4.2) { "400% should map to about four times normal, got $fourTimes" }
     check(SpeechRate.speedForPercent(50, 0) == 0) { "0% must map to the slowest speed" }
     check(SpeechRate.speedForPercent(50, 300) > SpeechRate.speedForPercent(50, 200)) { "rate must rise with percent" }
     check(SpeechRate.speedForPercent(50, 10000) <= 250) { "speed must stay within the engine ceiling" }

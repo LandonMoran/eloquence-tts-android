@@ -49,6 +49,22 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('SpeechTextFixes.shortenPauses', engine)
         self.assertNotIn('SpeechTextFixes.phrasePredictionPrefix', engine)
 
+    def test_speech_rate_preserves_android_percent_and_voice_baseline(self):
+        """Do not cap Android rates early or scale from a hard-coded voice speed."""
+        engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
+        service = (ROOT/'src/com/xw/vvtts/services/VvTtsService.kt').read_text()
+        self.assertIn(
+            'params[VoiceProfile.PARAM_SPEED] = SpeechRate.speedForPercent(baseSpeed, uiRate)',
+            engine
+        )
+        self.assertNotIn('SpeechRate.speedForPercent(50, uiRate)', engine)
+        self.assertIn('val rate = request.speechRate.takeIf { it > 0 } ?: 100', service)
+        self.assertNotIn('clamp(sysRate, 1, 300)', service)
+        self.assertIn(
+            'synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)',
+            service
+        )
+
     def test_crashlytics_native_symbols_configured_and_uploaded(self):
         """Require release symbol processing and explicit uploads for every built variant."""
         build = (ROOT/'build.gradle').read_text()

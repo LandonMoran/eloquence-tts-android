@@ -696,7 +696,8 @@ class EloquenceEngine(context: Context) {
             val vp = voiceProfile
             val params = IntArray(8) { p -> vp?.getParam(presetId, p) ?: voice.param(p) }
             params[2] = mapUiPitchToKona(uiPitch, params[2])
-            params[6] = SpeechRate.speedForPercent(50, uiRate).coerceIn(5, 250)
+            val baseSpeed = params[VoiceProfile.PARAM_SPEED]
+            params[VoiceProfile.PARAM_SPEED] = SpeechRate.speedForPercent(baseSpeed, uiRate)
             if (!worker.appliedVoiceParams.matches(dialect, presetId, params)) {
                 // openevv places Eddy at 5; Kona's CSV places Eddy at 9.
                 val copied = VvttsCore.setStandardVoice(handle, voice.nativeVoiceNumber)
