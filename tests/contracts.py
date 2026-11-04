@@ -50,9 +50,11 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('SpeechTextFixes.phrasePredictionPrefix', engine)
 
     def test_speech_rate_preserves_android_percent_and_voice_baseline(self):
-        """Do not cap Android rates early or scale from a hard-coded voice speed."""
+        """Preserve Android percentages and use the pinned engine's WPM curve."""
         engine = (ROOT/'src/com/xw/vvtts/engine/EloquenceEngine.kt').read_text()
         service = (ROOT/'src/com/xw/vvtts/services/VvTtsService.kt').read_text()
+        speech_rate = (ROOT/'src/com/xw/vvtts/utils/SpeechRate.kt').read_text()
+        native_rate = (ROOT/'native/openevv/src/eci/api/eci_convert.c').read_text()
         self.assertIn(
             'params[VoiceProfile.PARAM_SPEED] = SpeechRate.speedForPercent(baseSpeed, uiRate)',
             engine
@@ -64,6 +66,14 @@ class Contracts(unittest.TestCase):
             'synthesizeCore(textToSynth, seg.dialect, volume, preset, pitch, rate)',
             service
         )
+        for name, value in (
+            ('SPEED_SQUARE', 14),
+            ('SPEED_LINEAR', 1406),
+            ('SPEED_BASE', 70250),
+            ('SPEED_SCALE', 1000),
+        ):
+            self.assertRegex(speech_rate, rf'private const val {name}\s*=\s*{value}\b')
+            self.assertRegex(native_rate, rf'#define {name}\s+{value}\b')
 
     def test_crashlytics_native_symbols_configured_and_uploaded(self):
         """Require release symbol processing and explicit uploads for every built variant."""
