@@ -1734,18 +1734,29 @@ private fun speechTextFixes() {
     println("PASS speechTextFixes: spelling and magnitude repairs")
 }
 
-/** Port of evvdroid's SpeechRate: percent rates map through the measured non-linear curve. */
+/** Android rate percentages map through OpenEVV's native words-per-minute curve. */
 private fun speechRateCurve() {
     for (base in listOf(0, 25, 50, 70, 100, 250)) {
         check(SpeechRate.speedForPercent(base, 100) == base) { "100% must preserve base speed $base" }
     }
-    check(SpeechRate.speedForPercent(50, 400) in 110..125) { "400% must be about four times normal, not sixteen" }
-    val fourTimes = SpeechRate.timesFor(SpeechRate.speedForPercent(50, 400))
-    check(fourTimes in 3.8..4.2) { "400% should map to about four times normal, got $fourTimes" }
+    check(SpeechRate.wordsPerMinuteForSpeed(50) == 176) { "speed 50 must match OpenEVV's native WPM conversion" }
+    check(SpeechRate.speedForPercent(50, 70) == 29) { "70% must map to about 70% of the base WPM" }
+    check(SpeechRate.speedForPercent(50, 80) == 37) { "80% must map to about 80% of the base WPM" }
+    check(SpeechRate.speedForPercent(50, 200) == 100) { "200% must map to about twice the base WPM" }
+    check(SpeechRate.speedForPercent(50, 300) == 137) { "300% must map to about three times the base WPM" }
+    check(SpeechRate.speedForPercent(50, 400) == 168) { "400% must map to about four times the base WPM" }
+    for (percent in listOf(70, 80, 100, 200, 300, 400)) {
+        val mappedSpeed = SpeechRate.speedForPercent(50, percent)
+        val actualWpm = SpeechRate.wordsPerMinuteForSpeed(mappedSpeed).toDouble()
+        val expectedWpm = SpeechRate.wordsPerMinuteForSpeed(50) * percent / 100.0
+        check(Math.abs(actualWpm - expectedWpm) <= 4.0) {
+            "$percent% must produce the requested WPM ratio (wanted $expectedWpm, got $actualWpm)"
+        }
+    }
     check(SpeechRate.speedForPercent(50, 0) == 0) { "0% must map to the slowest speed" }
     check(SpeechRate.speedForPercent(50, 300) > SpeechRate.speedForPercent(50, 200)) { "rate must rise with percent" }
     check(SpeechRate.speedForPercent(50, 10000) <= 250) { "speed must stay within the engine ceiling" }
-    println("PASS speechRateCurve: measured speed curve keeps high rates near four times normal")
+    println("PASS speechRateCurve: Android percentages map to OpenEVV's requested WPM scale")
 }
 
 /** Run host regressions with temporary preference storage and remove it afterward. */

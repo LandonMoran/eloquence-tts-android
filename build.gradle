@@ -17,8 +17,8 @@ android {
 
     defaultConfig {
         applicationId 'com.xw.vvtts'
-        versionCode 15
-        versionName '2.0.3'
+        versionCode 16
+        versionName '2.0.4'
         minSdkVersion 28
         targetSdkVersion 36
     }
