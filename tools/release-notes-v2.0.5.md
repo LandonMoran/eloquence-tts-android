@@ -24,3 +24,5 @@ shipped language modules; the new library improves how incoming text is spoken.
 - The release keeps the app's existing native API, output-rate behavior, voice
   settings, and twelve-language build configuration; no Android-side API
   migration is required.
+- Android keeps short English fallback snippets aligned with the selected
+  English accent, avoiding US/UK changes caused by stale fallback settings.

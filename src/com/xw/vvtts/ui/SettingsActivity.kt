@@ -1402,10 +1402,10 @@ maybeShowLaunchUpdateDialog()
         val prefs = com.xw.vvtts.utils.MirroredPreferences(this, PREFS_NAME)
         LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
         LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
+        LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
         LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
         LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
         LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
-        LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
         // Detection whitelist: enable all detector languages on a fresh install.
         val enabled: Set<String>
         if (prefs.contains("enabled_langs")) {

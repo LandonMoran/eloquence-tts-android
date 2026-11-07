@@ -92,7 +92,13 @@ class LanguageDetector {
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
 
-        fun setEnglishDialect(dialect: Int) { synchronized(stateLock) { englishDialect = dialect; invalidateLatinCache() } }
+        fun setEnglishDialect(dialect: Int) {
+            synchronized(stateLock) {
+                englishDialect = dialect
+                if (isEnglishDialect(defaultLanguage)) defaultLanguage = dialect
+                invalidateLatinCache()
+            }
+        }
         fun getEnglishDialect() = englishDialect
         /** Whether this dialect is one of the two English variants (EN-US or EN-GB). */
         fun isEnglishDialect(dialect: Int): Boolean =
@@ -163,8 +169,10 @@ class LanguageDetector {
 
         fun setDefaultLanguage(dialect: Int) {
             synchronized(stateLock) {
-                if (dialect == defaultLanguage) return
+                if (dialect == defaultLanguage &&
+                    (!isEnglishDialect(dialect) || englishDialect == dialect)) return
                 defaultLanguage = dialect
+                if (isEnglishDialect(dialect)) englishDialect = dialect
                 invalidateLatinCache()
             }
         }

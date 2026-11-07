@@ -310,6 +310,35 @@ private fun languagePickerSelection() {
     }
 }
 
+/** Keep short auto-detected English spans on the configured accent after preference changes. */
+private fun englishAccentFallbackConsistency() {
+    val previousDefault = LanguageDetector.getDefaultLanguage()
+    val previousEnglish = LanguageDetector.getEnglishDialect()
+    val previousDetection = LanguageDetector.isDetectionEnabled()
+    val previousLocale = java.util.Locale.getDefault()
+    val longEnglish = "This is a full English sentence long enough to exercise automatic detection."
+    try {
+        java.util.Locale.setDefault(java.util.Locale.US)
+        LanguageDetector.setDetectionEnabled(true)
+
+        LanguageDetector.setDefaultLanguage(LanguageDetector.DIALECT_EN_GB)
+        check(LanguageDetector.getEnglishDialect() == LanguageDetector.DIALECT_EN_GB)
+        check(LanguageDetector.segment("yes").single().dialect == LanguageDetector.DIALECT_EN_GB)
+        check(LanguageDetector.segment(longEnglish).single().dialect == LanguageDetector.DIALECT_EN_GB)
+
+        LanguageDetector.setEnglishDialect(LanguageDetector.DIALECT_EN_US)
+        check(LanguageDetector.getDefaultLanguage() == LanguageDetector.DIALECT_EN_US)
+        check(LanguageDetector.segment("yes").single().dialect == LanguageDetector.DIALECT_EN_US)
+        check(LanguageDetector.segment(longEnglish).single().dialect == LanguageDetector.DIALECT_EN_US)
+        println("PASS English accent fallback: short and detected English spans stay on the selected accent")
+    } finally {
+        LanguageDetector.setDefaultLanguage(previousDefault)
+        LanguageDetector.setEnglishDialect(previousEnglish)
+        LanguageDetector.setDetectionEnabled(previousDetection)
+        java.util.Locale.setDefault(previousLocale)
+    }
+}
+
 /** Abbreviations and initials must not end a sentence; real sentence ends still do. */
 private fun abbreviationSplitting() {
     val chunks = VvTtsService.Companion.javaClass.getDeclaredMethod(
@@ -1762,6 +1791,6 @@ private fun speechRateCurve() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); telegramFormattedText(); abbreviationSplitting(); westernFlatten(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); englishAccentFallbackConsistency(); telegramFormattedText(); abbreviationSplitting(); westernFlatten(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }
