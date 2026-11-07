@@ -92,6 +92,7 @@ class LanguageDetector {
         private const val LATIN_CACHE_MAX = 512
         private fun invalidateLatinCache() { synchronized(latinCache) { latinCache.clear() } }
 
+        /** Select the English accent and keep an English fallback on the same variant. */
         fun setEnglishDialect(dialect: Int) {
             synchronized(stateLock) {
                 englishDialect = dialect
@@ -167,6 +168,7 @@ class LanguageDetector {
             preloadLingua()
         }
 
+        /** Set the detection fallback; an English fallback also selects that English accent. */
         fun setDefaultLanguage(dialect: Int) {
             synchronized(stateLock) {
                 if (dialect == defaultLanguage &&
