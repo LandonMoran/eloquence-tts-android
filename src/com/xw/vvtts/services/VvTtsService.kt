@@ -852,10 +852,16 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
         private fun restoreLanguageSettings(prefs: MirroredPreferences) {
             LanguageDetector.setDetectionEnabled(prefs.getBoolean("detection_enabled", true))
             LanguageDetector.setFixedDialect(prefs.getInt("fixed_dialect", LanguageDetector.DIALECT_EN_US))
-            LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", LanguageDetector.DIALECT_EN_US))
+            val savedDefault = prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED)
+            val englishFallback = if (LanguageDetector.isEnglishDialect(savedDefault)) {
+                savedDefault
+            } else {
+                LanguageDetector.DIALECT_EN_US
+            }
+            LanguageDetector.setDefaultLanguage(savedDefault)
+            LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", englishFallback))
             LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
             LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
-            LanguageDetector.setDefaultLanguage(prefs.getInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED))
             val savedLangs = prefs.getStringSet("enabled_langs", null)
             // Fresh install (no pref(: enable every shipped language so everything works
             // with zero configuration; users who pruned keep their set.
