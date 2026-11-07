@@ -781,9 +781,16 @@ private fun defender() {
 private fun talkbackDefaultVoiceDialect() {
     val previousFixed = LanguageDetector.getFixedDialect()
     val previousDefault = LanguageDetector.getDefaultLanguage()
+    val previousEnglish = LanguageDetector.getEnglishDialect()
+    val previousSpanish = LanguageDetector.getSpanishDialect()
+    val previousFrench = LanguageDetector.getFrenchDialect()
+    val previousEnabled = LanguageDetector.getEnabledLanguages()
     val previousDetection = LanguageDetector.isDetectionEnabled()
     val context = Context()
     val config = VoiceConfig(context)
+    val previousVoice = config.explicitVoice
+    val languagePrefs = MirroredPreferences(context, "vvtts_lang_settings")
+    val previousDetectionPreference = languagePrefs.read()["detection_enabled"] as? Boolean
     val service = VvTtsService()
     set(service, "voiceConfig", config)
     val resolve = service.javaClass.getDeclaredMethod(
@@ -792,6 +799,8 @@ private fun talkbackDefaultVoiceDialect() {
     fun resolveFor(lang: String?, country: String?): String =
         resolve.invoke(service, lang, country, "") as String
     try {
+        check(languagePrefs.edit { it.putBoolean("detection_enabled", false) })
+        LanguageDetector.setDetectionEnabled(false)
         // en-GB pinned in-app, framework requests the device locale (eng/USA):
         // the resolved default voice must be the app's pin, not the old en-US fallback.
         config.setVoice("en-GB")
@@ -836,9 +845,100 @@ private fun talkbackDefaultVoiceDialect() {
         }
         println("PASS TalkBack default voice: pinned in-app dialect wins; other families and en-US pin preserved")
     } finally {
-        config.setVoice("en-US")
+        if (previousVoice == null) config.removeVoice() else config.setVoice(previousVoice)
+        check(languagePrefs.edit { editor ->
+            if (previousDetectionPreference == null) editor.remove("detection_enabled")
+            else editor.putBoolean("detection_enabled", previousDetectionPreference)
+        })
         LanguageDetector.setFixedDialect(previousFixed)
         LanguageDetector.setDefaultLanguage(previousDefault)
+        LanguageDetector.setEnglishDialect(previousEnglish)
+        LanguageDetector.setSpanishDialect(previousSpanish)
+        LanguageDetector.setFrenchDialect(previousFrench)
+        LanguageDetector.setEnabledLanguages(previousEnabled)
+        LanguageDetector.setDetectionEnabled(previousDetection)
+    }
+}
+
+/** Keep automatic English voice resolution on the saved accent despite per-request region tags. */
+private fun autoDetectedDefaultVoiceAccent() {
+    val previousFixed = LanguageDetector.getFixedDialect()
+    val previousDefault = LanguageDetector.getDefaultLanguage()
+    val previousEnglish = LanguageDetector.getEnglishDialect()
+    val previousSpanish = LanguageDetector.getSpanishDialect()
+    val previousFrench = LanguageDetector.getFrenchDialect()
+    val previousEnabled = LanguageDetector.getEnabledLanguages()
+    val previousDetection = LanguageDetector.isDetectionEnabled()
+    val context = Context()
+    val config = VoiceConfig(context)
+    val previousVoice = config.explicitVoice
+    val prefs = MirroredPreferences(context, "vvtts_lang_settings")
+    val previousPrefs = prefs.read()
+    val service = VvTtsService()
+    set(service, "voiceConfig", config)
+    val restore = service.javaClass.getDeclaredMethod(
+        "restoreLanguageSettings", MirroredPreferences::class.java,
+    ).apply { isAccessible = true }
+    val resolve = service.javaClass.getDeclaredMethod(
+        "onGetDefaultVoiceNameFor", String::class.java, String::class.java, String::class.java,
+    ).apply { isAccessible = true }
+
+    fun saveAccent(accent: Int) {
+        check(prefs.edit { editor ->
+            editor.putBoolean("detection_enabled", true)
+            editor.putInt("fixed_dialect", LanguageDetector.DIALECT_EN_US)
+            editor.putInt("default_language", LanguageDetector.DEFAULT_UNSPECIFIED)
+            editor.putInt("english_dialect", accent)
+        })
+        restore.invoke(service, prefs)
+    }
+
+    fun resolveFor(country: String): String =
+        resolve.invoke(service, "eng", country, "") as String
+
+    try {
+        config.removeVoice()
+        saveAccent(LanguageDetector.DIALECT_EN_US)
+        check(resolveFor("GBR") == "en-US") {
+            "Auto-detected English followed the request's GB region instead of the saved US accent"
+        }
+
+        // Synthesis temporarily applies a request voice to the detector globals.
+        // That in-flight value must not become the next request's default accent.
+        LanguageDetector.setDefaultLanguage(LanguageDetector.DIALECT_EN_GB)
+        LanguageDetector.setEnglishDialect(LanguageDetector.DIALECT_EN_GB)
+        check(resolveFor("GBR") == "en-US") {
+            "Temporary en-GB synthesis state changed the configured English accent"
+        }
+
+        saveAccent(LanguageDetector.DIALECT_EN_GB)
+        check(resolveFor("USA") == "en-GB") {
+            "Saved en-GB accent was overridden by the request's US region"
+        }
+        config.setVoice("en-US")
+        check(resolveFor("GBR") == "en-US") {
+            "Explicit in-app voice must continue to override automatic accent selection"
+        }
+        println("PASS automatic English voice: saved accent wins over request regions and transient synthesis state")
+    } finally {
+        if (previousVoice == null) config.removeVoice() else config.setVoice(previousVoice)
+        check(prefs.edit { editor ->
+            val detection = previousPrefs["detection_enabled"] as? Boolean
+            val fixed = previousPrefs["fixed_dialect"] as? Int
+            val default = previousPrefs["default_language"] as? Int
+            val english = previousPrefs["english_dialect"] as? Int
+            if (detection == null) editor.remove("detection_enabled")
+            else editor.putBoolean("detection_enabled", detection)
+            if (fixed == null) editor.remove("fixed_dialect") else editor.putInt("fixed_dialect", fixed)
+            if (default == null) editor.remove("default_language") else editor.putInt("default_language", default)
+            if (english == null) editor.remove("english_dialect") else editor.putInt("english_dialect", english)
+        })
+        LanguageDetector.setFixedDialect(previousFixed)
+        LanguageDetector.setDefaultLanguage(previousDefault)
+        LanguageDetector.setEnglishDialect(previousEnglish)
+        LanguageDetector.setSpanishDialect(previousSpanish)
+        LanguageDetector.setFrenchDialect(previousFrench)
+        LanguageDetector.setEnabledLanguages(previousEnabled)
         LanguageDetector.setDetectionEnabled(previousDetection)
     }
 }
@@ -1888,6 +1988,6 @@ private fun speechRateCurve() {
 /** Run host regressions with temporary preference storage and remove it afterward. */
 fun main() {
     Context.root=java.nio.file.Files.createTempDirectory("eloquence-prefs-test").toFile()
-try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); englishAccentFallbackConsistency(); englishAccentStatisticalCacheInvalidation(); englishAccentPreferenceRestoration(); telegramFormattedText(); abbreviationSplitting(); westernFlatten(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
+try { preferences(); dictionary(); speechTextFixes(); speechRateCurve(); limitedUpdateBody(); versionsAndVoices(); appliedVoiceParams(); volumeScaling(); punctuationInNumbers(); timeAndRomanNumerals(); spokenExceptions(); languagePickerSelection(); englishAccentFallbackConsistency(); englishAccentStatisticalCacheInvalidation(); englishAccentPreferenceRestoration(); telegramFormattedText(); abbreviationSplitting(); westernFlatten(); emojiSpacing(); writeFailurePropagation(); lifecycle(); warmupRetirement(); warmupSerializationAndDestroy(); updateNotificationSaveFailure(); sampleActivity(); talkbackDefaultVoiceDialect(); autoDetectedDefaultVoiceAccent(); defender(); crashInit(); telemetryConsent(); engineMetrics(); engineMetricsMergeWindow(); engineMetricsConcurrentFlushNoDoubleMerge(); engineMetricsCrossProcessClear(); engineMetricsSynthMaxNoResurrectionAfterCrossProcessClear(); engineMetricsCrossProcessClearCheckThenAct(); engineMetricsFailClosedOnConsentRead(); finalOutcomeIsExactlyOne(); crashOptOutWritesNothingMissingToggle(); crashOptOutWritesNothingInvocationFailure(); engineMetricsFailedClearNoResurrection(); telemetryConsentFailedOptOutPersist(); crashRuntimeToggleSyncsWriteGateAndReportsResult(); crashConsentCrossProcessBlocksWrites(); crashConsentEnableWriteFailureReported(); crashOptOutBothFailSurfaceable(); crashDebugHookHonorsGate(); crashConsentLockReadAcquisitionFailClosed(); engineMetricsFailedClearPersistsMarker(); engineMetricsFailedClearCrossProcessNoResurrection(); telemetryAnalyticsFailedOptOutFailClosed(); telemetryAnalyticsSdkApplyFailureFailClosed(); engineMetricsFailedClearDoubleFailure(); engineMetricsFailedClearDoubleFailureSibling(); crashlyticsColdStartFailClosed() }
     finally { Context.root.deleteRecursively() }
 }

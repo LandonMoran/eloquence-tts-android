@@ -44,6 +44,7 @@ class VvTtsService : TextToSpeechService() {
     private fun currentEngine(): EloquenceEngine? = synchronized(engineRefLock) { engine }
     @Volatile private var voiceConfig: VoiceConfig? = null
     @Volatile private var voiceProfile: VoiceProfile? = null
+    @Volatile private var configuredEnglishAccent = LanguageDetector.DIALECT_EN_US
     private var deviceCtx: Context? = null
 /** Loader thread for the n-gram tables; owned so teardown can interrupt backoff waits. */
     @Volatile private var ngramLoadThread: Thread? = null
@@ -311,6 +312,7 @@ class VvTtsService : TextToSpeechService() {
     /** Maps the requested language and country to a supported voice name, defaulting to en-US. */
     override fun onGetDefaultVoiceNameFor(language: String?, country: String?, variant: String?): String {
         return voiceSafe("en-US") {
+        refreshSettings()
         val lang = normalizeLanguage(language)
         val c = (country ?: "").uppercase(Locale.ROOT)
         // #18: refuse to map languages with no shipped voice —the registry is the
@@ -335,7 +337,16 @@ class VvTtsService : TextToSpeechService() {
                 return appVoice
             }
         }
-        if (lang.startsWith("en")) return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
+        if (lang.startsWith("en")) {
+            // Locale tags can vary between utterances in one document. During auto-detection,
+            // keep the user's configured English accent instead of treating each region tag
+            // as a new accent choice.
+            if (LanguageDetector.isDetectionEnabled() &&
+                LanguageDetector.isEnglishDialect(configuredEnglishAccent)) {
+                return if (configuredEnglishAccent == LanguageDetector.DIALECT_EN_GB) "en-GB" else "en-US"
+            }
+            return if (c == "GB" || c == "GBR") "en-GB" else "en-US"
+        }
         if (lang.startsWith("de")) return "de-DE"
         if (lang.startsWith("fr")) return if (c == "CA" || c == "CAN") "fr-CA" else "fr-FR"
         if (lang.startsWith("es")) return when (c) {
@@ -858,8 +869,9 @@ try { currentEngine()?.stop() } catch (ignore: Throwable) {}
             } else {
                 LanguageDetector.DIALECT_EN_US
             }
+            configuredEnglishAccent = prefs.getInt("english_dialect", englishFallback)
             LanguageDetector.setDefaultLanguage(savedDefault)
-            LanguageDetector.setEnglishDialect(prefs.getInt("english_dialect", englishFallback))
+            LanguageDetector.setEnglishDialect(configuredEnglishAccent)
             LanguageDetector.setSpanishDialect(prefs.getInt("spanish_dialect", LanguageDetector.DIALECT_ES_ES))
             LanguageDetector.setFrenchDialect(prefs.getInt("french_dialect", LanguageDetector.DIALECT_FR_FR))
             val savedLangs = prefs.getStringSet("enabled_langs", null)
