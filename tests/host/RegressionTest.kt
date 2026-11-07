@@ -378,7 +378,8 @@ private fun englishAccentPreferenceRestoration() {
     val previousFrench = LanguageDetector.getFrenchDialect()
     val previousEnabled = LanguageDetector.getEnabledLanguages()
     val prefs = MirroredPreferences(Context(), "vvtts_lang_settings")
-    val serviceRestore = VvTtsService.Companion.javaClass.getDeclaredMethod(
+    val service = VvTtsService()
+    val serviceRestore = service.javaClass.getDeclaredMethod(
         "restoreLanguageSettings", MirroredPreferences::class.java,
     ).apply { isAccessible = true }
 
@@ -416,7 +417,7 @@ private fun englishAccentPreferenceRestoration() {
             saveSettings(savedAccent)
 
             resetDetector()
-            serviceRestore.invoke(VvTtsService.Companion, prefs)
+            serviceRestore.invoke(service, prefs)
             checkRestored(expectedAccent)
 
             resetDetector()
