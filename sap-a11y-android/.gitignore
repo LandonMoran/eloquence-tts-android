@@ -1,9 +1,0 @@
-build/
-.cache/
-artifacts/native/
-artifacts/extensions/
-patch/build/
-patch/patches/build/
-patch/.gradle/
-.gradle/
-out/
